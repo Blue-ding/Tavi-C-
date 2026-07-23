@@ -1,0 +1,7 @@
+{
+  "name": "Tavi",
+  "references":
+  [
+    "Tavi.Core"
+  ]
+}

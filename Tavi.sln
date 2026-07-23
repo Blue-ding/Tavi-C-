@@ -1,0 +1,55 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Domain", "src\Tavi.Domain\Tavi.Domain.csproj", "{335D7775-E28C-4B34-A65D-D4BB5CC3B8BC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Application", "src\Tavi.Application\Tavi.Application.csproj", "{D2830CB7-A507-45BA-952D-CF97694B8560}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Infrastructure.OpenAI", "src\Tavi.Infrastructure.OpenAI\Tavi.Infrastructure.OpenAI.csproj", "{C927B0F2-D33E-4228-8526-4BBCA36F76F4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Infrastructure.Persistence", "src\Tavi.Infrastructure.Persistence\Tavi.Infrastructure.Persistence.csproj", "{89029873-CA48-448C-91E0-A4D93BAA25B6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Cli", "src\Tavi.Cli\Tavi.Cli.csproj", "{36091184-9CF2-482B-9094-18602B8E0258}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Domain.Tests", "tests\Tavi.Domain.Tests\Tavi.Domain.Tests.csproj", "{A1DB11B7-BB70-421F-A0AB-2DC922594A57}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Application.Tests", "tests\Tavi.Application.Tests\Tavi.Application.Tests.csproj", "{50BAB966-B063-493F-AD3E-A201D7188478}"
+EndProject
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Any CPU = Debug|Any CPU
+        Release|Any CPU = Release|Any CPU
+    EndGlobalSection
+    GlobalSection(ProjectConfigurationPlatforms) = postSolution
+        {335D7775-E28C-4B34-A65D-D4BB5CC3B8BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {335D7775-E28C-4B34-A65D-D4BB5CC3B8BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {335D7775-E28C-4B34-A65D-D4BB5CC3B8BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {335D7775-E28C-4B34-A65D-D4BB5CC3B8BC}.Release|Any CPU.Build.0 = Release|Any CPU
+        {D2830CB7-A507-45BA-952D-CF97694B8560}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {D2830CB7-A507-45BA-952D-CF97694B8560}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {D2830CB7-A507-45BA-952D-CF97694B8560}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {D2830CB7-A507-45BA-952D-CF97694B8560}.Release|Any CPU.Build.0 = Release|Any CPU
+        {C927B0F2-D33E-4228-8526-4BBCA36F76F4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {C927B0F2-D33E-4228-8526-4BBCA36F76F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {C927B0F2-D33E-4228-8526-4BBCA36F76F4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {C927B0F2-D33E-4228-8526-4BBCA36F76F4}.Release|Any CPU.Build.0 = Release|Any CPU
+        {89029873-CA48-448C-91E0-A4D93BAA25B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {89029873-CA48-448C-91E0-A4D93BAA25B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {89029873-CA48-448C-91E0-A4D93BAA25B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {89029873-CA48-448C-91E0-A4D93BAA25B6}.Release|Any CPU.Build.0 = Release|Any CPU
+        {36091184-9CF2-482B-9094-18602B8E0258}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {36091184-9CF2-482B-9094-18602B8E0258}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {36091184-9CF2-482B-9094-18602B8E0258}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {36091184-9CF2-482B-9094-18602B8E0258}.Release|Any CPU.Build.0 = Release|Any CPU
+        {A1DB11B7-BB70-421F-A0AB-2DC922594A57}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A1DB11B7-BB70-421F-A0AB-2DC922594A57}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {A1DB11B7-BB70-421F-A0AB-2DC922594A57}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A1DB11B7-BB70-421F-A0AB-2DC922594A57}.Release|Any CPU.Build.0 = Release|Any CPU
+        {50BAB966-B063-493F-AD3E-A201D7188478}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {50BAB966-B063-493F-AD3E-A201D7188478}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {50BAB966-B063-493F-AD3E-A201D7188478}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {50BAB966-B063-493F-AD3E-A201D7188478}.Release|Any CPU.Build.0 = Release|Any CPU
+    EndGlobalSection
+EndGlobal
+

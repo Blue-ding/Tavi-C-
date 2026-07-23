@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Tavi.Cli</RootNamespace>
+    <AssemblyName>tavi</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tavi.Application\Tavi.Application.csproj" />
+    <ProjectReference Include="..\Tavi.Infrastructure.OpenAI\Tavi.Infrastructure.OpenAI.csproj" />
+    <ProjectReference Include="..\Tavi.Infrastructure.Persistence\Tavi.Infrastructure.Persistence.csproj" />
+  </ItemGroup>
+</Project>
+

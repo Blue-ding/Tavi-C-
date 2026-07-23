@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Tavi.Domain</RootNamespace>
+    <AssemblyName>Tavi.Domain</AssemblyName>
+  </PropertyGroup>
+</Project>
+

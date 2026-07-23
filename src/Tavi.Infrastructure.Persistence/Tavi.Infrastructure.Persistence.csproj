@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Tavi.Infrastructure.Persistence</RootNamespace>
+    <AssemblyName>Tavi.Infrastructure.Persistence</AssemblyName>
+  </PropertyGroup>
+</Project>
+

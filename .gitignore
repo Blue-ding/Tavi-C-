@@ -1,0 +1,32 @@
+## .NET build outputs
+[Bb]in/
+[Oo]bj/
+artifacts/
+
+## Rider / IntelliJ
+.idea/
+*.sln.iml
+
+## Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+## Test and coverage outputs
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## Local configuration and secrets
+.env
+.env.*
+!.env.example
+appsettings.Development.json
+secrets.json
+
+## Operating system files
+.DS_Store
+Thumbs.db
+
