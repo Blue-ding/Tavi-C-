@@ -18,6 +18,7 @@ public sealed class WorldSession : IAsyncDisposable
     private CancellationTokenSource? _debounceSource;
     private RuntimeWorld? _current;
     private long _savedRevision;
+    private int _reportedDirty;
     private bool _disposed;
 
     /// <summary>
@@ -38,6 +39,11 @@ public sealed class WorldSession : IAsyncDisposable
     /// 在当前运行时世界发生实际修改后触发。
     /// </summary>
     public event EventHandler<WorldSessionChangedEventArgs>? Changed;
+
+    /// <summary>
+    /// 在脏状态或保存状态发生变化后触发。
+    /// </summary>
+    public event EventHandler<WorldSessionStateChangedEventArgs>? StateChanged;
 
     /// <summary>
     /// 获取当前运行时世界；会话初始化前访问会抛出异常。
@@ -72,6 +78,7 @@ public sealed class WorldSession : IAsyncDisposable
         WorldSnapshot? snapshot = await _store.LoadAsync(_slot, cancellationToken);
         AttachWorld(RuntimeWorld.Create(snapshot ?? new WorldSnapshot()));
         Volatile.Write(ref _savedRevision, snapshot is null ? -1 : Current.Revision);
+        NotifyDirtyChanged();
         if (snapshot is null)
             ScheduleAutoSave();
     }
@@ -170,6 +177,7 @@ public sealed class WorldSession : IAsyncDisposable
     {
         ScheduleAutoSave();
         Changed?.Invoke(this, new WorldSessionChangedEventArgs(eventArgs.Revision, eventArgs.Operation));
+        NotifyDirtyChanged();
     }
 
     private async Task SaveCoreAsync(bool force, CancellationToken cancellationToken)
@@ -180,9 +188,27 @@ public sealed class WorldSession : IAsyncDisposable
             (WorldSnapshot Snapshot, long Revision) state = Read(world => (world.CreateSnapshot(), world.Revision));
             if (!force && state.Revision == Volatile.Read(ref _savedRevision))
                 return;
-            await _store.SaveAsync(_slot, state.Snapshot, cancellationToken);
+
+            RaiseStateChanged(WorldSessionStateChange.SaveStarted);
+            try
+            {
+                await _store.SaveAsync(_slot, state.Snapshot, cancellationToken);
+            }
+            catch (OperationCanceledException exception)
+            {
+                RaiseStateChanged(WorldSessionStateChange.SaveCancelled, exception);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                RaiseStateChanged(WorldSessionStateChange.SaveFailed, exception);
+                throw;
+            }
+
             Volatile.Write(ref _savedRevision, state.Revision);
             LastAutoSaveException = null;
+            NotifyDirtyChanged();
+            RaiseStateChanged(WorldSessionStateChange.SaveCompleted);
         }
         finally
         {
@@ -235,6 +261,30 @@ public sealed class WorldSession : IAsyncDisposable
             _debounceSource?.Cancel();
             _debounceSource = null;
         }
+    }
+
+    private void NotifyDirtyChanged()
+    {
+        bool isDirty = IsDirty;
+        int value = isDirty ? 1 : 0;
+        if (Interlocked.Exchange(ref _reportedDirty, value) != value)
+            StateChanged?.Invoke(
+                this,
+                new WorldSessionStateChangedEventArgs(
+                    WorldSessionStateChange.DirtyChanged,
+                    isDirty
+                )
+            );
+    }
+
+    private void RaiseStateChanged(
+        WorldSessionStateChange change,
+        Exception? exception = null)
+    {
+        StateChanged?.Invoke(
+            this,
+            new WorldSessionStateChangedEventArgs(change, IsDirty, exception)
+        );
     }
 
     private void ThrowIfDisposed()
