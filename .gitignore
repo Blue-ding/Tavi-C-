@@ -27,6 +27,11 @@ appsettings.Development.json
 secrets.json
 src/Tavi.Infrastructure.OpenAI/SelfCongif.md
 
+## Frontend outputs
+src/Tavi.Web/node_modules/
+src/Tavi.Web/*.tsbuildinfo
+src/Tavi.Host/wwwroot/
+
 ## Operating system files
 .DS_Store
 Thumbs.db

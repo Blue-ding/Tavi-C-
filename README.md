@@ -11,6 +11,8 @@ src/
   Tavi.Infrastructure.OpenAI/     OpenAI SDK 适配
   Tavi.Infrastructure.Persistence/  本地持久化适配
   Tavi.Cli/                       命令行入口
+  Tavi.Host/                      本地 HTTP/SSE 宿主与 ViewModel 展示层
+  Tavi.Web/                       React 世界图工作台
 tests/
   Tavi.Domain.Tests/
   Tavi.Application.Tests/
@@ -32,6 +34,20 @@ dotnet test Tavi.sln
 ```
 
 本项目的活动代码不依赖 Newtonsoft.Json；持久化模块使用 `System.Text.Json`。
+
+## 世界图工作台
+
+首次运行前端时安装依赖并构建静态资源：
+
+```powershell
+cd src/Tavi.Web
+npm install
+npm run build
+cd ../..
+dotnet run --project src/Tavi.Host
+```
+
+随后访问 `http://127.0.0.1:5178`。Host 默认加载本地 `Tavi/Saves/default` 存档；可使用 `TAVI_SAVE_DIRECTORY` 覆盖存档目录。前端支持 Anchor、Relation 和 Character 子世界的图形化观察与编辑，以及撤销、重做、手动保存和自动保存状态反馈。
 
 ## 语言模型配置
 
