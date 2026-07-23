@@ -16,6 +16,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Domain.Tests", "tests\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Application.Tests", "tests\Tavi.Application.Tests\Tavi.Application.Tests.csproj", "{50BAB966-B063-493F-AD3E-A201D7188478}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Infrastructure.Persistence.Tests", "tests\Tavi.Infrastructure.Persistence.Tests\Tavi.Infrastructure.Persistence.Tests.csproj", "{75D2F54C-3EC7-46F5-9A5A-1D9BF31019A3}"
+EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution
         Debug|Any CPU = Debug|Any CPU
@@ -50,6 +52,9 @@ Global
         {50BAB966-B063-493F-AD3E-A201D7188478}.Debug|Any CPU.Build.0 = Debug|Any CPU
         {50BAB966-B063-493F-AD3E-A201D7188478}.Release|Any CPU.ActiveCfg = Release|Any CPU
         {50BAB966-B063-493F-AD3E-A201D7188478}.Release|Any CPU.Build.0 = Release|Any CPU
+        {75D2F54C-3EC7-46F5-9A5A-1D9BF31019A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {75D2F54C-3EC7-46F5-9A5A-1D9BF31019A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {75D2F54C-3EC7-46F5-9A5A-1D9BF31019A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {75D2F54C-3EC7-46F5-9A5A-1D9BF31019A3}.Release|Any CPU.Build.0 = Release|Any CPU
     EndGlobalSection
 EndGlobal
-
