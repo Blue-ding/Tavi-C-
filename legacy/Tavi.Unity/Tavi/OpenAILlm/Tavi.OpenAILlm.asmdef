@@ -1,8 +1,0 @@
-{
-  "name": "Tavi.OpenAILlm",
-  "references": 
-  [
-    "Tavi.Core",
-    "Tavi.Save"
-  ]
-}

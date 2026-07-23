@@ -1,7 +1,0 @@
-{
-  "name": "Tavi.Save",
-  "references":
-  [
-    "Tavi.Core"
-  ]
-}
