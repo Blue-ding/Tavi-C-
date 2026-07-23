@@ -42,7 +42,7 @@ internal sealed class GuidanceRuntime : IHostedService
             ILanguageModelService? languageModels = _providedLanguageModels.LastOrDefault() ?? await CreateConfiguredLanguageModelsAsync(cancellationToken);
             if (languageModels is null)
             {
-                _availabilityMessage = "尚未配置语言模型。请设置 TAVI_OPENAI_API_KEY 与 TAVI_OPENAI_MODEL。";
+                _availabilityMessage = "尚未配置语言模型。未找到临时配置 SelfCongif.md。";
                 return;
             }
             _provider = languageModels.Capabilities.Provider;
@@ -133,29 +133,9 @@ internal sealed class GuidanceRuntime : IHostedService
 
     private async Task<ILanguageModelService?> CreateConfiguredLanguageModelsAsync(CancellationToken cancellationToken)
     {
-        string? apiKey = ReadConfiguration("Tavi:OpenAI:ApiKey", "TAVI_OPENAI_API_KEY");
-        string? model = ReadConfiguration("Tavi:OpenAI:Model", "TAVI_OPENAI_MODEL");
-        if (string.IsNullOrWhiteSpace(apiKey) && string.IsNullOrWhiteSpace(model))
+        OpenAILanguageModelOptions? options = SelfConfigOpenAILanguageModelOptionsLoader.TryLoad(_configuration["Tavi:OpenAI:SelfConfigPath"]);
+        if (options is null)
             return null;
-        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(model))
-            throw LanguageModelConfigurationException.Invalid("TAVI_OPENAI_API_KEY 与 TAVI_OPENAI_MODEL 必须同时配置。");
-        string endpointValue = ReadConfiguration("Tavi:OpenAI:Endpoint", "TAVI_OPENAI_ENDPOINT") ?? "https://api.openai.com/v1";
-        if (!Uri.TryCreate(endpointValue, UriKind.Absolute, out Uri? endpoint))
-            throw LanguageModelConfigurationException.Invalid("TAVI_OPENAI_ENDPOINT 必须是绝对 URI。");
-        OpenAIClientType clientType = ReadConfiguration("Tavi:OpenAI:ClientType", "TAVI_OPENAI_CLIENT_TYPE")?.ToLowerInvariant() switch
-        {
-            null or "" or "chat" => OpenAIClientType.Chat,
-            "responses" => OpenAIClientType.Responses,
-            _ => throw LanguageModelConfigurationException.Invalid("TAVI_OPENAI_CLIENT_TYPE 只允许 chat 或 responses。")
-        };
-        bool supportsRequiredToolChoice = !string.Equals(ReadConfiguration("Tavi:OpenAI:DisableRequiredToolChoice", "TAVI_OPENAI_DISABLE_REQUIRED_TOOL_CHOICE"), "1", StringComparison.Ordinal);
-        bool? enableThinking = ReadConfiguration("Tavi:OpenAI:EnableThinking", "TAVI_OPENAI_ENABLE_THINKING") switch
-        {
-            null or "" => null,
-            "1" => true,
-            "0" => false,
-            _ => throw LanguageModelConfigurationException.Invalid("TAVI_OPENAI_ENABLE_THINKING 只允许 0 或 1。")
-        };
         string defaultSettingsDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tavi", "Settings");
         string settingsDirectory = ReadConfiguration("Tavi:SettingsDirectory", "TAVI_SETTINGS_DIRECTORY") ?? defaultSettingsDirectory;
         using var store = new JsonFileLanguageModelSettingsStore(Path.Combine(settingsDirectory, "language-model.json"));
@@ -163,7 +143,7 @@ internal sealed class GuidanceRuntime : IHostedService
         LanguageModelSettings settings = await settingsService.LoadOrDefaultAsync(cancellationToken);
         if (!File.Exists(store.Path))
             await settingsService.SaveAsync(settings, cancellationToken);
-        var client = new OpenAILanguageModelClient(new OpenAILanguageModelOptions { Endpoint = endpoint, ApiKey = apiKey, Model = model, ClientType = clientType, SupportsRequiredToolChoice = supportsRequiredToolChoice, EnableThinking = enableThinking });
+        var client = new OpenAILanguageModelClient(options);
         return new LanguageModelRunner(client, settings, _applicationLogger);
     }
 

@@ -15,7 +15,7 @@ public sealed class WorldGuidanceToolTests
         await using WorldSession session = await CreateSession();
         IReadOnlyCollection<ITool> tools = WorldGuidanceTool.CreateTools(session);
 
-        Assert.Equal(22, tools.Count);
+        Assert.Equal(23, tools.Count);
         Assert.Equal(tools.Count, tools.Select(tool => tool.name).Distinct().Count());
         ITool getAnchor = GetTool(tools, "get_anchor");
         using JsonDocument schema = JsonDocument.Parse(getAnchor.parameterData);
@@ -23,6 +23,39 @@ public sealed class WorldGuidanceToolTests
         Assert.True(root.GetProperty("properties").TryGetProperty("Name", out _));
         Assert.Equal("Name", root.GetProperty("required")[0].GetString());
         Assert.False(root.GetProperty("additionalProperties").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ListAnchorsReturnsEveryAnchorWithoutArguments()
+    {
+        RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
+        for (int index = 0; index < 25; index++)
+            world.AddAnchor($"Item {index:D2}", "", AnchorType.Item);
+        await using WorldSession session = await CreateSession(world);
+        ITool tool = GetTool(WorldGuidanceTool.CreateTools(session), "list_anchors");
+
+        string output = await Execute(tool, "{}");
+        using JsonDocument document = JsonDocument.Parse(output);
+        JsonElement root = document.RootElement;
+
+        Assert.Equal(25, root.GetProperty("total").GetInt32());
+        Assert.Equal(25, root.GetProperty("returned").GetInt32());
+        Assert.False(root.GetProperty("truncated").GetBoolean());
+        Assert.Equal(25, root.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task AnchorToolDescriptionsDirectEnumerationToListAnchors()
+    {
+        await using WorldSession session = await CreateSession();
+        IReadOnlyCollection<ITool> tools = WorldGuidanceTool.CreateTools(session);
+        ITool list = GetTool(tools, "list_anchors");
+        ITool query = GetTool(tools, "query_anchor");
+
+        Assert.Contains("全部 Anchor", list.description);
+        Assert.Contains("list_anchors", query.description);
+        Assert.Contains("至少一个非空字符串", query.description);
+        Assert.Contains("list_anchors", query.parameterData.ToString());
     }
 
     [Fact]

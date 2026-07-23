@@ -52,15 +52,12 @@ dotnet run --project src/Tavi.Host
 ## 语言模型配置
 
 Application 的模型运行策略保存在本地 `Tavi/Settings/language-model.json`，其中不包含供应商密钥。
-CLI 通过环境变量显式组装 OpenAI 适配器：
+CLI 和 Host 临时从被 Git 忽略的 `src/Tavi.Infrastructure.OpenAI/SelfCongif.md` 加载 OpenAI 兼容服务配置：
 
 ```text
-TAVI_OPENAI_API_KEY       必需，OpenAI 或兼容服务密钥
-TAVI_OPENAI_MODEL         必需，模型名称
-TAVI_OPENAI_ENDPOINT      可选，默认为 https://api.openai.com/v1
-TAVI_OPENAI_CLIENT_TYPE   可选，chat（默认）或 responses
-TAVI_OPENAI_DISABLE_REQUIRED_TOOL_CHOICE  可选，设为 1 以兼容不支持强制工具选择的模型
-TAVI_OPENAI_ENABLE_THINKING  可选，兼容端点扩展；0 禁用、1 启用，默认不发送
+"Uri": "https://兼容服务地址",
+"Model": "模型名称",
+"APIKey": "本地密钥",
 ```
 
-未设置前两个变量时，CLI 和 Host 仍可运行，但不会创建语言模型服务；世界图编辑功能不受影响。
+该文件缺失时 CLI 和 Host 仍可运行，但不会创建语言模型服务；世界图编辑功能不受影响。后续将由 Configs 后端替换此临时配置来源。

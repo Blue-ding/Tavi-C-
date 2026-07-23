@@ -39,7 +39,7 @@ internal static class Program
             await session.InitializeAsync(cancellationSource.Token);
             Console.WriteLine($"Tavi CLI：已加载世界 {session.Queries.CreateSnapshot().Id}。");
             Console.WriteLine(languageModels is null
-                ? "语言模型未配置；设置 TAVI_OPENAI_API_KEY 与 TAVI_OPENAI_MODEL 后启用。"
+                ? "语言模型未配置；添加 src/Tavi.Infrastructure.OpenAI/SelfCongif.md 后启用。"
                 : $"语言模型已就绪：{languageModels.Capabilities.Provider}。");
             Console.WriteLine("工程骨架已就绪，业务命令将在后续迁移阶段接入。");
             return 0;
@@ -74,59 +74,10 @@ internal static class Program
         LanguageModelSettings settings,
         ILogger logger)
     {
-        string? apiKey = Environment.GetEnvironmentVariable("TAVI_OPENAI_API_KEY");
-        string? model = Environment.GetEnvironmentVariable("TAVI_OPENAI_MODEL");
-        if (string.IsNullOrWhiteSpace(apiKey) && string.IsNullOrWhiteSpace(model))
+        OpenAILanguageModelOptions? options = SelfConfigOpenAILanguageModelOptionsLoader.TryLoad();
+        if (options is null)
             return null;
-        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(model))
-            throw LanguageModelConfigurationException.Invalid(
-                "TAVI_OPENAI_API_KEY 与 TAVI_OPENAI_MODEL 必须同时配置。");
-
-        string? endpointValue = Environment.GetEnvironmentVariable("TAVI_OPENAI_ENDPOINT");
-        Uri endpoint;
-        if (string.IsNullOrWhiteSpace(endpointValue))
-        {
-            endpoint = new Uri("https://api.openai.com/v1");
-        }
-        else if (!Uri.TryCreate(endpointValue, UriKind.Absolute, out Uri? parsedEndpoint))
-        {
-            throw LanguageModelConfigurationException.Invalid(
-                "TAVI_OPENAI_ENDPOINT 必须是绝对 URI。");
-        }
-        else
-        {
-            endpoint = parsedEndpoint;
-        }
-        string? clientTypeValue =
-            Environment.GetEnvironmentVariable("TAVI_OPENAI_CLIENT_TYPE");
-        OpenAIClientType clientType = clientTypeValue?.ToLowerInvariant() switch
-        {
-            null or "" or "chat" => OpenAIClientType.Chat,
-            "responses" => OpenAIClientType.Responses,
-            _ => throw LanguageModelConfigurationException.Invalid(
-                "TAVI_OPENAI_CLIENT_TYPE 只允许 chat 或 responses。")
-        };
-        bool supportsRequiredToolChoice = !string.Equals(
-            Environment.GetEnvironmentVariable("TAVI_OPENAI_DISABLE_REQUIRED_TOOL_CHOICE"),
-            "1",
-            StringComparison.Ordinal);
-        bool? enableThinking = Environment.GetEnvironmentVariable("TAVI_OPENAI_ENABLE_THINKING") switch
-        {
-            null or "" => null,
-            "1" => true,
-            "0" => false,
-            _ => throw LanguageModelConfigurationException.Invalid(
-                "TAVI_OPENAI_ENABLE_THINKING 只允许 0 或 1。")
-        };
-        var client = new OpenAILanguageModelClient(new OpenAILanguageModelOptions
-        {
-            Endpoint = endpoint,
-            ApiKey = apiKey,
-            Model = model,
-            ClientType = clientType,
-            SupportsRequiredToolChoice = supportsRequiredToolChoice,
-            EnableThinking = enableThinking
-        });
+        var client = new OpenAILanguageModelClient(options);
         return new LanguageModelRunner(client, settings, logger);
     }
 }

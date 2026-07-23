@@ -25,6 +25,7 @@ internal static class WorldGuidanceTool
         ArgumentNullException.ThrowIfNull(session);
         return
         [
+            new ListAnchorsTool(session),
             new GetAnchorTool(session),
             new QueryAnchorTool(session),
             new GetWorldRelationTool(session),
@@ -60,6 +61,12 @@ internal static class WorldGuidanceTool
     private static string SerializeAnchors(IEnumerable<Anchor> anchors)
     {
         return SerializeResult(anchors.Select(ToAnchorOutput));
+    }
+
+    private static string SerializeAllAnchors(IEnumerable<Anchor> anchors)
+    {
+        AnchorOutput[] items = anchors.Select(ToAnchorOutput).ToArray();
+        return JsonSerializer.Serialize(new QueryResult<AnchorOutput>(items.Length, items.Length, false, items), JsonOptions);
     }
 
     private static string SerializeRelations(Func<IEnumerable<ScopedRelation>> query)
@@ -169,16 +176,32 @@ internal static class WorldGuidanceTool
         }
     }
 
+    public sealed class EmptyToolPara : IToolArgument
+    {
+    }
+
+    private sealed class ListAnchorsTool(WorldSession session) : Tool<EmptyToolPara>
+    {
+        public override string name => "list_anchors";
+        public override string description => "无条件返回世界中的全部 Anchor。需要遍历或查看所有 Anchor 时使用本工具；不要为此向 query_anchor 传递空 clues。";
+
+        protected override Task<string> Execute(EmptyToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeAllAnchors(session.Queries.GetAnchors()));
+        }
+    }
+
     public sealed class QueryAnchorToolPara : IToolArgument
     {
-        [Description("用于匹配 Anchor 名称、描述和类型的字符串线索；所有线索必须同时匹配")]
+        [Description("至少一个非空字符串，用于匹配 Anchor 名称、描述和类型；所有线索必须同时匹配。需要全部 Anchor 时改用 list_anchors")]
         public string[] Clues { get; set; } = [];
     }
 
     private sealed class QueryAnchorTool(WorldSession session) : Tool<QueryAnchorToolPara>
     {
         public override string name => "query_anchor";
-        public override string description => "使用普通字符串包含匹配查询 Anchor；所有有效线索必须同时匹配。";
+        public override string description => "按至少一个非空字符串线索查询 Anchor，所有线索必须同时匹配；本工具不用于无条件遍历，需要全部 Anchor 时使用 list_anchors。";
 
         protected override Task<string> Execute(QueryAnchorToolPara arguments, CancellationToken cancellationToken)
         {
@@ -269,10 +292,6 @@ internal static class WorldGuidanceTool
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(SerializeRelations(() => session.Queries.QueryRelations(arguments.Clues, RelationQueryScope.All, string.Empty)));
         }
-    }
-
-    public sealed class EmptyToolPara : IToolArgument
-    {
     }
 
     private sealed class ListCharactersTool(WorldSession session) : Tool<EmptyToolPara>
