@@ -7,10 +7,10 @@ namespace Tavi.Domain.WorldGraph
     {
         public GraphException(string message) : base(message)
         {
-            
+
         }
     }
-    
+
     [Serializable]
     public record WorldGraph
     {
@@ -26,9 +26,9 @@ namespace Tavi.Domain.WorldGraph
         {
             try
             {
-                _anchors.Add(anchor.ID, anchor);
-                _outgoing.Add(anchor.ID,new());
-                _incoming.Add(anchor.ID,new());
+                _anchors.Add(anchor.Id, anchor);
+                _outgoing.Add(anchor.Id,new());
+                _incoming.Add(anchor.Id,new());
             }
             catch (Exception e)
             {
@@ -40,32 +40,32 @@ namespace Tavi.Domain.WorldGraph
         {
             try
             {
-                _relations.Add(relation.ID, relation);
-                _outgoing[relation.SourceID].Add(relation.ID);
-                _incoming[relation.TargetID].Add(relation.ID);
+                _relations.Add(relation.Id, relation);
+                _outgoing[relation.SourceId].Add(relation.Id);
+                _incoming[relation.TargetId].Add(relation.Id);
             }
             catch (Exception e)
             {
                 throw new GraphException("图边添加操作错误："+e.Message);
             }
-            
+
         }
 
-        internal void RemoveAnchor(AnchorId anchorID)
+        internal void RemoveAnchor(AnchorId anchorId)
         {
             try
             {
-                _anchors.Remove(anchorID);
-                foreach (var item in _outgoing[anchorID])
+                _anchors.Remove(anchorId);
+                foreach (var item in _outgoing[anchorId])
                 {
                     _relations.Remove(item);
                 }
-                _outgoing.Remove(anchorID);
-                foreach (var item in _incoming[anchorID])
+                _outgoing.Remove(anchorId);
+                foreach (var item in _incoming[anchorId])
                 {
                     _relations.Remove(item);
                 }
-                _incoming.Remove(anchorID);
+                _incoming.Remove(anchorId);
             }
             catch (Exception e)
             {
@@ -78,9 +78,9 @@ namespace Tavi.Domain.WorldGraph
             try
             {
                 var relation = _relations[relationId];
-                _outgoing[relation.SourceID].Remove(relation.ID);
-                _incoming[relation.TargetID].Remove(relation.ID);
-                _relations.Remove(relation.ID);
+                _outgoing[relation.SourceId].Remove(relation.Id);
+                _incoming[relation.TargetId].Remove(relation.Id);
+                _relations.Remove(relation.Id);
             }
             catch (Exception e)
             {

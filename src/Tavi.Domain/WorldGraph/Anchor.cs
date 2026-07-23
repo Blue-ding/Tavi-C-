@@ -10,23 +10,23 @@ namespace Tavi.Domain.WorldGraph
     [Serializable]
     public record AnchorId
     {
-        public Guid ID = Guid.NewGuid();
+        public Guid Id = Guid.NewGuid();
     }
-    
+
     [Serializable]
     public record Anchor
     {
-        public AnchorId ID = new();
-        public string name;
-        public string description;
-        public AnchorType type;
-        
+        public AnchorId Id = new();
+        public string Name;
+        public string Description;
+        public AnchorType Type;
+
         internal Anchor(string name, string description,AnchorType type)
         {
-            this.name=name;
-            this.description=description;
-            this.type=type;
+            this.Name=name;
+            this.Description=description;
+            this.Type=type;
         }
     }
-    
+
 }
