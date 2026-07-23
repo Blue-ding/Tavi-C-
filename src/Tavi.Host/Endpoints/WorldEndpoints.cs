@@ -9,6 +9,8 @@ namespace Tavi.Host.Endpoints;
 
 internal static class WorldEndpoints
 {
+    private static readonly JsonSerializerOptions EventJsonOptions = new(JsonSerializerDefaults.Web);
+
     internal static IEndpointRouteBuilder MapWorldEndpoints(this IEndpointRouteBuilder endpoints)
     {
         RouteGroupBuilder world = endpoints.MapGroup("/api/v1/world");
@@ -115,7 +117,7 @@ internal static class WorldEndpoints
         await foreach (WorldEventViewModel worldEvent in broker.SubscribeAsync(cancellationToken))
         {
             await context.Response.WriteAsync($"event: {worldEvent.Type}\n", cancellationToken);
-            await context.Response.WriteAsync($"data: {JsonSerializer.Serialize(worldEvent)}\n\n", cancellationToken);
+            await context.Response.WriteAsync($"data: {JsonSerializer.Serialize(worldEvent, EventJsonOptions)}\n\n", cancellationToken);
             await context.Response.Body.FlushAsync(cancellationToken);
         }
     }

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow, type Edge, type Node, type NodeChange, type NodePositionChange } from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow, useNodesState, type Edge, type Node, type NodeChange, type NodePositionChange } from '@xyflow/react'
 import { Box, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Trash2, Undo2, UserRound, X } from 'lucide-react'
 import { ApiError, worldApi } from './api'
 import type { AnchorType, AnchorViewModel, RelationViewModel, Selection, WorldGraphViewModel } from './types'
@@ -24,18 +24,34 @@ function App() {
   const [selection, setSelection] = useState<Selection>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [showInspector, setShowInspector] = useState(true)
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({})
+  const [flowNodes, setFlowNodes, applyNodeChanges] = useNodesState<Node>([])
+  const refreshSequence = useRef(0)
+  const lastRefreshAt = useRef(0)
+  const refreshTimer = useRef<number | null>(null)
+  const positionCache = useRef(new Map<string, { x: number; y: number }>())
 
   const refresh = useCallback(async (quiet = false) => {
+    const sequence = ++refreshSequence.current
     if (!quiet)
       setLoading(true)
     try {
-      setWorld(await worldApi.get())
+      const nextWorld = await worldApi.get()
+      if (sequence !== refreshSequence.current)
+        return
+      setWorld(current => {
+        if (nextWorld.revision < current.revision)
+          return current
+        if (current.worldId === nextWorld.worldId && nextWorld.revision === current.revision && !current.isDirty && nextWorld.isDirty)
+          return { ...nextWorld, isDirty: false }
+        return nextWorld
+      })
+      lastRefreshAt.current = Date.now()
       setError(null)
     } catch (requestError) {
-      setError(toMessage(requestError))
+      if (sequence === refreshSequence.current)
+        setError(toMessage(requestError))
     } finally {
-      if (!quiet)
+      if (!quiet && sequence === refreshSequence.current)
         setLoading(false)
     }
   }, [])
@@ -43,13 +59,32 @@ function App() {
   useEffect(() => {
     void refresh()
     const events = new EventSource('/api/v1/world/events')
-    const update = () => void refresh(true)
-    const eventNames = ['world.changed', 'world.dirty-changed', 'world.save-completed', 'world.save-failed']
-    eventNames.forEach(name => events.addEventListener(name, update))
-    events.onerror = () => setError(current => current ?? '与本地世界服务的实时连接暂时中断。')
+    const scheduleGraphRefresh = () => {
+      if (refreshTimer.current !== null)
+        window.clearTimeout(refreshTimer.current)
+      refreshTimer.current = window.setTimeout(() => {
+        refreshTimer.current = null
+        if (Date.now() - lastRefreshAt.current >= 100)
+          void refresh(true)
+      }, 120)
+    }
+    const updateState = (event: MessageEvent<string>) => {
+      const state = parseWorldEvent(event.data)
+      if (!state)
+        return
+      setWorld(current => state.revision < current.revision ? current : { ...current, revision: state.revision, isDirty: state.isDirty })
+      if (state.error)
+        setError(state.error)
+    }
+    events.addEventListener('world.changed', scheduleGraphRefresh)
+    const stateEventNames = ['world.dirty-changed', 'world.save-started', 'world.save-completed', 'world.save-failed', 'world.save-cancelled']
+    stateEventNames.forEach(name => events.addEventListener(name, updateState as EventListener))
     return () => {
-      eventNames.forEach(name => events.removeEventListener(name, update))
+      events.removeEventListener('world.changed', scheduleGraphRefresh)
+      stateEventNames.forEach(name => events.removeEventListener(name, updateState as EventListener))
       events.close()
+      if (refreshTimer.current !== null)
+        window.clearTimeout(refreshTimer.current)
     }
   }, [refresh])
 
@@ -65,13 +100,22 @@ function App() {
   }, [connectedIds, scope, search, world.nodes])
   const visibleAnchorIds = useMemo(() => new Set(visibleAnchors.map(anchor => anchor.id)), [visibleAnchors])
 
-  const nodes: Node[] = useMemo(() => visibleAnchors.map((anchor, index) => ({
-    id: anchor.id,
-    position: nodePositions[anchor.id] ?? layoutPosition(index, visibleAnchors.length),
-    data: { label: <NodeLabel anchor={anchor} /> },
-    className: `world-node ${anchor.type.toLowerCase()}${selection?.kind === 'anchor' && selection.id === anchor.id ? ' selected' : ''}`,
-    style: { width: 190 },
-  })), [nodePositions, selection, visibleAnchors])
+  useEffect(() => {
+    setFlowNodes(current => {
+      const existing = new Map(current.map(node => [node.id, node]))
+      return visibleAnchors.map((anchor, index) => {
+        const previous = existing.get(anchor.id)
+        return {
+          ...previous,
+          id: anchor.id,
+          position: previous?.position ?? positionCache.current.get(anchor.id) ?? layoutPosition(index, visibleAnchors.length),
+          data: { label: <NodeLabel anchor={anchor} /> },
+          className: `world-node ${anchor.type.toLowerCase()}${selection?.kind === 'anchor' && selection.id === anchor.id ? ' selected' : ''}`,
+          style: { width: 190 },
+        }
+      })
+    })
+  }, [selection, setFlowNodes, visibleAnchors])
 
   const edges: Edge[] = useMemo(() => visibleRelations.filter(edge => visibleAnchorIds.has(edge.sourceId) && visibleAnchorIds.has(edge.targetId)).map(edge => ({
     id: edge.id,
@@ -90,6 +134,13 @@ function App() {
   const selectedAnchor = selection?.kind === 'anchor' ? world.nodes.find(anchor => anchor.id === selection.id) ?? null : null
   const selectedRelation = selection?.kind === 'relation' ? world.edges.find(edge => edge.id === selection.id) ?? null : null
 
+  useEffect(() => {
+    if (selection?.kind === 'anchor' && !world.nodes.some(anchor => anchor.id === selection.id))
+      setSelection(null)
+    if (selection?.kind === 'relation' && !world.edges.some(relation => relation.id === selection.id))
+      setSelection(null)
+  }, [selection, world.edges, world.nodes])
+
   async function perform(operation: () => Promise<unknown>) {
     setWorking(true)
     try {
@@ -107,19 +158,13 @@ function App() {
     }
   }
 
-  function moveNodes(changes: NodeChange[]) {
-    const positionChanges = changes.filter((change): change is NodePositionChange => change.type === 'position' && change.position !== undefined)
-    if (!positionChanges.length)
-      return
-    setNodePositions(current => {
-      const next = { ...current }
-      positionChanges.forEach(change => {
-        if (change.position)
-          next[change.id] = change.position
-      })
-      return next
+  const moveNodes = useCallback((changes: NodeChange<Node>[]) => {
+    changes.filter((change): change is NodePositionChange => change.type === 'position' && change.position !== undefined).forEach(change => {
+      if (change.position)
+        positionCache.current.set(change.id, change.position)
     })
-  }
+    applyNodeChanges(changes)
+  }, [applyNodeChanges])
 
   const statusLabel = world.health === 'Faulted' ? '世界会话异常' : world.isDirty ? '等待自动保存' : '已保存'
 
@@ -172,7 +217,7 @@ function App() {
 
         <section className="canvas">
           {loading ? <LoadingState /> : (
-            <ReactFlow nodes={nodes} edges={edges} onNodesChange={moveNodes} fitView fitViewOptions={{ padding: 0.28 }} minZoom={0.25} maxZoom={1.8} nodesDraggable onPaneClick={() => setSelection(null)} onNodeClick={(_, node) => { setSelection({ kind: 'anchor', id: node.id }); setShowInspector(true) }} onEdgeClick={(_, edge) => { setSelection({ kind: 'relation', id: edge.id }); setShowInspector(true) }}>
+            <ReactFlow nodes={flowNodes} edges={edges} onNodesChange={moveNodes} fitView fitViewOptions={{ padding: 0.28 }} minZoom={0.25} maxZoom={1.8} nodesDraggable onPaneClick={() => setSelection(null)} onNodeClick={(_, node) => { setSelection({ kind: 'anchor', id: node.id }); setShowInspector(true) }} onEdgeClick={(_, edge) => { setSelection({ kind: 'relation', id: edge.id }); setShowInspector(true) }}>
               <Background variant={BackgroundVariant.Dots} color="#34413e" gap={24} size={1.15} />
               <Controls showInteractive={false} />
               <MiniMap nodeColor={node => node.className?.toString().includes('character') ? '#b77d55' : '#4c8d82'} maskColor="rgba(10, 14, 15, .76)" pannable zoomable />
@@ -334,6 +379,19 @@ function Modal({ title, close, children }: { title: string; close: () => void; c
 
 function toMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败，请稍后重试。'
+}
+
+function parseWorldEvent(value: string) {
+  try {
+    const event = JSON.parse(value) as { revision?: number; isDirty?: boolean; error?: string | null; Revision?: number; IsDirty?: boolean; Error?: string | null }
+    const revision = event.revision ?? event.Revision
+    const isDirty = event.isDirty ?? event.IsDirty
+    if (revision === undefined || isDirty === undefined)
+      return null
+    return { revision, isDirty, error: event.error ?? event.Error ?? null }
+  } catch {
+    return null
+  }
 }
 
 export default App
