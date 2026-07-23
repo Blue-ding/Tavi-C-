@@ -336,6 +336,15 @@ namespace Tavi.Domain.World
         }
 
         /// <summary>
+        /// 更新 Relation 名称。其它 Relation 结构变化应删除后重建。
+        /// </summary>
+        public void UpdateRelationName(Guid relationId, string name)
+        {
+            const string operation = nameof(UpdateRelationName);
+            FindRelation(relationId, operation).Relation.UpdateName(name);
+        }
+
+        /// <summary>
         /// 更新 Relation 描述。其它 Relation 结构变化应删除后重建。
         /// </summary>
         public void UpdateRelationDescription(Guid relationId, string description)

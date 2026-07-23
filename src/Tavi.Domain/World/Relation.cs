@@ -21,7 +21,7 @@ namespace Tavi.Domain.World
         }
 
         public Guid Id { get; }
-        public string Name { get; }
+        public string Name { get; private set; }
         public string Description { get; private set; }
         public Guid SourceId { get; }
         public Guid TargetId { get; }
@@ -29,6 +29,10 @@ namespace Tavi.Domain.World
         internal static Relation Create(string name, string description, Guid sourceId, Guid targetId)
         {
             return new Relation(Guid.NewGuid(), name, description, sourceId, targetId);
+        }
+        internal void UpdateName(string name)
+        {
+            Name = name;
         }
 
         internal void UpdateDescription(string description)
