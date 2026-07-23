@@ -1,5 +1,6 @@
 namespace Tavi.Application.LanguageModel;
 
+/// <summary>定义供业务判断和统计使用的稳定错误分类。</summary>
 public enum LanguageModelErrorCategory
 {
     Configuration,
@@ -20,6 +21,7 @@ public enum LanguageModelErrorCategory
     Timeout
 }
 
+/// <summary>保存经过脱敏的供应商、请求、运行和工具诊断信息。</summary>
 public sealed record LanguageModelErrorDetails
 {
     public string? Provider { get; init; }
@@ -33,6 +35,7 @@ public sealed record LanguageModelErrorDetails
     public string? ToolCallId { get; init; }
 }
 
+/// <summary>定义跨供应商保持稳定的语言模型错误码。</summary>
 public static class LanguageModelErrorCodes
 {
     public const string InvalidConfiguration = "TAVI.LM.CONFIG.INVALID";
@@ -58,6 +61,7 @@ public static class LanguageModelErrorCodes
 /// </summary>
 public class LanguageModelException : Exception
 {
+    /// <summary>创建带稳定错误码和脱敏诊断信息的语言模型异常。</summary>
     public LanguageModelException(
         string errorCode,
         LanguageModelErrorCategory category,
@@ -81,6 +85,7 @@ public class LanguageModelException : Exception
     public LanguageModelErrorDetails Details { get; }
 }
 
+/// <summary>表示业务设置与适配器能力无效或不兼容。</summary>
 public sealed class LanguageModelConfigurationException : LanguageModelException
 {
     private LanguageModelConfigurationException(
@@ -92,9 +97,11 @@ public sealed class LanguageModelConfigurationException : LanguageModelException
     {
     }
 
+    /// <summary>创建无效配置异常。</summary>
     public static LanguageModelConfigurationException Invalid(string message) =>
         new(LanguageModelErrorCodes.InvalidConfiguration, LanguageModelErrorCategory.Configuration, message);
 
+    /// <summary>创建适配器缺少必需能力的异常。</summary>
     public static LanguageModelConfigurationException Unsupported(
         string provider,
         string capability) =>
@@ -105,8 +112,10 @@ public sealed class LanguageModelConfigurationException : LanguageModelException
             new LanguageModelErrorDetails { Provider = provider, Operation = capability });
 }
 
+/// <summary>表示供应商请求失败，并保留原始异常和服务端诊断信息。</summary>
 public sealed class LanguageModelProviderException : LanguageModelException
 {
+    /// <summary>创建供应商异常。</summary>
     public LanguageModelProviderException(
         string errorCode,
         LanguageModelErrorCategory category,
@@ -119,8 +128,10 @@ public sealed class LanguageModelProviderException : LanguageModelException
     }
 }
 
+/// <summary>表示适配器收到无法映射或违反约定的供应商响应。</summary>
 public sealed class LanguageModelProtocolException : LanguageModelException
 {
+    /// <summary>创建协议异常。</summary>
     public LanguageModelProtocolException(
         string message,
         LanguageModelErrorDetails? details = null,
@@ -135,8 +146,10 @@ public sealed class LanguageModelProtocolException : LanguageModelException
     }
 }
 
+/// <summary>表示模型输出耗尽修复次数后仍未通过本地校验。</summary>
 public sealed class ModelOutputValidationException : LanguageModelException
 {
+    /// <summary>创建输出校验异常。</summary>
     public ModelOutputValidationException(
         string message,
         LanguageModelErrorDetails details)
@@ -149,8 +162,10 @@ public sealed class ModelOutputValidationException : LanguageModelException
     }
 }
 
+/// <summary>表示工具不存在或工具执行失败。</summary>
 public sealed class ModelToolException : LanguageModelException
 {
+    /// <summary>创建工具异常。</summary>
     public ModelToolException(
         string errorCode,
         LanguageModelErrorCategory category,
@@ -162,8 +177,10 @@ public sealed class ModelToolException : LanguageModelException
     }
 }
 
+/// <summary>表示工具循环达到业务配置的最大轮次。</summary>
 public sealed class ModelRoundLimitException : LanguageModelException
 {
+    /// <summary>创建工具轮次上限异常。</summary>
     public ModelRoundLimitException(int maximum, Guid runId)
         : base(
             LanguageModelErrorCodes.RoundLimit,
@@ -174,8 +191,10 @@ public sealed class ModelRoundLimitException : LanguageModelException
     }
 }
 
+/// <summary>表示一次完整模型运行超过 Application 总超时。</summary>
 public sealed class LanguageModelTimeoutException : LanguageModelException
 {
+    /// <summary>创建模型运行超时异常。</summary>
     public LanguageModelTimeoutException(TimeSpan timeout, Guid runId, Exception innerException)
         : base(
             LanguageModelErrorCodes.Timeout,

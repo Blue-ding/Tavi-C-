@@ -18,6 +18,7 @@ public sealed class OpenAILanguageModelClient : ILanguageModelClient
     private readonly ChatClient? _chatClient;
     private readonly ResponsesClient? _responsesClient;
 
+    /// <summary>使用强类型适配器配置创建 OpenAI 客户端。</summary>
     public OpenAILanguageModelClient(OpenAILanguageModelOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -33,6 +34,7 @@ public sealed class OpenAILanguageModelClient : ILanguageModelClient
             {
                 Provider = "OpenAI.Chat",
                 SupportsToolCalls = true,
+                SupportsRequiredToolChoice = _options.SupportsRequiredToolChoice,
                 SupportsParallelToolCalls = true,
                 SupportsNativeJsonOutput = true,
                 SupportsJsonSchema = true,
@@ -48,6 +50,7 @@ public sealed class OpenAILanguageModelClient : ILanguageModelClient
             {
                 Provider = "OpenAI.Responses",
                 SupportsToolCalls = true,
+                SupportsRequiredToolChoice = _options.SupportsRequiredToolChoice,
                 SupportsParallelToolCalls = true,
                 SupportsNativeJsonOutput = true,
                 SupportsJsonSchema = true,
@@ -56,8 +59,10 @@ public sealed class OpenAILanguageModelClient : ILanguageModelClient
         }
     }
 
+    /// <inheritdoc />
     public LanguageModelCapabilities Capabilities { get; }
 
+    /// <inheritdoc />
     public ILanguageModelSession CreateSession(LanguageModelSessionOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -65,7 +70,8 @@ public sealed class OpenAILanguageModelClient : ILanguageModelClient
         return _options.ClientType == OpenAIClientType.Chat
             ? new OpenAIChatSession(
                 _chatClient ?? throw new InvalidOperationException("Chat 客户端尚未初始化。"),
-                options)
+                options,
+                _options.EnableThinking)
             : new OpenAIResponsesSession(
                 _responsesClient ?? throw new InvalidOperationException("Responses 客户端尚未初始化。"),
                 _options.Model,
@@ -78,6 +84,8 @@ public sealed class OpenAILanguageModelClient : ILanguageModelClient
             throw LanguageModelConfigurationException.Unsupported(Capabilities.Provider, "Streaming");
         if (options.Tools.Count > 0 && !Capabilities.SupportsToolCalls)
             throw LanguageModelConfigurationException.Unsupported(Capabilities.Provider, "ToolCalls");
+        if (options.ToolCallMode == ToolCallMode.Required && !Capabilities.SupportsRequiredToolChoice)
+            throw LanguageModelConfigurationException.Unsupported(Capabilities.Provider, "RequiredToolChoice");
         if (options.UseNativeJsonOutput &&
             options.JsonFormat?.Schema is not null &&
             !Capabilities.SupportsJsonSchema)
@@ -96,10 +104,13 @@ internal sealed class OpenAIChatSession : ILanguageModelSession
 
     internal OpenAIChatSession(
         ChatClient client,
-        LanguageModelSessionOptions options)
+        LanguageModelSessionOptions options,
+        bool? enableThinking)
     {
         _client = client;
         _requireToolOnFirstTurn = options.ToolCallMode == ToolCallMode.Required;
+        if (enableThinking.HasValue)
+            _options.Patch.Set("$.enable_thinking"u8, enableThinking.Value);
         foreach (ModelToolDefinition tool in options.Tools)
         {
             _options.Tools.Add(ChatTool.CreateFunctionTool(
@@ -126,6 +137,7 @@ internal sealed class OpenAIChatSession : ILanguageModelSession
         }
     }
 
+    /// <inheritdoc />
     public async Task<ModelTurnResult> CompleteAsync(
         IReadOnlyList<ModelMessage> messages,
         CancellationToken cancellationToken = default)
@@ -158,6 +170,7 @@ internal sealed class OpenAIChatSession : ILanguageModelSession
         }
     }
 
+    /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
         _disposed = true;
@@ -229,6 +242,7 @@ internal sealed class OpenAIResponsesSession : ILanguageModelSession
         _sessionOptions = sessionOptions;
     }
 
+    /// <inheritdoc />
     public async Task<ModelTurnResult> CompleteAsync(
         IReadOnlyList<ModelMessage> messages,
         CancellationToken cancellationToken = default)
@@ -294,6 +308,7 @@ internal sealed class OpenAIResponsesSession : ILanguageModelSession
         }
     }
 
+    /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
         _disposed = true;

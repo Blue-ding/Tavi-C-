@@ -3,6 +3,7 @@ using Tavi.Application.Logging;
 
 namespace Tavi.Application.LanguageModel;
 
+/// <summary>定义一次独立语言模型运行的当前阶段。</summary>
 public enum LanguageModelRunStatus
 {
     Created,
@@ -15,6 +16,7 @@ public enum LanguageModelRunStatus
     Cancelled
 }
 
+/// <summary>描述一次业务运行使用的会话、工具、工具模式和输出校验器。</summary>
 public sealed record LanguageModelRunRequest
 {
     public required LanguageModelConversation Conversation { get; init; }
@@ -23,6 +25,7 @@ public sealed record LanguageModelRunRequest
     public IModelOutputValidator OutputValidator { get; init; } = NoOutputValidator.Instance;
 }
 
+/// <summary>返回最终输出、规范会话以及本次运行消耗的重试计数。</summary>
 public sealed record LanguageModelRunResult(
     Guid RunId,
     string Output,
@@ -30,8 +33,10 @@ public sealed record LanguageModelRunResult(
     int ToolRounds,
     int OutputRepairAttempts);
 
+/// <summary>提供语言模型运行状态变化前后的值。</summary>
 public sealed class LanguageModelRunStatusChangedEventArgs : EventArgs
 {
+    /// <summary>创建状态变化事件参数。</summary>
     public LanguageModelRunStatusChangedEventArgs(
         LanguageModelRunStatus previous,
         LanguageModelRunStatus current)
@@ -58,11 +63,16 @@ public sealed class LanguageModelOperation
         Id = id;
     }
 
+    /// <summary>获取本次运行的唯一标识。</summary>
     public Guid Id { get; }
+    /// <summary>获取当前状态。</summary>
     public LanguageModelRunStatus Status => (LanguageModelRunStatus)Volatile.Read(ref _status);
+    /// <summary>获取最终完成、失败或取消的任务。</summary>
     public Task<LanguageModelRunResult> Completion => _completion.Task;
 
+    /// <summary>状态发生变化时触发。</summary>
     public event EventHandler<LanguageModelRunStatusChangedEventArgs>? StatusChanged;
+    /// <summary>流式适配器返回文本增量时触发。</summary>
     public event EventHandler<string>? TextReceived;
 
     internal void SetStatus(LanguageModelRunStatus status)
@@ -84,16 +94,19 @@ public sealed class LanguageModelOperation
     internal void Cancel(CancellationToken cancellationToken) => _completion.TrySetCanceled(cancellationToken);
 }
 
+/// <summary>定义前端启动运行、查询状态和释放跟踪记录的 Application 服务。</summary>
 public interface ILanguageModelService
 {
+    /// <summary>获取当前适配器能力。</summary>
     LanguageModelCapabilities Capabilities { get; }
 
-    LanguageModelOperation Start(
-        LanguageModelRunRequest request,
-        CancellationToken cancellationToken = default);
+    /// <summary>启动一次独立运行并立即返回可观察句柄。</summary>
+    LanguageModelOperation Start(LanguageModelRunRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>尝试获取仍在跟踪的运行。</summary>
     bool TryGetOperation(Guid runId, out LanguageModelOperation? operation);
 
+    /// <summary>停止跟踪指定运行；不会取消正在执行的任务。</summary>
     bool ForgetOperation(Guid runId);
 }
 
@@ -108,6 +121,7 @@ public sealed class LanguageModelRunner : ILanguageModelService
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<Guid, LanguageModelOperation> _operations = new();
 
+    /// <summary>创建负责统一业务编排的语言模型 Runner。</summary>
     public LanguageModelRunner(
         ILanguageModelClient client,
         LanguageModelSettings settings,
@@ -120,11 +134,11 @@ public sealed class LanguageModelRunner : ILanguageModelService
         ValidateStaticCapabilities();
     }
 
+    /// <inheritdoc />
     public LanguageModelCapabilities Capabilities => _client.Capabilities;
 
-    public LanguageModelOperation Start(
-        LanguageModelRunRequest request,
-        CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public LanguageModelOperation Start(LanguageModelRunRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateRequest(request);
@@ -136,9 +150,11 @@ public sealed class LanguageModelRunner : ILanguageModelService
         return operation;
     }
 
+    /// <inheritdoc />
     public bool TryGetOperation(Guid runId, out LanguageModelOperation? operation) =>
         _operations.TryGetValue(runId, out operation);
 
+    /// <inheritdoc />
     public bool ForgetOperation(Guid runId) =>
         _operations.TryRemove(runId, out _);
 
@@ -412,6 +428,8 @@ public sealed class LanguageModelRunner : ILanguageModelService
             throw new ArgumentException("工具名称不能为空。", nameof(request));
         if (request.ToolCallMode == ToolCallMode.Required && request.Tools.Count == 0)
             throw new ArgumentException("强制工具调用模式至少需要注册一个工具。", nameof(request));
+        if (request.ToolCallMode == ToolCallMode.Required && !_client.Capabilities.SupportsRequiredToolChoice)
+            throw LanguageModelConfigurationException.Unsupported(_client.Capabilities.Provider, "RequiredToolChoice");
         if (_settings.ToolCalls == FeaturePolicy.Disabled &&
             (request.ToolCallMode != ToolCallMode.None || request.Tools.Count > 0))
             throw LanguageModelConfigurationException.Invalid("业务设置已禁用工具调用。");
@@ -477,15 +495,18 @@ public sealed class LanguageModelRunner : ILanguageModelService
 /// <summary>
 /// 负责加载、验证和保存 Application 语言模型设置。
 /// </summary>
+/// <summary>协调业务设置的默认值、校验和持久化。</summary>
 public sealed class LanguageModelSettingsService
 {
     private readonly ILanguageModelSettingsStore _store;
 
+    /// <summary>创建设置服务。</summary>
     public LanguageModelSettingsService(ILanguageModelSettingsStore store)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
     }
 
+    /// <summary>加载设置；不存在时返回经过校验的默认设置。</summary>
     public async Task<LanguageModelSettings> LoadOrDefaultAsync(
         CancellationToken cancellationToken = default)
     {
@@ -495,9 +516,8 @@ public sealed class LanguageModelSettingsService
         return settings;
     }
 
-    public async Task SaveAsync(
-        LanguageModelSettings settings,
-        CancellationToken cancellationToken = default)
+    /// <summary>校验并保存设置。</summary>
+    public async Task SaveAsync(LanguageModelSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings.Validate();

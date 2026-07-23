@@ -1,5 +1,6 @@
 namespace Tavi.Application.LanguageModel;
 
+/// <summary>定义功能禁用、允许降级或必须支持的业务策略。</summary>
 public enum FeaturePolicy
 {
     Disabled,
@@ -7,6 +8,7 @@ public enum FeaturePolicy
     Required
 }
 
+/// <summary>定义一次运行是否允许或强制模型在第一轮调用工具。</summary>
 public enum ToolCallMode
 {
     None,
@@ -19,16 +21,25 @@ public enum ToolCallMode
 /// </summary>
 public sealed record LanguageModelSettings
 {
+    /// <summary>获取当前持久化格式版本。</summary>
     public const int CurrentVersion = 1;
 
+    /// <summary>获取设置文件版本。</summary>
     public int Version { get; init; } = CurrentVersion;
+    /// <summary>获取一次运行允许的最大工具轮次。</summary>
     public int MaxToolRounds { get; init; } = 8;
+    /// <summary>获取输出未通过校验时允许的修复次数。</summary>
     public int MaxOutputRepairAttempts { get; init; } = 2;
+    /// <summary>获取覆盖模型调用和工具执行的总超时。</summary>
     public TimeSpan OverallTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    /// <summary>获取工具调用能力策略。</summary>
     public FeaturePolicy ToolCalls { get; init; } = FeaturePolicy.Preferred;
+    /// <summary>获取原生 JSON 输出能力策略。</summary>
     public FeaturePolicy NativeJsonOutput { get; init; } = FeaturePolicy.Preferred;
+    /// <summary>获取流式输出能力策略。</summary>
     public FeaturePolicy Streaming { get; init; } = FeaturePolicy.Disabled;
 
+    /// <summary>验证设置版本、数值范围和枚举值。</summary>
     public void Validate()
     {
         if (Version != CurrentVersion)
@@ -50,9 +61,9 @@ public sealed record LanguageModelSettings
 /// </summary>
 public interface ILanguageModelSettingsStore
 {
+    /// <summary>加载 Application 模型设置；设置不存在时返回 null。</summary>
     Task<LanguageModelSettings?> LoadAsync(CancellationToken cancellationToken = default);
 
-    Task SaveAsync(
-        LanguageModelSettings settings,
-        CancellationToken cancellationToken = default);
+    /// <summary>持久化 Application 模型设置；实现不得混入供应商密钥。</summary>
+    Task SaveAsync(LanguageModelSettings settings, CancellationToken cancellationToken = default);
 }

@@ -343,37 +343,89 @@ public sealed class WorldTests
     }
 
     [Fact]
-    public void SuccessfulChangesIncrementRevisionAndRaiseOneEvent()
+    public void SuccessfulOperationGroupIncrementsRevisionOnce()
     {
         RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
-        var changes = new List<WorldChangedEventArgs>();
-        world.Changed += (_, eventArgs) => changes.Add(eventArgs);
-        Guid sourceId = world.AddAnchor("Source", "", AnchorType.Item);
-        Guid targetId = world.AddAnchor("Target", "", AnchorType.Item);
-        world.AddRelation("relation", "", sourceId, targetId);
+        AddAnchorOperation source = WorldOperations.AddAnchor("Source", "", AnchorType.Item);
+        AddAnchorOperation target = WorldOperations.AddAnchor("Target", "", AnchorType.Item);
+        AddRelationOperation relation = WorldOperations.AddRelation("relation", "", source.AnchorId, target.AnchorId);
 
-        changes.Clear();
-        world.RemoveAnchor(sourceId);
+        WorldApplyResult result = world.Apply(WorldOperations.Combine(source, target, relation));
 
-        WorldChangedEventArgs change = Assert.Single(changes);
-        Assert.Equal(4, world.Revision);
-        Assert.Equal(world.Revision, change.Revision);
-        Assert.Equal(nameof(RuntimeWorld.RemoveAnchor), change.Operation);
+        Assert.True(result.Changed);
+        Assert.Equal(1, world.Revision);
+        Assert.Equal(3, result.ChangeSet!.Forward.Operations.Count);
+        Assert.Equal(relation.RelationId, world.GetRelation(relation.RelationId).Id);
     }
 
     [Fact]
-    public void NoOpAndFailedChangesDoNotRaiseEvents()
+    public void FailedOperationGroupRollsBackAndKeepsRevision()
     {
         RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
-        Guid anchorId = world.AddAnchor("Anchor", "Description", AnchorType.Item);
+        AddAnchorOperation first = WorldOperations.AddAnchor("Alice", "", AnchorType.Character);
+        AddAnchorOperation duplicate = WorldOperations.AddAnchor("Alice", "", AnchorType.Character);
+
+        Assert.Throws<WorldException>(() => world.Apply(WorldOperations.Combine(first, duplicate)));
+
+        Assert.Equal(0, world.Revision);
+        Assert.Empty(world.GetAnchors());
+    }
+
+    [Fact]
+    public void FailedOperationGroupRestoresEarlierUpdatesAndIndexes()
+    {
+        RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
+        Guid aliceId = world.AddAnchor("Alice", "Before", AnchorType.Character);
         long revision = world.Revision;
-        int changeCount = 0;
-        world.Changed += (_, _) => changeCount++;
+        WorldChangeSet changes = WorldOperations.Combine(
+            new UpdateAnchorNameOperation(aliceId, "Alicia"),
+            new UpdateAnchorDescriptionOperation(aliceId, "After"),
+            WorldOperations.AddAnchor("Alicia", "", AnchorType.Character));
 
-        world.UpdateAnchorDescription(anchorId, "Description");
-        Assert.Throws<WorldException>(() => world.UpdateAnchorName(anchorId, ""));
+        Assert.Throws<WorldException>(() => world.Apply(changes));
 
+        Anchor alice = world.GetAnchor(aliceId);
+        Assert.Equal("Alice", alice.Name);
+        Assert.Equal("Before", alice.Description);
         Assert.Equal(revision, world.Revision);
-        Assert.Equal(0, changeCount);
+        Assert.Single(world.GetCharacters());
+    }
+
+    [Fact]
+    public void RemoveAnchorInverseRestoresSubWorldAndRelations()
+    {
+        RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
+        AddAnchorOperation alice = WorldOperations.AddAnchor("Alice", "", AnchorType.Character);
+        AddAnchorOperation bob = WorldOperations.AddAnchor("Bob", "", AnchorType.Character);
+        AddRelationOperation fact = WorldOperations.AddRelation("knows", "", alice.AnchorId, bob.AnchorId);
+        AddRelationOperation belief = WorldOperations.AddRelation("trusts", "", alice.AnchorId, bob.AnchorId, alice.AnchorId);
+        world.Apply(WorldOperations.Combine(alice, bob, fact, belief));
+
+        WorldApplyResult removal = world.Apply(WorldOperations.Single(new RemoveAnchorOperation(alice.AnchorId)));
+        world.Apply(removal.ChangeSet!.Inverse);
+
+        Assert.Equal(alice.AnchorId, world.GetAnchor(alice.AnchorId).Id);
+        Assert.Equal(fact.RelationId, world.GetRelation(fact.RelationId).Id);
+        Assert.Equal(belief.RelationId, world.GetRelation(belief.RelationId).Id);
+        Assert.Equal(alice.AnchorId, Assert.Single(world.GetSubWorlds()).DomainId);
+    }
+
+    [Fact]
+    public void PublicQueriesReturnDetachedEntityCopies()
+    {
+        RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
+        Guid anchorId = world.AddAnchor("Anchor", "Original", AnchorType.Item);
+        Guid targetId = world.AddAnchor("Target", "", AnchorType.Item);
+        Guid relationId = world.AddRelation("relation", "Original", anchorId, targetId);
+
+        Anchor anchor = world.GetAnchor(anchorId);
+        Relation relation = world.GetRelation(relationId);
+        anchor.UpdateDescription("Outside");
+        relation.UpdateDescription("Outside");
+
+        Assert.Equal("Original", world.GetAnchor(anchorId).Description);
+        Assert.Equal("Original", world.GetRelation(relationId).Description);
+        Assert.NotSame(world.GetAnchor(anchorId), world.GetAnchor(anchorId));
+        Assert.NotSame(world.GetRelation(relationId), world.GetRelation(relationId));
     }
 }

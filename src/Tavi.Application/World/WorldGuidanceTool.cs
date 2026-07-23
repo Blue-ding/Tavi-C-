@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Text.Json;
 using Tavi.Application.LanguageModel;
 using Tavi.Domain.World;
-using RuntimeWorld = Tavi.Domain.World.World;
 
 namespace Tavi.Application.World;
 
@@ -49,20 +48,19 @@ internal static class WorldGuidanceTool
         return SerializeResult(anchors.Select(ToAnchorOutput));
     }
 
-    private static string SerializeRelations(WorldSession session, Func<RuntimeWorld, IEnumerable<ScopedRelation>> query)
+    private static string SerializeRelations(Func<IEnumerable<ScopedRelation>> query)
     {
-        return InvokeForTool(() => session.Read(world =>
-            SerializeResult(query(world).Select(item => ToRelationOutput(world, item)))));
+        return InvokeForTool(() => SerializeResult(query().Select(ToRelationOutput)));
     }
 
     private static string SerializeComparison(WorldSession session, string characterName, IEnumerable<string> clues)
     {
-        return InvokeForTool(() => session.Read(world =>
+        return InvokeForTool(() =>
         {
-            WorldRelationComparison comparison = WorldQueries.CompareWorldWithSubWorld(world, characterName, clues);
-            var output = new ComparisonOutput(CreateRelationResult(world, comparison.World), CreateRelationResult(world, comparison.SubWorld));
+            WorldRelationComparison comparison = session.Queries.CompareWorldWithSubWorld(characterName, clues);
+            var output = new ComparisonOutput(CreateRelationResult(comparison.World), CreateRelationResult(comparison.SubWorld));
             return JsonSerializer.Serialize(output, JsonOptions);
-        }));
+        });
     }
 
     private static string SerializeMutation(string operation, long revision, object result)
@@ -75,20 +73,18 @@ internal static class WorldGuidanceTool
         return new AnchorOutput(anchor.Name, anchor.Description, anchor.Type.ToString());
     }
 
-    private static RelationOutput ToRelationOutput(RuntimeWorld world, ScopedRelation scopedRelation)
+    private static RelationOutput ToRelationOutput(ScopedRelation scopedRelation)
     {
         Relation relation = scopedRelation.Relation;
-        Anchor source = world.GetAnchor(relation.SourceId);
-        Anchor target = world.GetAnchor(relation.TargetId);
         object scope = scopedRelation.Domain is null
             ? new WorldScopeOutput("World")
             : new SubWorldScopeOutput("SubWorld", ToAnchorOutput(scopedRelation.Domain));
-        return new RelationOutput(relation.Name, relation.Description, ToAnchorOutput(source), ToAnchorOutput(target), scope);
+        return new RelationOutput(relation.Name, relation.Description, ToAnchorOutput(scopedRelation.Source), ToAnchorOutput(scopedRelation.Target), scope);
     }
 
-    private static QueryResult<RelationOutput> CreateRelationResult(RuntimeWorld world, IEnumerable<ScopedRelation> relations)
+    private static QueryResult<RelationOutput> CreateRelationResult(IEnumerable<ScopedRelation> relations)
     {
-        RelationOutput[] items = relations.Select(item => ToRelationOutput(world, item)).ToArray();
+        RelationOutput[] items = relations.Select(ToRelationOutput).ToArray();
         return new QueryResult<RelationOutput>(items.Length, Math.Min(items.Length, MaxResults), items.Length > MaxResults, items.Take(MaxResults).ToArray());
     }
 
@@ -111,22 +107,34 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private static Guid? ResolveDomainId(RuntimeWorld world, RelationQueryScope scope, string characterName)
+    private static Guid? ResolveDomainId(WorldSession session, RelationQueryScope scope, string characterName)
     {
         return scope switch
         {
             RelationQueryScope.World => null,
-            RelationQueryScope.SubWorld => RequireCharacter(world, characterName).Id,
+            RelationQueryScope.SubWorld => RequireCharacter(session, characterName).Id,
             _ => throw new ArgumentException("Relation 写操作的 Scope 只能是 World 或 SubWorld。", nameof(scope))
         };
     }
 
-    private static Anchor RequireCharacter(RuntimeWorld world, string characterName)
+    private static Anchor RequireCharacter(WorldSession session, string characterName)
     {
-        Anchor character = WorldQueries.RequireSingleAnchor(world, characterName);
+        Anchor character = session.Queries.RequireSingleAnchor(characterName);
         if (character.Type != AnchorType.Character)
             throw new InvalidOperationException($"Anchor“{characterName}”不是 Character。");
         return character;
+    }
+
+    private static WorldCommitResult ApplySingle(WorldSession session, WorldOperation operation)
+    {
+        return session.Apply(WorldOperations.Single(operation), session.Revision);
+    }
+
+    private static ScopedRelation GetScopedRelation(WorldSession session, Guid relationId, Guid? domainId)
+    {
+        Relation relation = session.Queries.GetRelation(relationId);
+        Anchor? domain = domainId.HasValue ? session.Queries.GetAnchor(domainId.Value) : null;
+        return new ScopedRelation(relation, session.Queries.GetAnchor(relation.SourceId), session.Queries.GetAnchor(relation.TargetId), domain);
     }
 
     public sealed class GetAnchorToolPara : IToolArgument
@@ -143,7 +151,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(GetAnchorToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Read(world => SerializeAnchors(WorldQueries.FindAnchors(world, arguments.Name)))));
+            return Task.FromResult(InvokeForTool(() => SerializeAnchors(session.Queries.FindAnchors(arguments.Name))));
         }
     }
 
@@ -161,7 +169,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(QueryAnchorToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Read(world => SerializeAnchors(WorldQueries.QueryAnchors(world, arguments.Clues)))));
+            return Task.FromResult(InvokeForTool(() => SerializeAnchors(session.Queries.QueryAnchors(arguments.Clues))));
         }
     }
 
@@ -197,7 +205,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(RelationNameToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(SerializeRelations(session, world => WorldQueries.FindRelations(world, arguments.Name, RelationQueryScope.World, string.Empty)));
+            return Task.FromResult(SerializeRelations(() => session.Queries.FindRelations(arguments.Name, RelationQueryScope.World, string.Empty)));
         }
     }
 
@@ -209,7 +217,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(SubWorldRelationNameToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(SerializeRelations(session, world => WorldQueries.FindRelations(world, arguments.Name, RelationQueryScope.SubWorld, arguments.CharacterName)));
+            return Task.FromResult(SerializeRelations(() => session.Queries.FindRelations(arguments.Name, RelationQueryScope.SubWorld, arguments.CharacterName)));
         }
     }
 
@@ -221,7 +229,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(RelationCluesToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(SerializeRelations(session, world => WorldQueries.QueryRelations(world, arguments.Clues, RelationQueryScope.World, string.Empty)));
+            return Task.FromResult(SerializeRelations(() => session.Queries.QueryRelations(arguments.Clues, RelationQueryScope.World, string.Empty)));
         }
     }
 
@@ -233,7 +241,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(SubWorldRelationCluesToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(SerializeRelations(session, world => WorldQueries.QueryRelations(world, arguments.Clues, RelationQueryScope.SubWorld, arguments.CharacterName)));
+            return Task.FromResult(SerializeRelations(() => session.Queries.QueryRelations(arguments.Clues, RelationQueryScope.SubWorld, arguments.CharacterName)));
         }
     }
 
@@ -245,7 +253,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(RelationCluesToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(SerializeRelations(session, world => WorldQueries.QueryRelations(world, arguments.Clues, RelationQueryScope.All, string.Empty)));
+            return Task.FromResult(SerializeRelations(() => session.Queries.QueryRelations(arguments.Clues, RelationQueryScope.All, string.Empty)));
         }
     }
 
@@ -261,7 +269,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(EmptyToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(session.Read(world => SerializeAnchors(WorldQueries.GetCharacters(world))));
+            return Task.FromResult(SerializeAnchors(session.Queries.GetCharacters()));
         }
     }
 
@@ -288,7 +296,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(AnchorRelationsToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(SerializeRelations(session, world => WorldQueries.GetAnchorRelations(world, arguments.AnchorName, arguments.Direction, arguments.Scope, arguments.CharacterName)));
+            return Task.FromResult(SerializeRelations(() => session.Queries.GetAnchorRelations(arguments.AnchorName, arguments.Direction, arguments.Scope, arguments.CharacterName)));
         }
     }
 
@@ -315,7 +323,7 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(RelationsBetweenAnchorsToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(SerializeRelations(session, world => WorldQueries.GetRelationsBetweenAnchors(world, arguments.FirstAnchorName, arguments.SecondAnchorName, arguments.Scope, arguments.CharacterName)));
+            return Task.FromResult(SerializeRelations(() => session.Queries.GetRelationsBetweenAnchors(arguments.FirstAnchorName, arguments.SecondAnchorName, arguments.Scope, arguments.CharacterName)));
         }
     }
 
@@ -360,11 +368,12 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(AddAnchorToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                Guid id = world.AddAnchor(arguments.Name, arguments.Description, arguments.Type);
-                return SerializeMutation(name, world.Revision, ToAnchorOutput(world.GetAnchor(id)));
-            })));
+                AddAnchorOperation operation = WorldOperations.AddAnchor(arguments.Name, arguments.Description, arguments.Type);
+                WorldCommitResult commit = ApplySingle(session, operation);
+                return SerializeMutation(name, commit.Revision, ToAnchorOutput(session.Queries.GetAnchor(operation.AnchorId)));
+            }));
         }
     }
 
@@ -382,12 +391,12 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(AnchorSelectorToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                Anchor anchor = WorldQueries.RequireSingleAnchor(world, arguments.Name);
-                world.RemoveAnchor(anchor.Id);
-                return SerializeMutation(name, world.Revision, new RemovedOutput("Anchor", anchor.Name));
-            })));
+                Anchor anchor = session.Queries.RequireSingleAnchor(arguments.Name);
+                WorldCommitResult commit = ApplySingle(session, new RemoveAnchorOperation(anchor.Id));
+                return SerializeMutation(name, commit.Revision, new RemovedOutput("Anchor", anchor.Name));
+            }));
         }
     }
 
@@ -408,12 +417,12 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(UpdateAnchorNameToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                Anchor anchor = WorldQueries.RequireSingleAnchor(world, arguments.CurrentName);
-                world.UpdateAnchorName(anchor.Id, arguments.NewName);
-                return SerializeMutation(name, world.Revision, ToAnchorOutput(world.GetAnchor(anchor.Id)));
-            })));
+                Anchor anchor = session.Queries.RequireSingleAnchor(arguments.CurrentName);
+                WorldCommitResult commit = ApplySingle(session, new UpdateAnchorNameOperation(anchor.Id, arguments.NewName));
+                return SerializeMutation(name, commit.Revision, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
+            }));
         }
     }
 
@@ -434,12 +443,12 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(UpdateAnchorDescriptionToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                Anchor anchor = WorldQueries.RequireSingleAnchor(world, arguments.Name);
-                world.UpdateAnchorDescription(anchor.Id, arguments.Description);
-                return SerializeMutation(name, world.Revision, ToAnchorOutput(world.GetAnchor(anchor.Id)));
-            })));
+                Anchor anchor = session.Queries.RequireSingleAnchor(arguments.Name);
+                WorldCommitResult commit = ApplySingle(session, new UpdateAnchorDescriptionOperation(anchor.Id, arguments.Description));
+                return SerializeMutation(name, commit.Revision, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
+            }));
         }
     }
 
@@ -460,12 +469,12 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(UpdateAnchorTypeToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                Anchor anchor = WorldQueries.RequireSingleAnchor(world, arguments.Name);
-                world.UpdateAnchorType(anchor.Id, arguments.Type);
-                return SerializeMutation(name, world.Revision, ToAnchorOutput(world.GetAnchor(anchor.Id)));
-            })));
+                Anchor anchor = session.Queries.RequireSingleAnchor(arguments.Name);
+                WorldCommitResult commit = ApplySingle(session, new UpdateAnchorTypeOperation(anchor.Id, arguments.Type));
+                return SerializeMutation(name, commit.Revision, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
+            }));
         }
     }
 
@@ -498,15 +507,15 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(AddRelationToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                Anchor source = WorldQueries.RequireSingleAnchor(world, arguments.SourceAnchorName);
-                Anchor target = WorldQueries.RequireSingleAnchor(world, arguments.TargetAnchorName);
-                Guid? domainId = ResolveDomainId(world, arguments.Scope, arguments.CharacterName);
-                Guid id = world.AddRelation(arguments.Name, arguments.Description, source.Id, target.Id, domainId);
-                Anchor? domain = domainId.HasValue ? world.GetAnchor(domainId.Value) : null;
-                return SerializeMutation(name, world.Revision, ToRelationOutput(world, new ScopedRelation(world.GetRelation(id), domain)));
-            })));
+                Anchor source = session.Queries.RequireSingleAnchor(arguments.SourceAnchorName);
+                Anchor target = session.Queries.RequireSingleAnchor(arguments.TargetAnchorName);
+                Guid? domainId = ResolveDomainId(session, arguments.Scope, arguments.CharacterName);
+                AddRelationOperation operation = WorldOperations.AddRelation(arguments.Name, arguments.Description, source.Id, target.Id, domainId);
+                WorldCommitResult commit = ApplySingle(session, operation);
+                return SerializeMutation(name, commit.Revision, ToRelationOutput(GetScopedRelation(session, operation.RelationId, domainId)));
+            }));
         }
     }
 
@@ -536,12 +545,12 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(RelationSelectorToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                ScopedRelation selected = WorldQueries.RequireSingleRelation(world, arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
-                world.RemoveRelation(selected.Relation.Id);
-                return SerializeMutation(name, world.Revision, new RemovedOutput("Relation", selected.Relation.Name));
-            })));
+                ScopedRelation selected = session.Queries.RequireSingleRelation(arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
+                WorldCommitResult commit = ApplySingle(session, new RemoveRelationOperation(selected.Relation.Id));
+                return SerializeMutation(name, commit.Revision, new RemovedOutput("Relation", selected.Relation.Name));
+            }));
         }
     }
 
@@ -559,12 +568,13 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(UpdateRelationNameToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                ScopedRelation selected = WorldQueries.RequireSingleRelation(world, arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
-                world.UpdateRelationName(selected.Relation.Id, arguments.NewName);
-                return SerializeMutation(name, world.Revision, ToRelationOutput(world, new ScopedRelation(world.GetRelation(selected.Relation.Id), selected.Domain)));
-            })));
+                ScopedRelation selected = session.Queries.RequireSingleRelation(arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
+                WorldCommitResult commit = ApplySingle(session, new UpdateRelationNameOperation(selected.Relation.Id, arguments.NewName));
+                Guid? domainId = selected.Domain?.Id;
+                return SerializeMutation(name, commit.Revision, ToRelationOutput(GetScopedRelation(session, selected.Relation.Id, domainId)));
+            }));
         }
     }
 
@@ -582,12 +592,13 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(UpdateRelationDescriptionToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                ScopedRelation selected = WorldQueries.RequireSingleRelation(world, arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
-                world.UpdateRelationDescription(selected.Relation.Id, arguments.Description);
-                return SerializeMutation(name, world.Revision, ToRelationOutput(world, new ScopedRelation(world.GetRelation(selected.Relation.Id), selected.Domain)));
-            })));
+                ScopedRelation selected = session.Queries.RequireSingleRelation(arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
+                WorldCommitResult commit = ApplySingle(session, new UpdateRelationDescriptionOperation(selected.Relation.Id, arguments.Description));
+                Guid? domainId = selected.Domain?.Id;
+                return SerializeMutation(name, commit.Revision, ToRelationOutput(GetScopedRelation(session, selected.Relation.Id, domainId)));
+            }));
         }
     }
 
@@ -605,12 +616,12 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(CharacterSelectorToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                Anchor character = RequireCharacter(world, arguments.CharacterName);
-                world.CreateSubWorld(character.Id);
-                return SerializeMutation(name, world.Revision, new SubWorldOutput(character.Name));
-            })));
+                Anchor character = RequireCharacter(session, arguments.CharacterName);
+                WorldCommitResult commit = ApplySingle(session, WorldOperations.CreateSubWorld(character.Id));
+                return SerializeMutation(name, commit.Revision, new SubWorldOutput(character.Name));
+            }));
         }
     }
 
@@ -622,12 +633,12 @@ internal static class WorldGuidanceTool
         protected override Task<string> Execute(CharacterSelectorToolPara arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            return Task.FromResult(InvokeForTool(() =>
             {
-                Anchor character = RequireCharacter(world, arguments.CharacterName);
-                world.RemoveSubWorld(character.Id);
-                return SerializeMutation(name, world.Revision, new RemovedOutput("SubWorld", character.Name));
-            })));
+                Anchor character = RequireCharacter(session, arguments.CharacterName);
+                WorldCommitResult commit = ApplySingle(session, new RemoveSubWorldOperation(character.Id));
+                return SerializeMutation(name, commit.Revision, new RemovedOutput("SubWorld", character.Name));
+            }));
         }
     }
 

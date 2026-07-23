@@ -131,6 +131,7 @@ public sealed class LanguageModelRunnerTests
             {
                 Provider = "Fake",
                 SupportsToolCalls = true,
+                SupportsRequiredToolChoice = true,
                 SupportsNativeJsonOutput = false,
                 SupportsJsonSchema = false,
                 SupportsStreaming = false
@@ -233,6 +234,7 @@ public sealed class LanguageModelRunnerTests
             {
                 Provider = "Fake",
                 SupportsToolCalls = true,
+                SupportsRequiredToolChoice = true,
                 SupportsParallelToolCalls = false,
                 SupportsNativeJsonOutput = false,
                 SupportsJsonSchema = false,

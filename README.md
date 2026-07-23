@@ -43,6 +43,8 @@ TAVI_OPENAI_API_KEY       必需，OpenAI 或兼容服务密钥
 TAVI_OPENAI_MODEL         必需，模型名称
 TAVI_OPENAI_ENDPOINT      可选，默认为 https://api.openai.com/v1
 TAVI_OPENAI_CLIENT_TYPE   可选，chat（默认）或 responses
+TAVI_OPENAI_DISABLE_REQUIRED_TOOL_CHOICE  可选，设为 1 以兼容不支持强制工具选择的模型
+TAVI_OPENAI_ENABLE_THINKING  可选，兼容端点扩展；0 禁用、1 启用，默认不发送
 ```
 
 未设置前两个变量时，CLI 仍可运行，但不会创建语言模型服务。

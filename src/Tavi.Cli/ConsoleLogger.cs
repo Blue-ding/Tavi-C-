@@ -2,16 +2,19 @@ using Tavi.Application.Logging;
 
 namespace Tavi.Cli;
 
+/// <summary>将结构化 Application 日志以线程安全的整行格式写入控制台。</summary>
 internal sealed class ConsoleLogger : ILogger
 {
     private readonly object _gate = new();
     private readonly LogLevel _minimumLevel;
 
+    /// <summary>创建指定最低等级的控制台日志实现。</summary>
     internal ConsoleLogger(LogLevel minimumLevel = LogLevel.Information)
     {
         _minimumLevel = minimumLevel;
     }
 
+    /// <inheritdoc />
     public void Log(
         LogLevel level,
         string category,

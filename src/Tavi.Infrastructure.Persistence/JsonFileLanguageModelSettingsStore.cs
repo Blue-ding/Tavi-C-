@@ -17,6 +17,7 @@ public sealed class JsonFileLanguageModelSettingsStore :
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
+    /// <summary>创建使用指定 JSON 文件的设置存储。</summary>
     public JsonFileLanguageModelSettingsStore(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -30,10 +31,11 @@ public sealed class JsonFileLanguageModelSettingsStore :
         };
     }
 
+    /// <summary>获取设置文件的绝对路径。</summary>
     public string Path => _path;
 
-    public async Task<LanguageModelSettings?> LoadAsync(
-        CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<LanguageModelSettings?> LoadAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         await _gate.WaitAsync(cancellationToken);
@@ -71,9 +73,8 @@ public sealed class JsonFileLanguageModelSettingsStore :
         }
     }
 
-    public async Task SaveAsync(
-        LanguageModelSettings settings,
-        CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task SaveAsync(LanguageModelSettings settings, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(settings);
@@ -123,6 +124,7 @@ public sealed class JsonFileLanguageModelSettingsStore :
         }
     }
 
+    /// <summary>释放文件访问同步资源。</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -149,8 +151,10 @@ public sealed class JsonFileLanguageModelSettingsStore :
     }
 }
 
+/// <summary>表示语言模型设置文件无法读取或写入。</summary>
 public sealed class LanguageModelSettingsStoreException : Exception
 {
+    /// <summary>创建设置存储异常。</summary>
     public LanguageModelSettingsStoreException(string message, Exception innerException)
         : base(message, innerException)
     {

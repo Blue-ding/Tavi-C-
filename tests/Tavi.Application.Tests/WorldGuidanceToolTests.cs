@@ -37,7 +37,7 @@ public sealed class WorldGuidanceToolTests
         AssertResultCount(exact, 1);
         AssertResultCount(fuzzy, 1);
         Assert.Contains("\"name\": \"Alice\"", exact);
-        Guid aliceId = session.Read(world => world.GetCharacters().Single(anchor => anchor.Name == "Alice").Id);
+        Guid aliceId = session.Queries.GetCharacters().Single(anchor => anchor.Name == "Alice").Id;
         Assert.DoesNotContain(aliceId.ToString(), exact);
     }
 
@@ -53,14 +53,10 @@ public sealed class WorldGuidanceToolTests
         Assert.Contains("\"type\": \"SubWorld\"", output);
         Assert.Contains("\"name\": \"Alice\"", output);
         Assert.Contains("\"name\": \"Bob\"", output);
-        session.Read(world =>
-        {
-            foreach (Anchor anchor in world.GetAnchors())
-                Assert.DoesNotContain(anchor.Id.ToString(), output);
-            foreach (Relation relation in world.GetRelations(world.GetCharacters().Single(anchor => anchor.Name == "Alice").Id))
-                Assert.DoesNotContain(relation.Id.ToString(), output);
-            return true;
-        });
+        foreach (Anchor anchor in session.Queries.GetAnchors())
+            Assert.DoesNotContain(anchor.Id.ToString(), output);
+        foreach (ScopedRelation relation in session.Queries.GetAnchorRelations("Alice", RelationDirection.Both, RelationQueryScope.All, string.Empty))
+            Assert.DoesNotContain(relation.Relation.Id.ToString(), output);
     }
 
     [Fact]
@@ -129,7 +125,7 @@ public sealed class WorldGuidanceToolTests
 
         string output = await Execute(tool, """{"Name":"Lantern","Description":"A light","Type":"Item"}""");
 
-        Assert.Single(session.Read(world => world.GetAnchors()));
+        Assert.Single(session.Queries.GetAnchors());
         Assert.True(session.IsDirty);
         Assert.Contains("\"operation\": \"add_anchor\"", output);
         Assert.Contains("\"name\": \"Lantern\"", output);
@@ -140,7 +136,7 @@ public sealed class WorldGuidanceToolTests
     {
         await using WorldSession session = await CreateSession();
         IReadOnlyCollection<ITool> tools = WorldGuidanceTool.CreateTools(session);
-        long beforeRevision = session.Read(world => world.Revision);
+        long beforeRevision = session.Revision;
 
         string added = await Execute(GetTool(tools, "add_relation"),
             """{"Name":"trusts","Description":"new fact","SourceAnchorName":"Bob","TargetAnchorName":"Alice","Scope":"World","CharacterName":""}""");
@@ -149,7 +145,7 @@ public sealed class WorldGuidanceToolTests
 
         Assert.Contains("\"name\": \"trusts\"", added);
         Assert.Contains("\"description\": \"updated fact\"", updated);
-        Assert.Equal(beforeRevision + 2, session.Read(world => world.Revision));
+        Assert.Equal(beforeRevision + 2, session.Revision);
     }
 
     [Fact]

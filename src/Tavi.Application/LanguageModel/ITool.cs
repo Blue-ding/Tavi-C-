@@ -21,6 +21,7 @@ namespace Tavi.Application.LanguageModel
         // public string name;
     }
 
+    /// <summary>定义可由模型按名称调用并以 JSON 参数执行的 Application 工具。</summary>
     public interface ITool
     {
         string name { get; }
@@ -32,6 +33,7 @@ namespace Tavi.Application.LanguageModel
         Task<string> Execute(BinaryData arguments, CancellationToken cancellationToken);
     }
 
+    /// <summary>将 BinaryData 参数严格转换为指定类型后执行工具。</summary>
     public abstract class Tool<T> : ITool where T : class, IToolArgument
     {
         private static readonly BinaryData CachedParameterData = ToolUtility.GetParameterData<T>();
@@ -56,15 +58,18 @@ namespace Tavi.Application.LanguageModel
     /// </summary>
     public sealed class ToolArgumentException : Exception
     {
+        /// <summary>创建工具参数异常。</summary>
         public ToolArgumentException(string message) : base(message)
         {
         }
 
+        /// <summary>创建保留原始异常的工具参数异常。</summary>
         public ToolArgumentException(string message, Exception innerException) : base(message, innerException)
         {
         }
     }
 
+    /// <summary>生成工具参数 JSON Schema，并严格反序列化模型返回的工具参数。</summary>
     public static class ToolUtility
     {
         private static readonly JsonSerializerOptions ArgumentJsonOptions = CreateArgumentJsonOptions();

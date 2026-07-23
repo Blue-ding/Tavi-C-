@@ -3,7 +3,7 @@
     <RootNamespace>Tavi.Infrastructure.OpenAI</RootNamespace>
     <AssemblyName>Tavi.Infrastructure.OpenAI</AssemblyName>
     <!-- 旧实现使用尚处于评估期的 Responses API；限制在此适配器内接受。 -->
-    <NoWarn>$(NoWarn);OPENAI001</NoWarn>
+    <NoWarn>$(NoWarn);OPENAI001;SCME0001</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Tavi.Application\Tavi.Application.csproj" />

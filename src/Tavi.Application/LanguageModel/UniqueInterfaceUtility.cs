@@ -4,6 +4,7 @@ using System.Reflection;
 
 namespace Tavi.Application.LanguageModel
 {
+    /// <summary>旧版唯一实现标记；仅为源码兼容保留。</summary>
     [AttributeUsage(AttributeTargets.Interface, AllowMultiple = false, Inherited = true)]
     [Obsolete("请在启动层显式组装依赖；UniqueInterfaceAttribute 仅为旧代码兼容而保留。")]
     public class UniqueInterfaceAttribute : Attribute
@@ -12,8 +13,10 @@ namespace Tavi.Application.LanguageModel
     }
 
     [Obsolete("请在启动层显式组装依赖；反射实例化机制已弃用。")]
+    /// <summary>旧版反射实例化工具；新代码必须由启动层显式组装。</summary>
     public static class UniqueInterfaceUtility
     {
+        /// <summary>通过反射实例化唯一实现；仅供旧代码兼容。</summary>
         public static T Instantiate<T>()
         {
             if (typeof(T).GetCustomAttributes().All(a => a.GetType() != typeof(UniqueInterfaceAttribute)))
