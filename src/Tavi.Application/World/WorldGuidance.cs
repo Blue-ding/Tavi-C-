@@ -1,4 +1,4 @@
-namespace Tavi.Application.WorldGraph
+namespace Tavi.Application.World
 {
     public class WorldGuidance
     {

@@ -1,6 +1,6 @@
 using Tavi.Application.LanguageModel;
 
-namespace Tavi.Application.WorldGraph
+namespace Tavi.Application.World
 {
     public static class WorldBuilder
     {
