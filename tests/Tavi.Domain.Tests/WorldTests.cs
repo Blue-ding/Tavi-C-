@@ -70,7 +70,7 @@ public sealed class WorldTests
         WorldException exception = Assert.Throws<WorldException>(
             () => graph.GetRelation(relationId)
         );
-        Assert.Equal(WorldErrorCode.NotFound, exception.ErrorCode);
+        Assert.Equal(WorldErrorCodes.NotFound, exception.ErrorCode);
         Assert.Equal(relationId, exception.EntityId);
     }
 
@@ -142,7 +142,7 @@ public sealed class WorldTests
             () => graph.UpdateAnchorName(secondId, "Alice")
         );
 
-        Assert.Equal(WorldErrorCode.Duplicate, exception.ErrorCode);
+        Assert.Equal(WorldErrorCodes.Duplicate, exception.ErrorCode);
         Assert.Equal("Alice", graph.GetAnchor(firstId).Name);
         Assert.Equal("Bob", graph.GetAnchor(secondId).Name);
     }
@@ -162,7 +162,7 @@ public sealed class WorldTests
             () => graph.UpdateAnchorType(characterId, AnchorType.Item)
         );
         Assert.Equal(
-            WorldErrorCode.InvalidOperation,
+            WorldErrorCodes.InvalidOperation,
             exception.ErrorCode
         );
 
@@ -233,7 +233,7 @@ public sealed class WorldTests
         );
 
         Assert.Equal(
-            WorldErrorCode.InvalidWorldSnapshot,
+            WorldErrorCodes.InvalidWorldSnapshot,
             exception.ErrorCode
         );
         Assert.True(exception.ValidationErrors.Count >= 4);

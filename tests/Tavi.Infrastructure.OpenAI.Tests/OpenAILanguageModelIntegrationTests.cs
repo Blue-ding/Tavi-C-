@@ -56,10 +56,10 @@ public sealed class OpenAILanguageModelIntegrationTests
             LanguageModelRunResult result = await runner.Start(request).Completion;
             Assert.Contains("pong", result.Output, StringComparison.OrdinalIgnoreCase);
         }
-        catch (LanguageModelProviderException exception) when (exception.Details.HttpStatusCode == 404)
+        catch (LanguageModelProviderException exception) when (exception.LanguageModelDetails.HttpStatusCode == 404)
         {
             Assert.Equal(LanguageModelErrorCodes.InvalidRequest, exception.ErrorCode);
-            Assert.Equal("OpenAI", exception.Details.Provider);
+            Assert.Equal("OpenAI", exception.LanguageModelDetails.Provider);
         }
     }
 
@@ -85,7 +85,7 @@ public sealed class OpenAILanguageModelIntegrationTests
         LanguageModelConfigurationException exception = Assert.Throws<LanguageModelConfigurationException>(() => runner.Start(request));
 
         Assert.Equal(LanguageModelErrorCodes.UnsupportedCapability, exception.ErrorCode);
-        Assert.Equal("RequiredToolChoice", exception.Details.Operation);
+        Assert.Equal("RequiredToolChoice", exception.LanguageModelDetails.Operation);
     }
 
     private static LanguageModelSettings IntegrationSettings() =>

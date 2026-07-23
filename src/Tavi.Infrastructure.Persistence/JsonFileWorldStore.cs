@@ -65,10 +65,10 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
                 }
                 catch (Exception backupException) when (backupException is not OperationCanceledException)
                 {
-                    throw new WorldStoreException($"存档槽“{normalizedSlot}”的主文件和备份均无法读取。", new AggregateException(primaryException ?? new FileNotFoundException("主存档不存在。"), backupException));
+                    throw new WorldStoreException(StorageErrorCodes.WorldReadFailed, "Load", $"存档槽“{normalizedSlot}”的主文件和备份均无法读取。", CreateSlotDetails(normalizedSlot), new AggregateException(primaryException ?? new FileNotFoundException("主存档不存在。"), backupException));
                 }
             }
-            throw new WorldStoreException($"存档槽“{normalizedSlot}”无法读取。", primaryException ?? new InvalidDataException("存档内容无效。"));
+            throw new WorldStoreException(StorageErrorCodes.WorldReadFailed, "Load", $"存档槽“{normalizedSlot}”无法读取。", CreateSlotDetails(normalizedSlot), primaryException ?? new InvalidDataException("存档内容无效。"));
         }
         finally
         {
@@ -104,7 +104,7 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException and not WorldStoreException)
         {
-            throw new WorldStoreException($"无法保存存档槽“{normalizedSlot}”。", exception);
+            throw new WorldStoreException(StorageErrorCodes.WorldWriteFailed, "Save", $"无法保存存档槽“{normalizedSlot}”。", CreateSlotDetails(normalizedSlot), exception);
         }
         finally
         {
@@ -179,6 +179,8 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
             throw new ArgumentException("存档槽名称无效。", nameof(slot));
         return slot;
     }
+
+    private static IReadOnlyDictionary<string, string> CreateSlotDetails(string slot) => new Dictionary<string, string> { ["Slot"] = slot };
 
     private static void TryDelete(string path)
     {

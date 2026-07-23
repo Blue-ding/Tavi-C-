@@ -71,7 +71,7 @@ public sealed class GuidanceServiceTests
         await using WorldSession world = await CreateWorldSession();
         var providerFailure = new LanguageModelProviderException(
             LanguageModelErrorCodes.RateLimited,
-            LanguageModelErrorCategory.RateLimit,
+            TaviErrorCategory.ExternalService,
             "请求过于频繁。",
             true,
             new LanguageModelErrorDetails { Provider = "Fake" });

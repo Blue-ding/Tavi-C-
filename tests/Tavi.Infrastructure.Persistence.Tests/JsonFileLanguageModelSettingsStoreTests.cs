@@ -39,8 +39,11 @@ public sealed class JsonFileLanguageModelSettingsStoreTests
         await File.WriteAllTextAsync(path, """{"version":999}""");
         using var store = new JsonFileLanguageModelSettingsStore(path);
 
-        await Assert.ThrowsAsync<LanguageModelSettingsStoreException>(
-            () => store.LoadAsync());
+        LanguageModelSettingsStoreException exception = await Assert.ThrowsAsync<LanguageModelSettingsStoreException>(() => store.LoadAsync());
+
+        Assert.Equal(StorageErrorCodes.LanguageModelSettingsReadFailed, exception.ErrorCode);
+        Assert.Equal(TaviErrorCategory.Storage, exception.Category);
+        Assert.Equal("Load", exception.Operation);
     }
 
     private sealed class TemporaryDirectory : IDisposable

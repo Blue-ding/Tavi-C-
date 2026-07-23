@@ -2,6 +2,13 @@ using Tavi.Domain.World;
 
 namespace Tavi.Application.World;
 
+/// <summary>定义遵循 <c>TAVI.&lt;AREA&gt;.&lt;SUBJECT&gt;.&lt;REASON&gt;</c> 约定的 WorldSession 稳定错误码。</summary>
+public static class WorldSessionErrorCodes
+{
+    /// <summary>提交时的期望 revision 与当前 World revision 不一致。</summary>
+    public const string RevisionConflict = "TAVI.WORLD.REVISION.CONFLICT";
+}
+
 /// <summary>
 /// 表示 WorldSession 的一次原子提交结果。
 /// </summary>
@@ -28,10 +35,19 @@ public enum WorldSessionOperation
 /// <summary>
 /// 表示提交时的 expectedRevision 与当前 World revision 不一致。
 /// </summary>
-public sealed class WorldRevisionConflictException : Exception
+public sealed class WorldRevisionConflictException : TaviException
 {
     internal WorldRevisionConflictException(long expectedRevision, long actualRevision)
-        : base($"World revision 冲突：期望 {expectedRevision}，实际 {actualRevision}。")
+        : base(
+            WorldSessionErrorCodes.RevisionConflict,
+            TaviErrorCategory.Conflict,
+            $"World revision 冲突：期望 {expectedRevision}，实际 {actualRevision}。",
+            "Commit",
+            details: new Dictionary<string, string>
+            {
+                [nameof(ExpectedRevision)] = expectedRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [nameof(ActualRevision)] = actualRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            })
     {
         ExpectedRevision = expectedRevision;
         ActualRevision = actualRevision;

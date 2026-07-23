@@ -390,14 +390,14 @@ internal static class OpenAIExceptionMapper
         string operation)
     {
         int status = exception.Status;
-        (string code, LanguageModelErrorCategory category, bool transient) = status switch
+        (string code, TaviErrorCategory category, bool transient) = status switch
         {
-            401 => (LanguageModelErrorCodes.Authentication, LanguageModelErrorCategory.Authentication, false),
-            403 => (LanguageModelErrorCodes.Authorization, LanguageModelErrorCategory.Authorization, false),
-            429 => (LanguageModelErrorCodes.RateLimited, LanguageModelErrorCategory.RateLimit, true),
-            408 => (LanguageModelErrorCodes.Transport, LanguageModelErrorCategory.Transport, true),
-            >= 500 => (LanguageModelErrorCodes.ServiceUnavailable, LanguageModelErrorCategory.ServiceUnavailable, true),
-            _ => (LanguageModelErrorCodes.InvalidRequest, LanguageModelErrorCategory.InvalidRequest, false)
+            401 => (LanguageModelErrorCodes.Authentication, TaviErrorCategory.ExternalService, false),
+            403 => (LanguageModelErrorCodes.Authorization, TaviErrorCategory.ExternalService, false),
+            429 => (LanguageModelErrorCodes.RateLimited, TaviErrorCategory.ExternalService, true),
+            408 => (LanguageModelErrorCodes.Transport, TaviErrorCategory.ExternalService, true),
+            >= 500 => (LanguageModelErrorCodes.ServiceUnavailable, TaviErrorCategory.ExternalService, true),
+            _ => (LanguageModelErrorCodes.InvalidRequest, TaviErrorCategory.Validation, false)
         };
         PipelineResponse? response = exception.GetRawResponse();
         string? requestId = GetFirstHeader(
@@ -429,7 +429,7 @@ internal static class OpenAIExceptionMapper
         string operation) =>
         new(
             LanguageModelErrorCodes.Transport,
-            LanguageModelErrorCategory.Transport,
+            TaviErrorCategory.ExternalService,
             "无法连接 OpenAI 服务。",
             true,
             new LanguageModelErrorDetails { Provider = "OpenAI", Operation = operation },
@@ -448,10 +448,10 @@ internal static class OpenAIExceptionMapper
                     ? LanguageModelErrorCodes.ServiceUnavailable
                     : LanguageModelErrorCodes.InvalidRequest,
             rateLimited
-                ? LanguageModelErrorCategory.RateLimit
+                ? TaviErrorCategory.ExternalService
                 : serverError
-                    ? LanguageModelErrorCategory.ServiceUnavailable
-                    : LanguageModelErrorCategory.InvalidRequest,
+                    ? TaviErrorCategory.ExternalService
+                    : TaviErrorCategory.Validation,
             "OpenAI Responses 返回失败状态。",
             rateLimited || serverError,
             new LanguageModelErrorDetails
@@ -467,7 +467,7 @@ internal static class OpenAIExceptionMapper
         ResponseResult response) =>
         new(
             LanguageModelErrorCodes.Transport,
-            LanguageModelErrorCategory.Transport,
+            TaviErrorCategory.ExternalService,
             "OpenAI Responses 在服务端取消了请求。",
             true,
             new LanguageModelErrorDetails

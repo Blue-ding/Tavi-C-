@@ -228,7 +228,7 @@ namespace Tavi.Domain.World
                     ApplyRemoveSubWorld(remove, transaction);
                     break;
                 default:
-                    throw new WorldException(WorldErrorCode.InvalidArgument, nameof(Apply), $"不支持的世界操作类型 {operation.GetType().FullName}。");
+                    throw new WorldException(WorldErrorCodes.InvalidArgument, nameof(Apply), $"不支持的世界操作类型 {operation.GetType().FullName}。");
             }
         }
 
@@ -239,9 +239,9 @@ namespace Tavi.Domain.World
             EnsureName(operation.Name, operationName, nameof(operation.Name));
             EnsureAnchorType(operation.Type, operationName);
             if (_data.Anchors.ContainsKey(operation.AnchorId))
-                throw new WorldException(WorldErrorCode.Duplicate, operationName, $"Anchor {operation.AnchorId} 已存在。", operation.AnchorId);
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Anchor {operation.AnchorId} 已存在。", operation.AnchorId);
             if (operation.Type == AnchorType.Character && _characterIdsByName.TryGetValue(operation.Name, out Guid duplicateId))
-                throw new WorldException(WorldErrorCode.Duplicate, operationName, $"Character 名称“{operation.Name}”已被 Anchor {duplicateId} 使用。", operation.AnchorId);
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Character 名称“{operation.Name}”已被 Anchor {duplicateId} 使用。", operation.AnchorId);
             var anchor = new Anchor(operation.AnchorId, operation.Name, operation.Description, operation.Type);
             transaction.RecordRollback(() =>
             {
@@ -299,7 +299,7 @@ namespace Tavi.Domain.World
             if (string.Equals(anchor.Name, operation.Name, StringComparison.Ordinal))
                 return;
             if (anchor.Type == AnchorType.Character && _characterIdsByName.TryGetValue(operation.Name, out Guid duplicateId) && duplicateId != anchor.Id)
-                throw new WorldException(WorldErrorCode.Duplicate, operationName, $"Character 名称“{operation.Name}”已被 Anchor {duplicateId} 使用。", anchor.Id);
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Character 名称“{operation.Name}”已被 Anchor {duplicateId} 使用。", anchor.Id);
             string previousName = anchor.Name;
             transaction.RecordRollback(() =>
             {
@@ -342,9 +342,9 @@ namespace Tavi.Domain.World
             bool becomesCharacter = previousType != AnchorType.Character && operation.Type == AnchorType.Character;
             bool stopsBeingCharacter = previousType == AnchorType.Character && operation.Type != AnchorType.Character;
             if (becomesCharacter && _characterIdsByName.TryGetValue(anchor.Name, out Guid duplicateId))
-                throw new WorldException(WorldErrorCode.Duplicate, operationName, $"Character 名称“{anchor.Name}”已被 Anchor {duplicateId} 使用。", anchor.Id);
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Character 名称“{anchor.Name}”已被 Anchor {duplicateId} 使用。", anchor.Id);
             if (stopsBeingCharacter && FindSubWorld(anchor.Id) is { } subWorld)
-                throw new WorldException(WorldErrorCode.InvalidOperation, operationName, $"Character 持有子世界 {subWorld.Id}，请先显式删除该子世界。", anchor.Id);
+                throw new WorldException(WorldErrorCodes.InvalidOperation, operationName, $"Character 持有子世界 {subWorld.Id}，请先显式删除该子世界。", anchor.Id);
             transaction.RecordRollback(() =>
             {
                 if (becomesCharacter)
@@ -369,7 +369,7 @@ namespace Tavi.Domain.World
             GetAnchorForOperation(operation.SourceId, operationName, "Source Anchor");
             GetAnchorForOperation(operation.TargetId, operationName, "Target Anchor");
             if (ContainsRelation(operation.RelationId))
-                throw new WorldException(WorldErrorCode.Duplicate, operationName, $"Relation {operation.RelationId} 已存在。", operation.RelationId);
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Relation {operation.RelationId} 已存在。", operation.RelationId);
             SubWorldSnapshot? createdSubWorld = null;
             Dictionary<Guid, Relation> owner = _data.Relations;
             if (operation.DomainId.HasValue)
@@ -434,9 +434,9 @@ namespace Tavi.Domain.World
             EnsureId(operation.SubWorldId, operationName, nameof(operation.SubWorldId));
             EnsureCharacter(operation.CharacterId, operationName);
             if (_data.SubWorlds.Any(subWorld => subWorld.Id == operation.SubWorldId))
-                throw new WorldException(WorldErrorCode.Duplicate, operationName, $"SubWorld {operation.SubWorldId} 已存在。", operation.SubWorldId);
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"SubWorld {operation.SubWorldId} 已存在。", operation.SubWorldId);
             if (FindSubWorld(operation.CharacterId) is { } duplicate)
-                throw new WorldException(WorldErrorCode.Duplicate, operationName, $"Character {operation.CharacterId} 已持有子世界 {duplicate.Id}。", operation.CharacterId);
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Character {operation.CharacterId} 已持有子世界 {duplicate.Id}。", operation.CharacterId);
             var subWorld = new SubWorldSnapshot { Id = operation.SubWorldId, DomainId = operation.CharacterId };
             transaction.RecordRollback(() => _data.SubWorlds.Remove(subWorld));
             _data.SubWorlds.Add(subWorld);
@@ -506,7 +506,7 @@ namespace Tavi.Domain.World
             if (anchor.Type != AnchorType.Character)
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidOperation,
+                    WorldErrorCodes.InvalidOperation,
                     operation,
                     $"Anchor {characterId} 的类型是 {anchor.Type}，只有 Character 可以持有子世界。",
                     characterId
@@ -540,7 +540,7 @@ namespace Tavi.Domain.World
             if (id == Guid.Empty)
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidArgument,
+                    WorldErrorCodes.InvalidArgument,
                     operation,
                     $"参数 {parameterName} 不能是空 Guid。"
                 );
@@ -552,7 +552,7 @@ namespace Tavi.Domain.World
             if (string.IsNullOrWhiteSpace(value))
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidArgument,
+                    WorldErrorCodes.InvalidArgument,
                     operation,
                     $"参数 {parameterName} 不能为空或只包含空白字符。"
                 );
@@ -564,7 +564,7 @@ namespace Tavi.Domain.World
             if (!Enum.IsDefined(type))
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidArgument,
+                    WorldErrorCodes.InvalidArgument,
                     operation,
                     $"AnchorType 值 {Convert.ToInt32(type)} 未定义。"
                 );
@@ -574,7 +574,7 @@ namespace Tavi.Domain.World
         private static WorldException NotFound(string operation, string entityName, Guid entityId)
         {
             return new WorldException(
-                WorldErrorCode.NotFound,
+                WorldErrorCodes.NotFound,
                 operation,
                 $"未找到 {entityName}。",
                 entityId
@@ -645,7 +645,7 @@ namespace Tavi.Domain.World
             if (errors.Count > 0)
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidWorldSnapshot,
+                    WorldErrorCodes.InvalidWorldSnapshot,
                     operation,
                     $"WorldSnapshot 初始化校验发现 {errors.Count} 个错误。",
                     validationErrors: errors

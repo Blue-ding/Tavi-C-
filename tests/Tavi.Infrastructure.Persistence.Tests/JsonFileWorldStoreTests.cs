@@ -58,7 +58,12 @@ public sealed class JsonFileWorldStoreTests
         await File.WriteAllTextAsync(Path.Combine(directory.Path, "slot.save.json"), "{ invalid");
         await File.WriteAllTextAsync(Path.Combine(directory.Path, "slot.save.bak.json"), "{ invalid");
 
-        await Assert.ThrowsAsync<WorldStoreException>(() => store.LoadAsync("slot"));
+        WorldStoreException exception = await Assert.ThrowsAsync<WorldStoreException>(() => store.LoadAsync("slot"));
+
+        Assert.Equal(StorageErrorCodes.WorldReadFailed, exception.ErrorCode);
+        Assert.Equal(TaviErrorCategory.Storage, exception.Category);
+        Assert.Equal("Load", exception.Operation);
+        Assert.Equal("slot", exception.Details["Slot"]);
     }
 
     [Fact]
@@ -71,6 +76,7 @@ public sealed class JsonFileWorldStoreTests
         WorldStoreException exception = await Assert.ThrowsAsync<WorldStoreException>(() => store.LoadAsync("slot"));
 
         Assert.Contains("无法读取", exception.Message);
+        Assert.Equal(StorageErrorCodes.WorldReadFailed, exception.ErrorCode);
     }
 
     [Fact]

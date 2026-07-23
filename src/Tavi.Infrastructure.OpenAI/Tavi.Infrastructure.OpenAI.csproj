@@ -6,6 +6,7 @@
     <NoWarn>$(NoWarn);OPENAI001;SCME0001</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Tavi.Abstractions\Tavi.Abstractions.csproj" />
     <ProjectReference Include="..\Tavi.Application\Tavi.Application.csproj" />
     <PackageReference Include="OpenAI" />
   </ItemGroup>

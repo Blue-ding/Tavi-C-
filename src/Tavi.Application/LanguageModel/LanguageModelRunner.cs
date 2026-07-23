@@ -312,14 +312,14 @@ public sealed class LanguageModelRunner : ILanguageModelService
                 case ModelFinishReason.LengthLimit:
                     throw new LanguageModelException(
                         LanguageModelErrorCodes.ContextLength,
-                        LanguageModelErrorCategory.ContextLength,
+                        TaviErrorCategory.Validation,
                         "语言模型达到上下文或输出长度限制。",
                         details: RunDetails(operation.Id, "Complete"));
 
                 case ModelFinishReason.ContentFiltered:
                     throw new LanguageModelException(
                         LanguageModelErrorCodes.ContentFiltered,
-                        LanguageModelErrorCategory.ContentFilter,
+                        TaviErrorCategory.Validation,
                         "语言模型输出被内容策略拦截。",
                         details: RunDetails(operation.Id, "Complete"));
 
@@ -343,7 +343,7 @@ public sealed class LanguageModelRunner : ILanguageModelService
             {
                 throw new ModelToolException(
                     LanguageModelErrorCodes.ToolNotFound,
-                    LanguageModelErrorCategory.ToolNotFound,
+                    TaviErrorCategory.NotFound,
                     $"模型请求了未注册的工具“{call.Name}”。",
                     ToolDetails(runId, call));
             }
@@ -362,7 +362,7 @@ public sealed class LanguageModelRunner : ILanguageModelService
             {
                 throw new ModelToolException(
                     LanguageModelErrorCodes.ToolExecutionFailed,
-                    LanguageModelErrorCategory.ToolExecution,
+                    TaviErrorCategory.InternalFailure,
                     $"工具“{call.Name}”执行失败。",
                     ToolDetails(runId, call),
                     exception);

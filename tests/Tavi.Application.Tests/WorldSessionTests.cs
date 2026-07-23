@@ -118,6 +118,8 @@ public sealed class WorldSessionTests
 
         Assert.Equal(0, exception.ExpectedRevision);
         Assert.Equal(1, exception.ActualRevision);
+        Assert.Equal(WorldSessionErrorCodes.RevisionConflict, exception.ErrorCode);
+        Assert.Equal(TaviErrorCategory.Conflict, exception.Category);
         Assert.Single(session.Queries.GetAnchors());
     }
 

@@ -65,7 +65,7 @@ public sealed class JsonFileLanguageModelSettingsStore :
         }
         catch (Exception exception) when (exception is not LanguageModelSettingsStoreException)
         {
-            throw new LanguageModelSettingsStoreException("无法读取语言模型设置。", exception);
+            throw new LanguageModelSettingsStoreException(StorageErrorCodes.LanguageModelSettingsReadFailed, "Load", "无法读取语言模型设置。", exception);
         }
         finally
         {
@@ -114,7 +114,7 @@ public sealed class JsonFileLanguageModelSettingsStore :
         }
         catch (Exception exception) when (exception is not LanguageModelSettingsStoreException)
         {
-            throw new LanguageModelSettingsStoreException("无法保存语言模型设置。", exception);
+            throw new LanguageModelSettingsStoreException(StorageErrorCodes.LanguageModelSettingsWriteFailed, "Save", "无法保存语言模型设置。", exception);
         }
         finally
         {
@@ -148,15 +148,5 @@ public sealed class JsonFileLanguageModelSettingsStore :
         catch
         {
         }
-    }
-}
-
-/// <summary>表示语言模型设置文件无法读取或写入。</summary>
-public sealed class LanguageModelSettingsStoreException : Exception
-{
-    /// <summary>创建设置存储异常。</summary>
-    public LanguageModelSettingsStoreException(string message, Exception innerException)
-        : base(message, innerException)
-    {
     }
 }

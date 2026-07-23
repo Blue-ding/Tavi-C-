@@ -88,7 +88,7 @@ public sealed class LanguageModelRunnerTests
                     }).Completion);
 
         Assert.Equal(LanguageModelErrorCodes.OutputValidationFailed, exception.ErrorCode);
-        Assert.Equal(LanguageModelErrorCategory.OutputValidation, exception.Category);
+        Assert.Equal(TaviErrorCategory.Validation, exception.Category);
     }
 
     [Fact]
@@ -102,8 +102,8 @@ public sealed class LanguageModelRunnerTests
             () => runner.Start(Request("question")).Completion);
 
         Assert.Equal(LanguageModelErrorCodes.ToolNotFound, exception.ErrorCode);
-        Assert.Equal("missing", exception.Details.ToolName);
-        Assert.Equal("call-7", exception.Details.ToolCallId);
+        Assert.Equal("missing", exception.LanguageModelDetails.ToolName);
+        Assert.Equal("call-7", exception.LanguageModelDetails.ToolCallId);
     }
 
     [Fact]

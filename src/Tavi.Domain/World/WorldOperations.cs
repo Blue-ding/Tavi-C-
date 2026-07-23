@@ -127,10 +127,20 @@ public sealed record AppliedWorldChangeSet(WorldChangeSet Forward, WorldChangeSe
 /// <summary>
 /// 表示事务执行失败且内部回滚也未能完整恢复 World；此时内存状态不再可靠。
 /// </summary>
-public sealed class WorldTransactionException : Exception
+public sealed class WorldTransactionException : TaviException
 {
     internal WorldTransactionException(Exception operationException, Exception rollbackException)
-        : base("世界事务执行失败，且回滚未能完整恢复内存状态。", new AggregateException(operationException, rollbackException))
+        : base(
+            WorldErrorCodes.TransactionRollbackFailed,
+            TaviErrorCategory.InternalFailure,
+            "世界事务执行失败，且回滚未能完整恢复内存状态。",
+            "Rollback",
+            details: new Dictionary<string, string>
+            {
+                [nameof(OperationException)] = operationException.GetType().FullName ?? operationException.GetType().Name,
+                [nameof(RollbackException)] = rollbackException.GetType().FullName ?? rollbackException.GetType().Name
+            },
+            innerException: new AggregateException(operationException, rollbackException))
     {
         OperationException = operationException;
         RollbackException = rollbackException;
