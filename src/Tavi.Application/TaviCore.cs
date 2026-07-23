@@ -1,5 +1,7 @@
+using Tavi.Application.Guidance;
 using Tavi.Application.LanguageModel;
 using Tavi.Application.Logging;
+using Tavi.Application.World;
 
 namespace Tavi.Application;
 
@@ -19,4 +21,11 @@ public sealed class TaviCore
     public ILanguageModelService LanguageModels { get; }
     /// <summary>获取 Application 日志端口。</summary>
     public ILogger Logger { get; }
+
+    /// <summary>创建绑定到指定 WorldSession 的 Guidance 应用服务。</summary>
+    public IGuidanceService CreateGuidanceService(WorldSession worldSession)
+    {
+        ArgumentNullException.ThrowIfNull(worldSession);
+        return new GuidanceService(worldSession, LanguageModels, Logger);
+    }
 }

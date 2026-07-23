@@ -16,6 +16,13 @@ internal static class WorldGuidanceTool
     internal static IReadOnlyCollection<ITool> CreateTools(WorldSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
+        return CreateQueryTools(session).Concat(CreateEditingTools(session)).ToArray();
+    }
+
+    /// <summary>创建不会修改真实 World 的全部查询工具。</summary>
+    internal static IReadOnlyCollection<ITool> CreateQueryTools(WorldSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
         return
         [
             new GetAnchorTool(session),
@@ -28,7 +35,14 @@ internal static class WorldGuidanceTool
             new ListCharactersTool(session),
             new GetAnchorRelationsTool(session),
             new GetRelationsBetweenAnchorsTool(session),
-            new CompareWorldWithSubWorldTool(session),
+            new CompareWorldWithSubWorldTool(session)
+        ];
+    }
+
+    private static IReadOnlyCollection<ITool> CreateEditingTools(WorldSession session)
+    {
+        return
+        [
             new AddAnchorTool(session),
             new RemoveAnchorTool(session),
             new UpdateAnchorNameTool(session),

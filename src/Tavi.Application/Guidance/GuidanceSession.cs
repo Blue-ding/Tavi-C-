@@ -25,11 +25,17 @@ public sealed class GuidanceSession
     /// <summary>
     /// 创建基于指定 World revision 的 GuidanceSession。
     /// </summary>
-    public GuidanceSession(long baseWorldRevision)
+    public GuidanceSession(long baseWorldRevision) : this(baseWorldRevision, Guid.NewGuid())
+    {
+    }
+
+    internal GuidanceSession(long baseWorldRevision, Guid id)
     {
         if (baseWorldRevision < 0)
             throw new ArgumentOutOfRangeException(nameof(baseWorldRevision));
-        Id = Guid.NewGuid();
+        if (id == Guid.Empty)
+            throw new ArgumentException("GuidanceSession 标识不能为空。", nameof(id));
+        Id = id;
         BaseWorldRevision = baseWorldRevision;
     }
 
