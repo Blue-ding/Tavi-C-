@@ -221,6 +221,7 @@ namespace Tavi.Domain.World
                     characterId
                 );
             }
+
             Guid subWorldId = CreateSubWorldSnapshot(characterId).Id;
             MarkChanged(operation);
             return subWorldId;
@@ -248,6 +249,7 @@ namespace Tavi.Domain.World
                 if (subWorld is not null)
                     _data.SubWorlds.Remove(subWorld);
             }
+
             _data.Anchors.Remove(anchorId);
             MarkChanged(operation);
         }
@@ -302,6 +304,7 @@ namespace Tavi.Domain.World
                 _characterIdsByName.Remove(anchor.Name);
                 _characterIdsByName.Add(name, anchor.Id);
             }
+
             anchor.UpdateName(name);
             MarkChanged(operation);
         }
@@ -342,6 +345,7 @@ namespace Tavi.Domain.World
                     anchorId
                 );
             }
+
             if (stopsBeingCharacter && FindSubWorld(anchorId) is { } subWorld)
             {
                 throw new WorldException(
@@ -430,6 +434,7 @@ namespace Tavi.Domain.World
                     characterId
                 );
             }
+
             return anchor;
         }
 
@@ -459,6 +464,7 @@ namespace Tavi.Domain.World
                 if (subWorld.Relations.TryGetValue(relationId, out relation))
                     return new RelationLocation(subWorld.Relations, relation);
             }
+
             throw NotFound(operation, "Relation", relationId);
         }
 
@@ -516,88 +522,57 @@ namespace Tavi.Domain.World
                 errors.Add("WorldSnapshot.Id 不能是空 Guid。");
 
             Dictionary<Guid, Anchor>? anchors = data.Anchors;
-            if (anchors is null)
-                errors.Add("WorldSnapshot.Anchors 不能为 null。");
-            Dictionary<Guid, Relation>? worldRelations = data.Relations;
-            if (worldRelations is null)
-                errors.Add("WorldSnapshot.Relations 不能为 null。");
-            List<SubWorldSnapshot>? subWorlds = data.SubWorlds;
-            if (subWorlds is null)
-                errors.Add("WorldSnapshot.SubWorlds 不能为 null。");
+            Dictionary<Guid, Relation> worldRelations = data.Relations;
+            List<SubWorldSnapshot> subWorlds = data.SubWorlds;
 
             var characterNames = new Dictionary<string, Guid>(StringComparer.Ordinal);
-            if (anchors is not null)
+            foreach ((Guid key, Anchor anchor) in anchors)
             {
-                foreach ((Guid key, Anchor? anchor) in anchors)
-                {
-                    string path = $"Anchors[{key}]";
-                    if (anchor is null)
-                    {
-                        errors.Add($"{path} 不能为 null。");
-                        continue;
-                    }
-                    ValidateAnchor(key, anchor, path, characterNames, errors);
-                }
+                string path = $"Anchors[{key}]";
+                ValidateAnchor(key, anchor, path, characterNames, errors);
             }
 
             var relationIds = new HashSet<Guid>();
-            if (worldRelations is not null)
-            {
-                ValidateRelations(worldRelations, "Relations", anchors, relationIds, errors);
-            }
+            ValidateRelations(worldRelations, "Relations", anchors, relationIds, errors);
 
             var subWorldIds = new HashSet<Guid>();
             var domainIds = new HashSet<Guid>();
-            if (subWorlds is not null)
+            for (int index = 0; index < subWorlds.Count; index++)
             {
-                for (int index = 0; index < subWorlds.Count; index++)
+                SubWorldSnapshot subWorld = subWorlds[index];
+                string path = $"SubWorlds[{index}]";
+                if (subWorld.Id == Guid.Empty)
+                    errors.Add($"{path}.Id 不能是空 Guid。");
+                else if (!subWorldIds.Add(subWorld.Id))
+                    errors.Add($"{path}.Id {subWorld.Id} 重复。");
+                if (subWorld.DomainId == Guid.Empty)
                 {
-                    SubWorldSnapshot? subWorld = subWorlds[index];
-                    string path = $"SubWorlds[{index}]";
-                    if (subWorld is null)
+                    errors.Add($"{path}.DomainId 不能是空 Guid。");
+                }
+                else
+                {
+                    if (!domainIds.Add(subWorld.DomainId))
                     {
-                        errors.Add($"{path} 不能为 null。");
-                        continue;
-                    }
-                    if (subWorld.Id == Guid.Empty)
-                        errors.Add($"{path}.Id 不能是空 Guid。");
-                    else if (!subWorldIds.Add(subWorld.Id))
-                        errors.Add($"{path}.Id {subWorld.Id} 重复。");
-                    if (subWorld.DomainId == Guid.Empty)
-                    {
-                        errors.Add($"{path}.DomainId 不能是空 Guid。");
-                    }
-                    else
-                    {
-                        if (!domainIds.Add(subWorld.DomainId))
-                        {
-                            errors.Add(
-                                $"{path}.DomainId {subWorld.DomainId} 重复，一个 Character 最多只能持有一个子世界。"
-                            );
-                        }
-                        if (anchors is null || !anchors.TryGetValue(subWorld.DomainId, out Anchor? domain))
-                        {
-                            errors.Add(
-                                $"{path}.DomainId {subWorld.DomainId} 不指向任何 Anchor。"
-                            );
-                        }
-                        else if (domain.Type != AnchorType.Character)
-                        {
-                            errors.Add(
-                                $"{path}.DomainId {subWorld.DomainId} 指向类型 {domain.Type}，只有 Character 可以持有子世界。"
-                            );
-                        }
+                        errors.Add(
+                            $"{path}.DomainId {subWorld.DomainId} 重复，一个 Character 最多只能持有一个子世界。"
+                        );
                     }
 
-                    if (subWorld.Relations is null)
+                    if (anchors is null || !anchors.TryGetValue(subWorld.DomainId, out Anchor? domain))
                     {
-                        errors.Add($"{path}.Relations 不能为 null。");
+                        errors.Add(
+                            $"{path}.DomainId {subWorld.DomainId} 不指向任何 Anchor。"
+                        );
                     }
-                    else
+                    else if (domain.Type != AnchorType.Character)
                     {
-                        ValidateRelations(subWorld.Relations, $"{path}.Relations", anchors, relationIds, errors);
+                        errors.Add(
+                            $"{path}.DomainId {subWorld.DomainId} 指向类型 {domain.Type}，只有 Character 可以持有子世界。"
+                        );
                     }
                 }
+
+                ValidateRelations(subWorld.Relations, $"{path}.Relations", anchors, relationIds, errors);
             }
 
             if (errors.Count > 0)
@@ -622,6 +597,7 @@ namespace Tavi.Domain.World
             {
                 errors.Add($"{path} 的字典键与 Anchor.Id {anchor.Id} 不一致。");
             }
+
             if (string.IsNullOrWhiteSpace(anchor.Name))
                 errors.Add($"{path}.Name 不能为空或只包含空白字符。");
             if (!Enum.IsDefined(anchor.Type))
@@ -643,14 +619,10 @@ namespace Tavi.Domain.World
         private static void ValidateRelations(Dictionary<Guid, Relation> relations, string path,
             Dictionary<Guid, Anchor>? anchors, HashSet<Guid> relationIds, List<string> errors)
         {
-            foreach ((Guid key, Relation? relation) in relations)
+            foreach ((Guid key, Relation relation) in relations)
             {
                 string relationPath = $"{path}[{key}]";
-                if (relation is null)
-                {
-                    errors.Add($"{relationPath} 不能为 null。");
-                    continue;
-                }
+
                 if (key == Guid.Empty)
                     errors.Add($"{relationPath} 的字典键不能是空 Guid。");
                 if (relation.Id == Guid.Empty)
@@ -659,16 +631,19 @@ namespace Tavi.Domain.World
                 {
                     errors.Add($"{relationPath} 的字典键与 Relation.Id {relation.Id} 不一致。");
                 }
+
                 if (relation.Id != Guid.Empty && !relationIds.Add(relation.Id))
                 {
                     errors.Add($"{relationPath}.Id {relation.Id} 在世界图中重复。");
                 }
+
                 if (string.IsNullOrWhiteSpace(relation.Name))
                     errors.Add($"{relationPath}.Name 不能为空或只包含空白字符。");
                 if (anchors is null || !anchors.ContainsKey(relation.SourceId))
                 {
                     errors.Add($"{relationPath}.SourceId {relation.SourceId} 不指向任何 Anchor。");
                 }
+
                 if (anchors is null || !anchors.ContainsKey(relation.TargetId))
                 {
                     errors.Add($"{relationPath}.TargetId {relation.TargetId} 不指向任何 Anchor。");
