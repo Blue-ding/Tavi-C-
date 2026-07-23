@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Tavi.Application.Logging;
 
 namespace Tavi.Application.LanguageModel;
@@ -163,6 +164,7 @@ public sealed class LanguageModelRunner : ILanguageModelService
         LanguageModelRunRequest request,
         CancellationToken callerCancellationToken)
     {
+        long startedTimestamp = Stopwatch.GetTimestamp();
         operation.SetStatus(LanguageModelRunStatus.Running);
         Log(LogLevel.Information, "语言模型运行已开始。", operation.Id);
 
@@ -184,9 +186,19 @@ public sealed class LanguageModelRunner : ILanguageModelService
         {
             var timeoutException =
                 new LanguageModelTimeoutException(_settings.OverallTimeout, operation.Id, exception);
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(startedTimestamp);
             operation.SetStatus(LanguageModelRunStatus.Failed);
             operation.Fail(timeoutException);
-            Log(LogLevel.Error, timeoutException.Message, operation.Id, timeoutException);
+            Log(
+                LogLevel.Error,
+                $"{timeoutException.Message} 实际运行时间 {elapsed:c}。",
+                operation.Id,
+                timeoutException,
+                new Dictionary<string, object?>
+                {
+                    ["ConfiguredTimeout"] = _settings.OverallTimeout,
+                    ["Elapsed"] = elapsed
+                });
         }
         catch (OperationCanceledException)
         {
@@ -481,14 +493,21 @@ public sealed class LanguageModelRunner : ILanguageModelService
         LogLevel level,
         string message,
         Guid runId,
-        Exception? exception = null)
+        Exception? exception = null,
+        IReadOnlyDictionary<string, object?>? additionalProperties = null)
     {
+        var properties = new Dictionary<string, object?> { ["RunId"] = runId };
+        if (additionalProperties is not null)
+        {
+            foreach ((string key, object? value) in additionalProperties)
+                properties[key] = value;
+        }
         _logger.Log(
             level,
             LogCategory,
             message,
             exception,
-            new Dictionary<string, object?> { ["RunId"] = runId });
+            properties);
     }
 }
 

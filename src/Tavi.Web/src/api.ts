@@ -1,7 +1,8 @@
-import type { ApiProblem, GuidanceAvailabilityViewModel, GuidanceCommitViewModel, GuidanceOperationViewModel, GuidanceSnapshotViewModel, WorldGraphViewModel } from './types'
+import type { ApiProblem, GuidanceAvailabilityViewModel, GuidanceCommitViewModel, GuidanceOperationViewModel, GuidanceSnapshotViewModel, LanguageModelSettingsViewModel, OpenAIConfigurationInput, OpenAIConfigurationViewModel, SettingsSaveResultViewModel, WorldGraphViewModel } from './types'
 
 const worldUrl = '/api/v1/world'
 const guidanceUrl = '/api/v1/guidance'
+const settingsUrl = '/api/v1/settings'
 
 export class ApiError extends Error {
   readonly code: string
@@ -53,4 +54,16 @@ export const guidanceApi = {
   commit: (sessionId: string, acceptedChangeIds: string[]) => request<GuidanceCommitViewModel>(`${guidanceUrl}/sessions/${sessionId}/commit`, { method: 'POST', body: JSON.stringify({ acceptedChangeIds }) }),
   cancel: (sessionId: string) => request<GuidanceSnapshotViewModel>(`${guidanceUrl}/sessions/${sessionId}/cancel`, { method: 'POST', body: '{}' }),
   forget: (sessionId: string) => request<void>(`${guidanceUrl}/sessions/${sessionId}`, { method: 'DELETE' }),
+}
+
+export const settingsApi = {
+  update: (languageModel: LanguageModelSettingsViewModel, openAI: OpenAIConfigurationInput) =>
+    request<SettingsSaveResultViewModel>(`${settingsUrl}/`, {
+      method: 'PUT',
+      body: JSON.stringify({ languageModel, openAI }),
+    }),
+  getLanguageModel: () => request<LanguageModelSettingsViewModel>(`${settingsUrl}/language-model`),
+  updateLanguageModel: (settings: LanguageModelSettingsViewModel) => request<LanguageModelSettingsViewModel>(`${settingsUrl}/language-model`, { method: 'PUT', body: JSON.stringify(settings) }),
+  getOpenAI: () => request<OpenAIConfigurationViewModel>(`${settingsUrl}/openai`),
+  updateOpenAI: (configuration: OpenAIConfigurationInput) => request<OpenAIConfigurationViewModel>(`${settingsUrl}/openai`, { method: 'PUT', body: JSON.stringify(configuration) }),
 }

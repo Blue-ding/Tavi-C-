@@ -51,13 +51,18 @@ dotnet run --project src/Tavi.Host
 
 ## 语言模型配置
 
-Application 的模型运行策略保存在本地 `Tavi/Settings/language-model.json`，其中不包含供应商密钥。
-CLI 和 Host 临时从被 Git 忽略的 `src/Tavi.Infrastructure.OpenAI/SelfCongif.md` 加载 OpenAI 兼容服务配置：
+Application 的模型运行策略保存在本地 `Tavi/Settings/language-model.json`，其中不包含供应商密钥。OpenAI 兼容服务配置保存在同目录的敏感本地文件 `openai.json`：
 
-```text
-"Uri": "https://兼容服务地址",
-"Model": "模型名称",
-"APIKey": "本地密钥",
+```json
+{
+  "version": 1,
+  "endpoint": "https://兼容服务地址",
+  "model": "模型名称",
+  "api_key": "本地密钥",
+  "client_type": "chat",
+  "supports_required_tool_choice": false,
+  "enable_thinking": false
+}
 ```
 
-该文件缺失时 CLI 和 Host 仍可运行，但不会创建语言模型服务；世界图编辑功能不受影响。后续将由 Configs 后端替换此临时配置来源。
+Windows 默认目录为 `%LOCALAPPDATA%\Tavi\Settings`，可使用 `TAVI_SETTINGS_DIRECTORY` 覆盖整个设置目录，也可使用 `TAVI_OPENAI_CONFIGURATION_PATH` 单独覆盖 OpenAI 配置文件。`openai.json` 包含 API Key，不应提交、同步或输出到日志。该文件缺失时 CLI 和 Host 仍可运行，但不会创建语言模型服务；世界图编辑功能不受影响。

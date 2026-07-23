@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow, useNodesState, type Edge, type Node, type NodeChange, type NodePositionChange } from '@xyflow/react'
-import { Box, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
-import { ApiError, worldApi } from './api'
+import { Box, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
+import { ApiError, settingsApi, worldApi } from './api'
 import { GuidancePanel } from './GuidancePanel'
-import type { AnchorType, AnchorViewModel, RelationViewModel, Selection, WorldGraphViewModel } from './types'
+import type { AnchorType, AnchorViewModel, FeaturePolicy, LanguageModelSettingsViewModel, OpenAIConfigurationInput, OpenAIClientType, RelationViewModel, Selection, WorldGraphViewModel } from './types'
 
 type ScopeFilter = 'all' | 'world' | string
 type Dialog = 'anchor' | 'relation' | null
@@ -26,6 +26,7 @@ function App() {
   const [dialog, setDialog] = useState<Dialog>(null)
   const [showInspector, setShowInspector] = useState(true)
   const [showGuidance, setShowGuidance] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [flowNodes, setFlowNodes, applyNodeChanges] = useNodesState<Node>([])
   const refreshSequence = useRef(0)
   const lastRefreshAt = useRef(0)
@@ -167,6 +168,7 @@ function App() {
     })
     applyNodeChanges(changes)
   }, [applyNodeChanges])
+  const closeSettings = useCallback(() => setShowSettings(false), [])
 
   const statusLabel = world.health === 'Faulted' ? '世界会话异常' : world.isDirty ? '等待自动保存' : '已保存'
 
@@ -189,6 +191,7 @@ function App() {
           </label>
           <div className="toolbar-divider" />
           <button className={`guidance-toggle${showGuidance ? ' active' : ''}`} onClick={() => setShowGuidance(current => !current)}><Sparkles size={16} />Guidance</button>
+          <IconButton label="设置" onClick={() => setShowSettings(true)}><Settings size={17} /></IconButton>
           <div className="toolbar-divider" />
           <IconButton label="撤销" disabled={!world.canUndo || working} onClick={() => void perform(() => worldApi.undo(world.revision))}><Undo2 size={17} /></IconButton>
           <IconButton label="重做" disabled={!world.canRedo || working} onClick={() => void perform(() => worldApi.redo(world.revision))}><Redo2 size={17} /></IconButton>
@@ -244,6 +247,7 @@ function App() {
       {dialog === 'anchor' && <AnchorDialog revision={world.revision} working={working} close={() => setDialog(null)} submit={perform} />}
       {dialog === 'relation' && <RelationDialog world={world} working={working} close={() => setDialog(null)} submit={perform} />}
       <GuidancePanel open={showGuidance} world={world} onClose={() => setShowGuidance(false)} onWorldChanged={() => refresh(true)} onError={setError} />
+      {showSettings && <SettingsDialog close={closeSettings} onError={setError} />}
     </main>
   )
 }
@@ -254,6 +258,107 @@ function NodeLabel({ anchor }: { anchor: AnchorViewModel }) {
 
 function IconButton({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: ReactNode }) {
   return <button className="icon-button" aria-label={label} title={label} disabled={disabled} onClick={onClick}>{children}</button>
+}
+
+function SettingsDialog({ close, onError }: { close: () => void; onError: (message: string | null) => void }) {
+  const [languageSettings, setLanguageSettings] = useState<LanguageModelSettingsViewModel | null>(null)
+  const [openAISettings, setOpenAISettings] = useState<OpenAIConfigurationInput | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [savedMessage, setSavedMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    Promise.all([settingsApi.getOpenAI(), settingsApi.getLanguageModel()])
+      .then(([openAI, language]) => {
+        if (active) {
+          setOpenAISettings({ ...openAI, apiKey: '' })
+          setLanguageSettings(language)
+        }
+      })
+      .catch(requestError => {
+        if (active) {
+          onError(toMessage(requestError))
+          close()
+        }
+      })
+    return () => { active = false }
+  }, [close, onError])
+
+  function updateLanguage<K extends keyof LanguageModelSettingsViewModel>(key: K, value: LanguageModelSettingsViewModel[K]) {
+    setLanguageSettings(current => current ? { ...current, [key]: value } : current)
+    setSavedMessage(null)
+  }
+
+  function updateOpenAI<K extends keyof OpenAIConfigurationInput>(key: K, value: OpenAIConfigurationInput[K]) {
+    setOpenAISettings(current => current ? { ...current, [key]: value } : current)
+    setSavedMessage(null)
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    if (!languageSettings || !openAISettings)
+      return
+    setSaving(true)
+    try {
+      const result = await settingsApi.update(languageSettings, openAISettings)
+      setOpenAISettings({ ...result.openAI, apiKey: '' })
+      setLanguageSettings(result.languageModel)
+      setSavedMessage(result.message)
+      onError(null)
+    } catch (requestError) {
+      onError(toMessage(requestError))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close() }}>
+      <section className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header>
+          <div><span className="modal-kicker">CONFIGURATION</span><h2 id="settings-title">语言模型设置</h2></div>
+          <button aria-label="关闭设置" onClick={close}><X size={18} /></button>
+        </header>
+        {!languageSettings || !openAISettings ? <div className="settings-loading"><LoaderCircle className="spin" size={22} />正在读取配置…</div> : (
+          <form className="modal-form" onSubmit={save}>
+            <div className="settings-columns">
+              <section className="settings-column">
+                <div className="settings-section-title"><span>OPENAI</span><strong>连接配置</strong></div>
+                <label>Endpoint<input type="url" required value={openAISettings.endpoint} onChange={event => updateOpenAI('endpoint', event.target.value)} /></label>
+                <label>模型名称<input required value={openAISettings.model} onChange={event => updateOpenAI('model', event.target.value)} placeholder="例如 gpt-5.1" /></label>
+                <label>API Key<input type="password" value={openAISettings.apiKey} onChange={event => updateOpenAI('apiKey', event.target.value)} placeholder={openAISettings.hasApiKey ? '已配置；留空则保留原值' : '请输入 API Key'} autoComplete="new-password" /></label>
+                <label>API 类型<select value={openAISettings.clientType} onChange={event => updateOpenAI('clientType', event.target.value as OpenAIClientType)}><option value="Chat">Chat Completions</option><option value="Responses">Responses</option></select></label>
+                <label>enable_thinking<select value={openAISettings.enableThinking === null ? 'default' : String(openAISettings.enableThinking)} onChange={event => updateOpenAI('enableThinking', event.target.value === 'default' ? null : event.target.value === 'true')}><option value="default">不发送</option><option value="true">启用</option><option value="false">禁用</option></select></label>
+                <label className="settings-check"><input type="checkbox" checked={openAISettings.supportsRequiredToolChoice} onChange={event => updateOpenAI('supportsRequiredToolChoice', event.target.checked)} /><span>支持 tool_choice=required</span></label>
+                <p className="settings-security">API Key 仅写入本机 openai.json，后端不会向浏览器回显已有密钥。</p>
+              </section>
+              <section className="settings-column">
+                <div className="settings-section-title"><span>RUNTIME</span><strong>运行策略</strong></div>
+                <div className="form-columns">
+                  <label>最大工具轮次<input type="number" min="0" required value={languageSettings.maxToolRounds} onChange={event => updateLanguage('maxToolRounds', event.currentTarget.valueAsNumber)} /></label>
+                  <label>输出修复次数<input type="number" min="0" required value={languageSettings.maxOutputRepairAttempts} onChange={event => updateLanguage('maxOutputRepairAttempts', event.currentTarget.valueAsNumber)} /></label>
+                </div>
+                <label>总超时时间（秒）<input type="number" min="1" required value={languageSettings.overallTimeoutSeconds} onChange={event => updateLanguage('overallTimeoutSeconds', event.currentTarget.valueAsNumber)} /></label>
+                <PolicySelect label="工具调用" value={languageSettings.toolCalls} onChange={value => updateLanguage('toolCalls', value)} />
+                <PolicySelect label="原生 JSON 输出" value={languageSettings.nativeJsonOutput} onChange={value => updateLanguage('nativeJsonOutput', value)} />
+                <PolicySelect label="流式输出" value={languageSettings.streaming} onChange={value => updateLanguage('streaming', value)} />
+                <p className="settings-note">保存后，新发起的模型运行会立即使用最新配置；当前正在生成的请求仍安全地使用启动时的配置。已有 Guidance Session 无需重建。</p>
+              </section>
+            </div>
+            <div className="modal-actions">
+              {savedMessage && <span className="settings-saved" title={savedMessage}><Check size={14} />{savedMessage}</span>}
+              <button type="button" onClick={close}>取消</button>
+              <button className="primary-action" disabled={saving}>{saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />}保存设置</button>
+            </div>
+          </form>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function PolicySelect({ label, value, onChange }: { label: string; value: FeaturePolicy; onChange: (value: FeaturePolicy) => void }) {
+  return <label>{label}<select value={value} onChange={event => onChange(event.target.value as FeaturePolicy)}><option value="Disabled">禁用</option><option value="Preferred">优先，允许降级</option><option value="Required">必须支持</option></select></label>
 }
 
 function LoadingState() {

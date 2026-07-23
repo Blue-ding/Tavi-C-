@@ -17,6 +17,7 @@ builder.Services.AddHostedService(services => services.GetRequiredService<WorldR
 builder.Services.AddSingleton<GuidanceEventBroker>();
 builder.Services.AddSingleton<GuidanceRuntime>();
 builder.Services.AddHostedService(services => services.GetRequiredService<GuidanceRuntime>());
+builder.Services.AddSingleton<SettingsRuntime>();
 
 WebApplication app = builder.Build();
 app.UseExceptionHandler();
@@ -24,6 +25,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapWorldEndpoints();
 app.MapGuidanceEndpoints();
+app.MapSettingsEndpoints();
 app.MapFallbackToFile("index.html");
 app.Run();
 

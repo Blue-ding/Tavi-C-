@@ -18,6 +18,8 @@ internal sealed class GuidanceRuntime : IHostedService
     private readonly GuidanceEventBroker _events;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IReadOnlyList<ILanguageModelService> _providedLanguageModels;
+    private readonly SemaphoreSlim _reloadLock = new(1, 1);
+    private ReloadableLanguageModelService? _reloadableLanguageModels;
     private IGuidanceService? _service;
     private string _availabilityMessage = "Guidance 尚未初始化。";
     private string? _provider;
@@ -39,17 +41,22 @@ internal sealed class GuidanceRuntime : IHostedService
     {
         try
         {
-            ILanguageModelService? languageModels = _providedLanguageModels.LastOrDefault() ?? await CreateConfiguredLanguageModelsAsync(cancellationToken);
+            ILanguageModelService? languageModels = _providedLanguageModels.LastOrDefault()
+                ?? await CreateConfiguredLanguageModelsAsync(cancellationToken);
             if (languageModels is null)
             {
-                _availabilityMessage = "尚未配置语言模型。未找到临时配置 SelfCongif.md。";
+                _availabilityMessage = "尚未配置语言模型。未找到本地 OpenAI 配置 openai.json。";
                 return;
             }
-            _provider = languageModels.Capabilities.Provider;
-            _service = new TaviCore(languageModels, _applicationLogger).CreateGuidanceService(_world.Session);
+            if (_providedLanguageModels.Count == 0)
+            {
+                _reloadableLanguageModels = new ReloadableLanguageModelService(languageModels);
+                languageModels = _reloadableLanguageModels;
+            }
+            InitializeService(languageModels);
             _availabilityMessage = $"Guidance 已就绪：{_provider}。";
         }
-        catch (Exception exception) when (exception is LanguageModelException or LanguageModelSettingsStoreException or ArgumentException)
+        catch (Exception exception) when (exception is LanguageModelException or LanguageModelSettingsStoreException or OpenAIConfigurationStoreException or ArgumentException)
         {
             _availabilityMessage = exception.Message;
             _logger.LogWarning(exception, "Guidance 初始化失败。");
@@ -57,6 +64,50 @@ internal sealed class GuidanceRuntime : IHostedService
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>
+    /// 重新加载持久化配置。已有 Guidance Session 保持不变，之后启动的模型运行使用新配置。
+    /// </summary>
+    internal async Task ReloadSettingsAsync(CancellationToken cancellationToken)
+    {
+        // 显式注入的模型服务不由本地 OpenAI 设置管理。
+        if (_providedLanguageModels.Count != 0)
+            return;
+
+        await _reloadLock.WaitAsync(cancellationToken);
+        try
+        {
+            ILanguageModelService? languageModels = await CreateConfiguredLanguageModelsAsync(cancellationToken);
+            if (languageModels is null)
+            {
+                _availabilityMessage = "尚未配置语言模型。请填写并保存 OpenAI 连接配置。";
+                return;
+            }
+
+            if (_reloadableLanguageModels is null)
+            {
+                _reloadableLanguageModels = new ReloadableLanguageModelService(languageModels);
+                InitializeService(_reloadableLanguageModels);
+            }
+            else
+            {
+                _reloadableLanguageModels.Replace(languageModels);
+                _provider = languageModels.Capabilities.Provider;
+            }
+
+            _availabilityMessage = $"Guidance 已就绪：{_provider}。设置已即时生效，无需重建 Session。";
+        }
+        catch (Exception exception) when (exception is LanguageModelException or LanguageModelSettingsStoreException or OpenAIConfigurationStoreException or ArgumentException)
+        {
+            _availabilityMessage = $"新设置无法应用：{exception.Message}";
+            _logger.LogWarning(exception, "Guidance 设置热加载失败。");
+            throw;
+        }
+        finally
+        {
+            _reloadLock.Release();
+        }
+    }
 
     internal GuidanceOperationViewModel Start(string potential)
     {
@@ -133,11 +184,14 @@ internal sealed class GuidanceRuntime : IHostedService
 
     private async Task<ILanguageModelService?> CreateConfiguredLanguageModelsAsync(CancellationToken cancellationToken)
     {
-        OpenAILanguageModelOptions? options = SelfConfigOpenAILanguageModelOptionsLoader.TryLoad(_configuration["Tavi:OpenAI:SelfConfigPath"]);
-        if (options is null)
-            return null;
         string defaultSettingsDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tavi", "Settings");
         string settingsDirectory = ReadConfiguration("Tavi:SettingsDirectory", "TAVI_SETTINGS_DIRECTORY") ?? defaultSettingsDirectory;
+        string openAIConfigurationPath = ReadConfiguration("Tavi:OpenAI:ConfigurationPath", "TAVI_OPENAI_CONFIGURATION_PATH") ?? Path.Combine(settingsDirectory, "openai.json");
+        using var openAIStore = new JsonFileOpenAIConfigurationStore(openAIConfigurationPath);
+        var openAIConfigurationService = new OpenAIConfigurationService(openAIStore);
+        OpenAILanguageModelOptions? options = await openAIConfigurationService.LoadOptionsAsync(cancellationToken);
+        if (options is null)
+            return null;
         using var store = new JsonFileLanguageModelSettingsStore(Path.Combine(settingsDirectory, "language-model.json"));
         var settingsService = new LanguageModelSettingsService(store);
         LanguageModelSettings settings = await settingsService.LoadOrDefaultAsync(cancellationToken);
@@ -148,6 +202,12 @@ internal sealed class GuidanceRuntime : IHostedService
     }
 
     private string? ReadConfiguration(string key, string environmentVariable) => _configuration[key] ?? Environment.GetEnvironmentVariable(environmentVariable);
+
+    private void InitializeService(ILanguageModelService languageModels)
+    {
+        _provider = languageModels.Capabilities.Provider;
+        _service = new TaviCore(languageModels, _applicationLogger).CreateGuidanceService(_world.Session);
+    }
 
     private IGuidanceService RequireService() => _service ?? throw LanguageModelConfigurationException.Invalid(_availabilityMessage);
 }

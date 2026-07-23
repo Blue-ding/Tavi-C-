@@ -6,15 +6,15 @@ using Xunit;
 
 namespace Tavi.Infrastructure.OpenAI.Tests;
 
-/// <summary>使用本机忽略的 SelfCongif.md 验证真实 OpenAI 兼容服务。</summary>
+/// <summary>使用本机 OpenAI 配置文件验证真实兼容服务。</summary>
 public sealed class OpenAILanguageModelIntegrationTests
 {
     /// <summary>验证 Chat API 的真实工具循环和 JSON 输出。</summary>
     [OpenAIIntegrationFact]
     public async Task ChatCompletesToolLoopAndProducesJson()
     {
-        LocalOpenAIConfiguration configuration = LocalOpenAIConfiguration.Load();
-        var client = new OpenAILanguageModelClient(configuration.ToOptions(OpenAIClientType.Chat));
+        OpenAIConfiguration configuration = LocalOpenAIConfiguration.Load();
+        var client = new OpenAILanguageModelClient((configuration with { ClientType = OpenAIClientType.Chat }).ToOptions());
         var runner = new LanguageModelRunner(client, IntegrationSettings());
         var request = new LanguageModelRunRequest
         {
@@ -39,8 +39,8 @@ public sealed class OpenAILanguageModelIntegrationTests
     [OpenAIIntegrationFact]
     public async Task ResponsesCompletesSimpleRequest()
     {
-        LocalOpenAIConfiguration configuration = LocalOpenAIConfiguration.Load();
-        var client = new OpenAILanguageModelClient(configuration.ToOptions(OpenAIClientType.Responses));
+        OpenAIConfiguration configuration = LocalOpenAIConfiguration.Load();
+        var client = new OpenAILanguageModelClient((configuration with { ClientType = OpenAIClientType.Responses }).ToOptions());
         var runner = new LanguageModelRunner(client, IntegrationSettings());
         var request = new LanguageModelRunRequest
         {
@@ -126,53 +126,24 @@ public sealed class OpenAIIntegrationFactAttribute : FactAttribute
         if (!string.Equals(Environment.GetEnvironmentVariable("TAVI_RUN_OPENAI_INTEGRATION_TESTS"), "1", StringComparison.Ordinal))
             Skip = "设置 TAVI_RUN_OPENAI_INTEGRATION_TESTS=1 后运行在线测试。";
         else if (!File.Exists(LocalOpenAIConfiguration.FindPath()))
-            Skip = "未找到被 Git 忽略的 SelfCongif.md。";
+            Skip = "未找到本机 OpenAI 配置 openai.json。";
     }
 }
 
-/// <summary>只在测试进程内加载本机凭证，且从不输出配置值。</summary>
-internal sealed record LocalOpenAIConfiguration(Uri Uri, string Model, string ApiKey)
+/// <summary>只在测试进程内加载本机 OpenAI 配置，且从不输出配置值。</summary>
+internal static class LocalOpenAIConfiguration
 {
-    internal static LocalOpenAIConfiguration Load()
+    internal static OpenAIConfiguration Load()
     {
-        string path = FindPath();
-        string fragment = File.ReadAllText(path);
-        using JsonDocument document = JsonDocument.Parse($"{{{fragment}}}", new JsonDocumentOptions { AllowTrailingCommas = true });
-        JsonElement root = document.RootElement;
-        string uri = GetRequired(root, "Uri");
-        string model = GetRequired(root, "Model");
-        string apiKey = GetRequired(root, "APIKey");
-        return new LocalOpenAIConfiguration(new Uri(uri, UriKind.Absolute), model, apiKey);
+        using var store = new JsonFileOpenAIConfigurationStore(FindPath());
+        return store.LoadAsync().GetAwaiter().GetResult() ?? throw new FileNotFoundException("未找到本机 OpenAI 配置。", store.Path);
     }
-
-    internal OpenAILanguageModelOptions ToOptions(OpenAIClientType clientType) =>
-        new()
-        {
-            Endpoint = Uri,
-            Model = Model,
-            ApiKey = ApiKey,
-            ClientType = clientType,
-            SupportsRequiredToolChoice = false,
-            EnableThinking = false
-        };
 
     internal static string FindPath()
     {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Tavi.sln")))
-            directory = directory.Parent;
-        if (directory is null)
-            throw new FileNotFoundException("无法定位 Tavi.sln。");
-        return Path.Combine(directory.FullName, "src", "Tavi.Infrastructure.OpenAI", "SelfCongif.md");
-    }
-
-    private static string GetRequired(JsonElement root, string name)
-    {
-        if (!root.TryGetProperty(name, out JsonElement property) || property.ValueKind != JsonValueKind.String)
-            throw new InvalidDataException($"SelfCongif.md 缺少字符串字段 {name}。");
-        string? value = property.GetString();
-        return string.IsNullOrWhiteSpace(value)
-            ? throw new InvalidDataException($"SelfCongif.md 字段 {name} 不能为空。")
-            : value;
+        string? configuredPath = Environment.GetEnvironmentVariable("TAVI_OPENAI_CONFIGURATION_PATH");
+        return string.IsNullOrWhiteSpace(configuredPath)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tavi", "Settings", "openai.json")
+            : Path.GetFullPath(configuredPath);
     }
 }

@@ -54,6 +54,39 @@ export interface ApiProblem {
   }
 }
 
+export type FeaturePolicy = 'Disabled' | 'Preferred' | 'Required'
+
+export interface LanguageModelSettingsViewModel {
+  maxToolRounds: number
+  maxOutputRepairAttempts: number
+  overallTimeoutSeconds: number
+  toolCalls: FeaturePolicy
+  nativeJsonOutput: FeaturePolicy
+  streaming: FeaturePolicy
+}
+
+export type OpenAIClientType = 'Chat' | 'Responses'
+
+export interface OpenAIConfigurationViewModel {
+  endpoint: string
+  model: string
+  clientType: OpenAIClientType
+  supportsRequiredToolChoice: boolean
+  enableThinking: boolean | null
+  hasApiKey: boolean
+}
+
+export interface OpenAIConfigurationInput extends OpenAIConfigurationViewModel {
+  apiKey: string
+}
+
+export interface SettingsSaveResultViewModel {
+  languageModel: LanguageModelSettingsViewModel
+  openAI: OpenAIConfigurationViewModel
+  sessionRecreationRequired: boolean
+  message: string
+}
+
 export interface GuidanceAvailabilityViewModel {
   available: boolean
   provider: string | null

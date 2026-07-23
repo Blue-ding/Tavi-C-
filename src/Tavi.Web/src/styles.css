@@ -129,6 +129,19 @@ button:disabled { opacity: .38; cursor: not-allowed; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 3px; }
 .modal-actions > button { display: flex; align-items: center; gap: 6px; min-height: 38px; margin: 0; padding: 0 14px; border: 1px solid #36413f; border-radius: 8px; background: #1b2323; cursor: pointer; font-size: 12px; }
 .modal-actions > .primary-action { color: #171a19; border-color: #d4a85a; background: #d4a85a; }
+.settings-modal { width: min(920px, 100%); }
+.settings-modal .modal-form { max-height: min(720px, calc(100vh - 130px)); overflow: auto; }
+.settings-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 220px; color: #83918c; font-size: 12px; }
+.settings-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.settings-column { min-width: 0; padding: 16px; border: 1px solid #2d3735; border-radius: 10px; background: #121819; }
+.settings-section-title { display: grid; gap: 3px; margin-bottom: 18px; }
+.settings-section-title span { color: #9a7b44; font: 600 9px Consolas, monospace; letter-spacing: .14em; }
+.settings-section-title strong { color: #d6dfdb; font-size: 14px; }
+.settings-check { display: flex !important; grid-template-columns: none; flex-direction: row; align-items: center; gap: 8px !important; min-height: 34px; }
+.settings-check input { width: 15px !important; height: 15px; margin: 0; padding: 0; accent-color: #d4a85a; }
+.settings-security { margin: 3px 0 0; color: #65736e; font-size: 10px; line-height: 1.6; }
+.settings-note { margin: 2px 0 18px; padding: 10px 11px; color: #798680; border: 1px solid #303936; border-radius: 8px; background: #111718; font-size: 10px; line-height: 1.6; }
+.settings-saved { display: flex; align-items: center; gap: 5px; margin-right: auto; color: #8fc4b9; font-size: 11px; }
 
 .guidance-panel { position: fixed; z-index: 35; top: 64px; right: 0; bottom: 0; display: flex; flex-direction: column; width: min(430px, 100vw); color: #dce4e1; border-left: 1px solid #4b4231; background: #121718; box-shadow: -24px 0 70px rgba(0,0,0,.48); }
 .guidance-header { display: flex; align-items: center; justify-content: space-between; min-height: 61px; padding: 0 16px; border-bottom: 1px solid #2b3230; background: linear-gradient(90deg, #171b19, #191914); }
@@ -214,4 +227,5 @@ button:disabled { opacity: .38; cursor: not-allowed; }
   .inspector { top: 58px; width: min(320px, 90vw); }
   .guidance-panel { top: 58px; width: 100vw; }
   .legend { display: none; }
+  .settings-columns { grid-template-columns: 1fr; }
 }

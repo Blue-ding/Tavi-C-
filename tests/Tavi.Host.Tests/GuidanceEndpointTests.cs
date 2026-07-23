@@ -75,7 +75,7 @@ public sealed class GuidanceEndpointTests
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Tavi:SaveDirectory"] = _saveDirectory, ["Tavi:OpenAI:SelfConfigPath"] = Path.Combine(_saveDirectory, "missing-SelfCongif.md") }));
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Tavi:SaveDirectory"] = _saveDirectory, ["Tavi:OpenAI:ConfigurationPath"] = Path.Combine(_saveDirectory, "missing-openai.json") }));
             if (includeLanguageModels)
                 builder.ConfigureServices(services => services.AddSingleton<ILanguageModelService>(new FakeLanguageModelService()));
         }
