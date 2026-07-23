@@ -2,7 +2,7 @@ namespace Tavi.Domain.World
 {
     /// <summary>
     /// 世界图在特定时刻的独立领域快照。
-    /// WorldGraph 在初始化时复制并校验该数据，之后不再受快照外部修改影响。
+    /// World 在初始化时复制并校验该数据，之后不再受快照外部修改影响。
     /// </summary>
     public sealed record WorldSnapshot
     {

@@ -1,6 +1,7 @@
 using Tavi.Domain.World;
 using Tavi.Infrastructure.Persistence;
 using Xunit;
+using RuntimeWorld = Tavi.Domain.World.World;
 
 namespace Tavi.Infrastructure.Persistence.Tests;
 
@@ -11,15 +12,15 @@ public sealed class JsonFileWorldStoreTests
     {
         using var directory = new TemporaryDirectory();
         using var store = new JsonFileWorldStore(directory.Path);
-        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
-        Guid characterId = graph.AddAnchor("Alice", "Character", AnchorType.Character);
-        Guid itemId = graph.AddAnchor("Sword", "Item", AnchorType.Item);
-        Guid worldRelationId = graph.AddRelation("owns", "World relation", characterId, itemId);
-        Guid subWorldRelationId = graph.AddRelation("believes", "Sub-world relation", characterId, itemId, characterId);
+        RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
+        Guid characterId = world.AddAnchor("Alice", "Character", AnchorType.Character);
+        Guid itemId = world.AddAnchor("Sword", "Item", AnchorType.Item);
+        Guid worldRelationId = world.AddRelation("owns", "World relation", characterId, itemId);
+        Guid subWorldRelationId = world.AddRelation("believes", "Sub-world relation", characterId, itemId, characterId);
 
-        await store.SaveAsync("slot", graph.CreateSnapshot());
+        await store.SaveAsync("slot", world.CreateSnapshot());
         WorldSnapshot? restoredSnapshot = await store.LoadAsync("slot");
-        WorldGraph restored = WorldGraph.Create(Assert.IsType<WorldSnapshot>(restoredSnapshot));
+        RuntimeWorld restored = RuntimeWorld.Create(Assert.IsType<WorldSnapshot>(restoredSnapshot));
 
         Assert.Equal(characterId, restored.GetAnchor(characterId).Id);
         Assert.Equal(worldRelationId, restored.GetRelation(worldRelationId).Id);
@@ -32,17 +33,17 @@ public sealed class JsonFileWorldStoreTests
     {
         using var directory = new TemporaryDirectory();
         using var store = new JsonFileWorldStore(directory.Path);
-        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
-        Guid firstId = graph.AddAnchor("First", "", AnchorType.Item);
-        await store.SaveAsync("slot", graph.CreateSnapshot());
-        graph.AddAnchor("Second", "", AnchorType.Item);
-        await store.SaveAsync("slot", graph.CreateSnapshot());
+        RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
+        Guid firstId = world.AddAnchor("First", "", AnchorType.Item);
+        await store.SaveAsync("slot", world.CreateSnapshot());
+        world.AddAnchor("Second", "", AnchorType.Item);
+        await store.SaveAsync("slot", world.CreateSnapshot());
         string primaryPath = Path.Combine(directory.Path, "slot.save.json");
         string backupPath = Path.Combine(directory.Path, "slot.save.bak.json");
         await File.WriteAllTextAsync(primaryPath, "{ invalid json");
 
         WorldSnapshot? restoredSnapshot = await store.LoadAsync("slot");
-        WorldGraph restored = WorldGraph.Create(Assert.IsType<WorldSnapshot>(restoredSnapshot));
+        RuntimeWorld restored = RuntimeWorld.Create(Assert.IsType<WorldSnapshot>(restoredSnapshot));
 
         Assert.True(File.Exists(backupPath));
         Assert.Equal(firstId, restored.GetAnchor(firstId).Id);

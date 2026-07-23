@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Tavi.Application.World;
 using Tavi.Domain.World;
+using RuntimeWorld = Tavi.Domain.World.World;
 
 namespace Tavi.Infrastructure.Persistence;
 
@@ -133,7 +134,7 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
         if (document.World is null)
             throw new InvalidDataException("存档缺少 world 数据。");
         WorldSnapshot snapshot = WorldSaveMapper.ToDomain(document.World);
-        _ = WorldGraph.Create(snapshot);
+        _ = RuntimeWorld.Create(snapshot);
         return snapshot;
     }
 

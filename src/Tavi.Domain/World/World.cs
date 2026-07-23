@@ -4,12 +4,12 @@ namespace Tavi.Domain.World
     /// 运行时世界图。
     /// 负责基于 Id 和图结构的查询，并维护世界图的领域不变量。
     /// </summary>
-    public sealed class WorldGraph
+    public sealed class World
     {
         private readonly WorldSnapshot _data;
         private readonly Dictionary<string, Guid> _characterIdsByName;
 
-        private WorldGraph(WorldSnapshot data)
+        private World(WorldSnapshot data)
         {
             _data = CloneWorldSnapshot(data);
             _characterIdsByName = _data.Anchors.Values
@@ -24,11 +24,21 @@ namespace Tavi.Domain.World
         /// <summary>
         /// 校验并创建运行时世界图。所有初始化错误会在一个异常中汇总。
         /// </summary>
-        public static WorldGraph Create(WorldSnapshot data)
+        public static World Create(WorldSnapshot data)
         {
             ValidateWorldSnapshot(data);
-            return new WorldGraph(data);
+            return new World(data);
         }
+
+        /// <summary>
+        /// 获取当前运行时世界版本；每次实际修改成功后递增。
+        /// </summary>
+        public long Revision { get; private set; }
+
+        /// <summary>
+        /// 在运行时世界发生实际修改后触发。
+        /// </summary>
+        public event EventHandler<WorldChangedEventArgs>? Changed;
 
         /// <summary>
         /// 创建当前世界图的独立领域快照。
@@ -158,7 +168,7 @@ namespace Tavi.Domain.World
             EnsureAnchorType(type, operation);
             if (type == AnchorType.Character && _characterIdsByName.TryGetValue(name, out Guid duplicateId))
             {
-                throw new WorldGraphException(WorldGraphErrorCode.Duplicate, operation,
+                throw new WorldException(WorldErrorCode.Duplicate, operation,
                     $"Character 名称“{name}”已被 Anchor {duplicateId} 使用。");
             }
 
@@ -166,6 +176,7 @@ namespace Tavi.Domain.World
             _data.Anchors.Add(anchor.Id, anchor);
             if (type == AnchorType.Character)
                 _characterIdsByName.Add(anchor.Name, anchor.Id);
+            MarkChanged(operation);
             return anchor.Id;
         }
 
@@ -183,12 +194,14 @@ namespace Tavi.Domain.World
             if (!domainId.HasValue)
             {
                 _data.Relations.Add(relation.Id, relation);
+                MarkChanged(operation);
                 return relation.Id;
             }
 
             EnsureCharacter(domainId.Value, operation);
             SubWorldSnapshot subWorld = FindSubWorld(domainId.Value) ?? CreateSubWorldSnapshot(domainId.Value);
             subWorld.Relations.Add(relation.Id, relation);
+            MarkChanged(operation);
             return relation.Id;
         }
 
@@ -201,14 +214,16 @@ namespace Tavi.Domain.World
             EnsureCharacter(characterId, operation);
             if (FindSubWorld(characterId) is { } duplicate)
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.Duplicate,
+                throw new WorldException(
+                    WorldErrorCode.Duplicate,
                     operation,
                     $"Character {characterId} 已持有子世界 {duplicate.Id}。",
                     characterId
                 );
             }
-            return CreateSubWorldSnapshot(characterId).Id;
+            Guid subWorldId = CreateSubWorldSnapshot(characterId).Id;
+            MarkChanged(operation);
+            return subWorldId;
         }
 
         /// <summary>
@@ -224,7 +239,7 @@ namespace Tavi.Domain.World
                 .Select(relation => relation.Id)
                 .ToArray();
             foreach (Guid relationId in connectedRelationIds)
-                RemoveRelation(relationId);
+                RemoveRelationCore(relationId, operation);
 
             if (anchor.Type == AnchorType.Character)
             {
@@ -234,6 +249,7 @@ namespace Tavi.Domain.World
                     _data.SubWorlds.Remove(subWorld);
             }
             _data.Anchors.Remove(anchorId);
+            MarkChanged(operation);
         }
 
         /// <summary>
@@ -241,8 +257,9 @@ namespace Tavi.Domain.World
         /// </summary>
         public void RemoveRelation(Guid relationId)
         {
-            RelationLocation location = FindRelation(relationId, nameof(RemoveRelation));
-            location.Owner.Remove(relationId);
+            const string operation = nameof(RemoveRelation);
+            RemoveRelationCore(relationId, operation);
+            MarkChanged(operation);
         }
 
         /// <summary>
@@ -255,6 +272,7 @@ namespace Tavi.Domain.World
             SubWorldSnapshot subWorld = FindSubWorld(characterId) ??
                                         throw NotFound(operation, "SubWorldSnapshot", characterId);
             _data.SubWorlds.Remove(subWorld);
+            MarkChanged(operation);
         }
 
         /// <summary>
@@ -265,12 +283,14 @@ namespace Tavi.Domain.World
             const string operation = nameof(UpdateAnchorName);
             EnsureName(name, operation, nameof(name));
             Anchor anchor = GetAnchorForOperation(anchorId, operation, "Anchor");
+            if (string.Equals(anchor.Name, name, StringComparison.Ordinal))
+                return;
             if (anchor.Type == AnchorType.Character
                 && _characterIdsByName.TryGetValue(name, out Guid duplicateId)
                 && duplicateId != anchorId)
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.Duplicate,
+                throw new WorldException(
+                    WorldErrorCode.Duplicate,
                     operation,
                     $"Character 名称“{name}”已被 Anchor {duplicateId} 使用。",
                     anchorId
@@ -283,6 +303,7 @@ namespace Tavi.Domain.World
                 _characterIdsByName.Add(name, anchor.Id);
             }
             anchor.UpdateName(name);
+            MarkChanged(operation);
         }
 
         /// <summary>
@@ -292,7 +313,10 @@ namespace Tavi.Domain.World
         {
             const string operation = nameof(UpdateAnchorDescription);
             Anchor anchor = GetAnchorForOperation(anchorId, operation, "Anchor");
+            if (string.Equals(anchor.Description, description, StringComparison.Ordinal))
+                return;
             anchor.UpdateDescription(description);
+            MarkChanged(operation);
         }
 
         /// <summary>
@@ -311,8 +335,8 @@ namespace Tavi.Domain.World
 
             if (becomesCharacter && _characterIdsByName.TryGetValue(anchor.Name, out Guid duplicateId))
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.Duplicate,
+                throw new WorldException(
+                    WorldErrorCode.Duplicate,
                     operation,
                     $"Character 名称“{anchor.Name}”已被 Anchor {duplicateId} 使用。",
                     anchorId
@@ -320,8 +344,8 @@ namespace Tavi.Domain.World
             }
             if (stopsBeingCharacter && FindSubWorld(anchorId) is { } subWorld)
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.InvalidOperation,
+                throw new WorldException(
+                    WorldErrorCode.InvalidOperation,
                     operation,
                     $"Character 持有子世界 {subWorld.Id}，请先显式删除该子世界。",
                     anchorId
@@ -333,6 +357,7 @@ namespace Tavi.Domain.World
             if (stopsBeingCharacter)
                 _characterIdsByName.Remove(anchor.Name);
             anchor.UpdateType(type);
+            MarkChanged(operation);
         }
 
         /// <summary>
@@ -341,7 +366,12 @@ namespace Tavi.Domain.World
         public void UpdateRelationName(Guid relationId, string name)
         {
             const string operation = nameof(UpdateRelationName);
-            FindRelation(relationId, operation).Relation.UpdateName(name);
+            EnsureName(name, operation, nameof(name));
+            Relation relation = FindRelation(relationId, operation).Relation;
+            if (string.Equals(relation.Name, name, StringComparison.Ordinal))
+                return;
+            relation.UpdateName(name);
+            MarkChanged(operation);
         }
 
         /// <summary>
@@ -350,7 +380,23 @@ namespace Tavi.Domain.World
         public void UpdateRelationDescription(Guid relationId, string description)
         {
             const string operation = nameof(UpdateRelationDescription);
-            FindRelation(relationId, operation).Relation.UpdateDescription(description);
+            Relation relation = FindRelation(relationId, operation).Relation;
+            if (string.Equals(relation.Description, description, StringComparison.Ordinal))
+                return;
+            relation.UpdateDescription(description);
+            MarkChanged(operation);
+        }
+
+        private void RemoveRelationCore(Guid relationId, string operation)
+        {
+            RelationLocation location = FindRelation(relationId, operation);
+            location.Owner.Remove(relationId);
+        }
+
+        private void MarkChanged(string operation)
+        {
+            Revision++;
+            Changed?.Invoke(this, new WorldChangedEventArgs(Revision, operation));
         }
 
         private IEnumerable<Relation> EnumerateAllRelations()
@@ -377,8 +423,8 @@ namespace Tavi.Domain.World
             Anchor anchor = GetAnchorForOperation(characterId, operation, "Domain Anchor");
             if (anchor.Type != AnchorType.Character)
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.InvalidOperation,
+                throw new WorldException(
+                    WorldErrorCode.InvalidOperation,
                     operation,
                     $"Anchor {characterId} 的类型是 {anchor.Type}，只有 Character 可以持有子世界。",
                     characterId
@@ -420,8 +466,8 @@ namespace Tavi.Domain.World
         {
             if (id == Guid.Empty)
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.InvalidArgument,
+                throw new WorldException(
+                    WorldErrorCode.InvalidArgument,
                     operation,
                     $"参数 {parameterName} 不能是空 Guid。"
                 );
@@ -432,8 +478,8 @@ namespace Tavi.Domain.World
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.InvalidArgument,
+                throw new WorldException(
+                    WorldErrorCode.InvalidArgument,
                     operation,
                     $"参数 {parameterName} 不能为空或只包含空白字符。"
                 );
@@ -444,18 +490,18 @@ namespace Tavi.Domain.World
         {
             if (!Enum.IsDefined(type))
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.InvalidArgument,
+                throw new WorldException(
+                    WorldErrorCode.InvalidArgument,
                     operation,
                     $"AnchorType 值 {Convert.ToInt32(type)} 未定义。"
                 );
             }
         }
 
-        private static WorldGraphException NotFound(string operation, string entityName, Guid entityId)
+        private static WorldException NotFound(string operation, string entityName, Guid entityId)
         {
-            return new WorldGraphException(
-                WorldGraphErrorCode.NotFound,
+            return new WorldException(
+                WorldErrorCode.NotFound,
                 operation,
                 $"未找到 {entityName}。",
                 entityId
@@ -556,8 +602,8 @@ namespace Tavi.Domain.World
 
             if (errors.Count > 0)
             {
-                throw new WorldGraphException(
-                    WorldGraphErrorCode.InvalidWorldSnapshot,
+                throw new WorldException(
+                    WorldErrorCode.InvalidWorldSnapshot,
                     operation,
                     $"WorldSnapshot 初始化校验发现 {errors.Count} 个错误。",
                     validationErrors: errors

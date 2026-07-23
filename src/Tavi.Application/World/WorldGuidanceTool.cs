@@ -2,545 +2,649 @@ using System.ComponentModel;
 using System.Text.Json;
 using Tavi.Application.LanguageModel;
 using Tavi.Domain.World;
+using RuntimeWorld = Tavi.Domain.World.World;
 
-namespace Tavi.Application.World
+namespace Tavi.Application.World;
+
+internal static class WorldGuidanceTool
 {
-    internal static class WorldGuidanceTool
+    private const int MaxResults = 20;
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+
+    /// <summary>
+    /// 创建全部世界查询和写入工具。
+    /// </summary>
+    internal static IReadOnlyCollection<ITool> CreateTools(WorldSession session)
     {
-        private const int MaxResults = 20;
-        private static readonly JsonSerializerOptions JsonOptions = new()
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
-        };
-
-        /// <summary>
-        /// 创建全部世界引导查询工具。
-        /// </summary>
-        internal static IReadOnlyCollection<ITool> CreateTools(WorldGraph graph)
-        {
-            return
-            [
-                new GetAnchorTool(graph),
-                new QueryAnchorTool(graph),
-                new GetWorldRelationTool(graph),
-                new GetSubWorldRelationTool(graph),
-                new QueryWorldRelationTool(graph),
-                new QuerySubWorldRelationTool(graph),
-                new QueryRelationTool(graph),
-                new ListCharactersTool(graph),
-                new GetAnchorRelationsTool(graph),
-                new GetRelationsBetweenAnchorsTool(graph),
-                new CompareWorldWithSubWorldTool(graph)
-            ];
-        }
-
-        private static string ParseAnchor(Anchor anchor)
-        {
-            return JsonSerializer.Serialize(ToAnchorOutput(anchor), JsonOptions);
-        }
-
-        private static string ParseRelation(WorldGraph graph, Relation relation, Anchor? domain)
-        {
-            return JsonSerializer.Serialize(ToRelationOutput(graph, new ScopedRelation(relation, domain)), JsonOptions);
-        }
-
-        private static AnchorOutput ToAnchorOutput(Anchor anchor)
-        {
-            return new AnchorOutput(anchor.Name, anchor.Description, anchor.Type.ToString());
-        }
-
-        private static RelationOutput ToRelationOutput(WorldGraph graph, ScopedRelation scopedRelation)
-        {
-            Relation relation = scopedRelation.Relation;
-            Anchor source = graph.GetAnchor(relation.SourceId);
-            Anchor target = graph.GetAnchor(relation.TargetId);
-            object scope = scopedRelation.Domain is null
-                ? new WorldScopeOutput("World")
-                : new SubWorldScopeOutput("SubWorld", ToAnchorOutput(scopedRelation.Domain));
-            return new RelationOutput(relation.Name, relation.Description,
-                ToAnchorOutput(source), ToAnchorOutput(target), scope);
-        }
-
-        private static IReadOnlyList<ScopedRelation> GetWorldRelations(WorldGraph graph)
-        {
-            return graph.GetWorldRelations().Select(relation => new ScopedRelation(relation, null)).ToArray();
-        }
-
-        private static IReadOnlyList<ScopedRelation> GetSubWorldRelations(WorldGraph graph, string characterName)
-        {
-            Anchor character = RequireCharacter(graph, characterName);
-            SubWorldSnapshot? subWorld = graph.GetSubWorlds().SingleOrDefault(item => item.DomainId == character.Id);
-            return subWorld is null
-                ? Array.Empty<ScopedRelation>()
-                : subWorld.Relations.Values.Select(relation => new ScopedRelation(relation, character)).ToArray();
-        }
-
-        private static IReadOnlyList<ScopedRelation> GetAllRelations(WorldGraph graph)
-        {
-            var relations = new List<ScopedRelation>(GetWorldRelations(graph));
-            foreach (SubWorldSnapshot subWorld in graph.GetSubWorlds())
-            {
-                Anchor character = graph.GetAnchor(subWorld.DomainId);
-                relations.AddRange(subWorld.Relations.Values.Select(relation => new ScopedRelation(relation, character)));
-            }
-            return relations;
-        }
-
-        private static IReadOnlyList<ScopedRelation> GetRelationsByScope(
-            WorldGraph graph, RelationQueryScope scope, string characterName)
-        {
-            return scope switch
-            {
-                RelationQueryScope.World => GetWorldRelations(graph),
-                RelationQueryScope.SubWorld => GetSubWorldRelations(graph, characterName),
-                RelationQueryScope.All => GetAllRelations(graph),
-                _ => throw new ToolArgumentException($"不支持的 Relation 查询范围：{scope}。")
-            };
-        }
-
-        private static Anchor RequireCharacter(WorldGraph graph, string characterName)
-        {
-            RequireText(characterName, nameof(characterName));
-            Anchor? exactCharacter = graph.GetCharacters().SingleOrDefault(anchor =>
-                string.Equals(anchor.Name, characterName, StringComparison.Ordinal));
-            if (exactCharacter is not null)
-                return exactCharacter;
-            Anchor[] characters = graph.GetCharacters().Where(anchor =>
-                string.Equals(anchor.Name, characterName, StringComparison.OrdinalIgnoreCase)).ToArray();
-            if (characters.Length == 0)
-                throw new ToolArgumentException($"不存在名称为“{characterName}”的 Character。");
-            if (characters.Length > 1)
-                throw new ToolArgumentException($"Character 名称“{characterName}”存在大小写歧义，请使用准确大小写。");
-            return characters[0];
-        }
-
-        private static Anchor[] FindAnchors(WorldGraph graph, string name)
-        {
-            RequireText(name, nameof(name));
-            return graph.GetAnchors()
-                .Where(anchor => string.Equals(anchor.Name, name, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(anchor => anchor.Type)
-                .ThenBy(anchor => anchor.Description, StringComparer.Ordinal)
-                .ToArray();
-        }
-
-        private static string[] NormalizeClues(string[] clues)
-        {
-            if (clues is null)
-                throw new ToolArgumentException("clues 不能为 null。");
-            string[] normalized = clues
-                .Where(clue => !string.IsNullOrWhiteSpace(clue))
-                .Select(clue => clue.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            if (normalized.Length == 0)
-                throw new ToolArgumentException("clues 至少需要包含一个非空字符串。");
-            return normalized;
-        }
-
-        private static bool MatchesAll(string candidate, IReadOnlyCollection<string> clues)
-        {
-            return clues.All(clue => candidate.Contains(clue, StringComparison.OrdinalIgnoreCase));
-        }
-
-        private static bool MatchesAnchor(Anchor anchor, IReadOnlyCollection<string> clues)
-        {
-            return MatchesAll($"{anchor.Name}\n{anchor.Description}\n{anchor.Type}", clues);
-        }
-
-        private static bool MatchesRelation(
-            WorldGraph graph, ScopedRelation scopedRelation, IReadOnlyCollection<string> clues)
-        {
-            Relation relation = scopedRelation.Relation;
-            Anchor source = graph.GetAnchor(relation.SourceId);
-            Anchor target = graph.GetAnchor(relation.TargetId);
-            string domainName = scopedRelation.Domain?.Name ?? "World";
-            return MatchesAll(
-                $"{relation.Name}\n{relation.Description}\n{source.Name}\n{target.Name}\n{domainName}", clues);
-        }
-
-        private static IEnumerable<ScopedRelation> SortRelations(
-            WorldGraph graph, IEnumerable<ScopedRelation> relations)
-        {
-            return relations
-                .OrderBy(item => item.Relation.Name, StringComparer.Ordinal)
-                .ThenBy(item => item.Domain?.Name ?? string.Empty, StringComparer.Ordinal)
-                .ThenBy(item => graph.GetAnchor(item.Relation.SourceId).Name, StringComparer.Ordinal)
-                .ThenBy(item => graph.GetAnchor(item.Relation.TargetId).Name, StringComparer.Ordinal)
-                .ThenBy(item => item.Relation.Description, StringComparer.Ordinal);
-        }
-
-        private static string SerializeAnchors(IEnumerable<Anchor> anchors)
-        {
-            return SerializeResult(anchors.Select(ToAnchorOutput));
-        }
-
-        private static string SerializeRelations(WorldGraph graph, IEnumerable<ScopedRelation> relations)
-        {
-            return SerializeResult(SortRelations(graph, relations).Select(item => ToRelationOutput(graph, item)));
-        }
-
-        private static string SerializeResult<T>(IEnumerable<T> items)
-        {
-            T[] allItems = items.ToArray();
-            var result = new QueryResult<T>(
-                allItems.Length,
-                Math.Min(allItems.Length, MaxResults),
-                allItems.Length > MaxResults,
-                allItems.Take(MaxResults).ToArray());
-            return JsonSerializer.Serialize(result, JsonOptions);
-        }
-
-        private static void RequireText(string value, string parameterName)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                throw new ToolArgumentException($"参数 {parameterName} 不能为空或只包含空白字符。");
-        }
-
-        public sealed class GetAnchorToolPara : IToolArgument
-        {
-            [Description("需要精确查询的 Anchor 名称")]
-            public string Name { get; set; } = string.Empty;
-        }
-
-        /// <summary>
-        /// 依据精确名称返回 Anchor 信息。
-        /// </summary>
-        private sealed class GetAnchorTool(WorldGraph graph) : Tool<GetAnchorToolPara>
-        {
-            public override string name => "get_anchor";
-            public override string description => "依据完整名称查询 Anchor；名称相同的结果会全部返回。";
-
-            protected override Task<string> Execute(
-                GetAnchorToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult(SerializeAnchors(FindAnchors(graph, arguments.Name)));
-            }
-        }
-
-        public sealed class QueryAnchorToolPara : IToolArgument
-        {
-            [Description("用于匹配 Anchor 名称、描述和类型的字符串线索；所有线索必须同时匹配")]
-            public string[] Clues { get; set; } = [];
-        }
-
-        /// <summary>
-        /// 依据字符串线索模糊查询 Anchor。
-        /// </summary>
-        private sealed class QueryAnchorTool(WorldGraph graph) : Tool<QueryAnchorToolPara>
-        {
-            public override string name => "query_anchor";
-            public override string description => "使用普通字符串包含匹配查询 Anchor；所有有效线索必须同时匹配。";
-
-            protected override Task<string> Execute(
-                QueryAnchorToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                string[] clues = NormalizeClues(arguments.Clues);
-                IEnumerable<Anchor> anchors = graph.GetAnchors()
-                    .Where(anchor => MatchesAnchor(anchor, clues))
-                    .OrderBy(anchor => anchor.Name, StringComparer.Ordinal)
-                    .ThenBy(anchor => anchor.Type);
-                return Task.FromResult(SerializeAnchors(anchors));
-            }
-        }
-
-        public class RelationNameToolPara : IToolArgument
-        {
-            [Description("需要精确查询的 Relation 名称")]
-            public string Name { get; set; } = string.Empty;
-        }
-
-        public sealed class SubWorldRelationNameToolPara : RelationNameToolPara
-        {
-            [Description("持有目标子世界的 Character 名称")]
-            public string CharacterName { get; set; } = string.Empty;
-        }
-
-        public class RelationCluesToolPara : IToolArgument
-        {
-            [Description("用于匹配 Relation 名称、描述、两端 Anchor 和所属 Character 的字符串线索")]
-            public string[] Clues { get; set; } = [];
-        }
-
-        public sealed class SubWorldRelationCluesToolPara : RelationCluesToolPara
-        {
-            [Description("持有目标子世界的 Character 名称")]
-            public string CharacterName { get; set; } = string.Empty;
-        }
-
-        /// <summary>
-        /// 依据精确名称查询主世界 Relation。
-        /// </summary>
-        private sealed class GetWorldRelationTool(WorldGraph graph) : Tool<RelationNameToolPara>
-        {
-            public override string name => "get_world_relation";
-            public override string description => "依据完整名称查询事实世界中的 Relation。";
-
-            protected override Task<string> Execute(
-                RelationNameToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                RequireText(arguments.Name, nameof(arguments.Name));
-                IEnumerable<ScopedRelation> relations = GetWorldRelations(graph).Where(item =>
-                    string.Equals(item.Relation.Name, arguments.Name, StringComparison.OrdinalIgnoreCase));
-                return Task.FromResult(SerializeRelations(graph, relations));
-            }
-        }
-
-        /// <summary>
-        /// 依据精确名称查询指定 Character 子世界中的 Relation。
-        /// </summary>
-        private sealed class GetSubWorldRelationTool(WorldGraph graph) : Tool<SubWorldRelationNameToolPara>
-        {
-            public override string name => "get_sub_world_relation";
-            public override string description => "依据完整名称查询指定 Character 认知世界中的 Relation。";
-
-            protected override Task<string> Execute(
-                SubWorldRelationNameToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                RequireText(arguments.Name, nameof(arguments.Name));
-                IEnumerable<ScopedRelation> relations = GetSubWorldRelations(graph, arguments.CharacterName)
-                    .Where(item => string.Equals(
-                        item.Relation.Name, arguments.Name, StringComparison.OrdinalIgnoreCase));
-                return Task.FromResult(SerializeRelations(graph, relations));
-            }
-        }
-
-        /// <summary>
-        /// 模糊查询主世界 Relation。
-        /// </summary>
-        private sealed class QueryWorldRelationTool(WorldGraph graph) : Tool<RelationCluesToolPara>
-        {
-            public override string name => "query_world_relation";
-            public override string description => "使用普通字符串包含匹配查询事实世界中的 Relation。";
-
-            protected override Task<string> Execute(
-                RelationCluesToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                string[] clues = NormalizeClues(arguments.Clues);
-                return Task.FromResult(SerializeRelations(
-                    graph, GetWorldRelations(graph).Where(item => MatchesRelation(graph, item, clues))));
-            }
-        }
-
-        /// <summary>
-        /// 模糊查询指定 Character 子世界中的 Relation。
-        /// </summary>
-        private sealed class QuerySubWorldRelationTool(WorldGraph graph) : Tool<SubWorldRelationCluesToolPara>
-        {
-            public override string name => "query_sub_world_relation";
-            public override string description => "使用普通字符串包含匹配查询指定 Character 认知世界中的 Relation。";
-
-            protected override Task<string> Execute(
-                SubWorldRelationCluesToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                string[] clues = NormalizeClues(arguments.Clues);
-                return Task.FromResult(SerializeRelations(graph,
-                    GetSubWorldRelations(graph, arguments.CharacterName)
-                        .Where(item => MatchesRelation(graph, item, clues))));
-            }
-        }
-
-        /// <summary>
-        /// 模糊查询主世界和全部子世界中的 Relation。
-        /// </summary>
-        private sealed class QueryRelationTool(WorldGraph graph) : Tool<RelationCluesToolPara>
-        {
-            public override string name => "query_relation";
-            public override string description => "使用普通字符串包含匹配查询事实世界和全部角色认知世界中的 Relation。";
-
-            protected override Task<string> Execute(
-                RelationCluesToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                string[] clues = NormalizeClues(arguments.Clues);
-                return Task.FromResult(SerializeRelations(
-                    graph, GetAllRelations(graph).Where(item => MatchesRelation(graph, item, clues))));
-            }
-        }
-
-        public sealed class EmptyToolPara : IToolArgument
-        {
-        }
-
-        /// <summary>
-        /// 遍历全部 Character。
-        /// </summary>
-        private sealed class ListCharactersTool(WorldGraph graph) : Tool<EmptyToolPara>
-        {
-            public override string name => "list_characters";
-            public override string description => "返回世界中的全部 Character。";
-
-            protected override Task<string> Execute(
-                EmptyToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                IEnumerable<Anchor> characters = graph.GetCharacters()
-                    .OrderBy(anchor => anchor.Name, StringComparer.Ordinal);
-                return Task.FromResult(SerializeAnchors(characters));
-            }
-        }
-
-        public sealed class AnchorRelationsToolPara : IToolArgument
-        {
-            [Description("需要查询关联关系的 Anchor 完整名称")]
-            public string AnchorName { get; set; } = string.Empty;
-
-            [Description("关系方向：Incoming、Outgoing 或 Both")]
-            public RelationDirection Direction { get; set; }
-
-            [Description("查询范围：World、SubWorld 或 All")]
-            public RelationQueryScope Scope { get; set; }
-
-            [Description("Scope 为 SubWorld 时使用的 Character 名称；其它范围传空字符串")]
-            public string CharacterName { get; set; } = string.Empty;
-        }
-
-        /// <summary>
-        /// 查询指定 Anchor 的入边、出边或全部关联 Relation。
-        /// </summary>
-        private sealed class GetAnchorRelationsTool(WorldGraph graph) : Tool<AnchorRelationsToolPara>
-        {
-            public override string name => "get_anchor_relations";
-            public override string description => "按方向和世界范围查询与指定名称 Anchor 相连的 Relation。";
-
-            protected override Task<string> Execute(
-                AnchorRelationsToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                Anchor[] anchors = FindAnchors(graph, arguments.AnchorName);
-                HashSet<Guid> anchorIds = anchors.Select(anchor => anchor.Id).ToHashSet();
-                IEnumerable<ScopedRelation> relations = GetRelationsByScope(
-                    graph, arguments.Scope, arguments.CharacterName).Where(item =>
-                    arguments.Direction switch
-                    {
-                        RelationDirection.Incoming => anchorIds.Contains(item.Relation.TargetId),
-                        RelationDirection.Outgoing => anchorIds.Contains(item.Relation.SourceId),
-                        RelationDirection.Both => anchorIds.Contains(item.Relation.SourceId)
-                                                  || anchorIds.Contains(item.Relation.TargetId),
-                        _ => throw new ToolArgumentException($"不支持的 Relation 方向：{arguments.Direction}。")
-                    });
-                return Task.FromResult(SerializeRelations(graph, relations));
-            }
-        }
-
-        public sealed class RelationsBetweenAnchorsToolPara : IToolArgument
-        {
-            [Description("第一个 Anchor 的完整名称")]
-            public string FirstAnchorName { get; set; } = string.Empty;
-
-            [Description("第二个 Anchor 的完整名称")]
-            public string SecondAnchorName { get; set; } = string.Empty;
-
-            [Description("查询范围：World、SubWorld 或 All")]
-            public RelationQueryScope Scope { get; set; }
-
-            [Description("Scope 为 SubWorld 时使用的 Character 名称；其它范围传空字符串")]
-            public string CharacterName { get; set; } = string.Empty;
-        }
-
-        /// <summary>
-        /// 查询两个名称对应的 Anchor 集合之间的 Relation。
-        /// </summary>
-        private sealed class GetRelationsBetweenAnchorsTool(WorldGraph graph)
-            : Tool<RelationsBetweenAnchorsToolPara>
-        {
-            public override string name => "get_relations_between_anchors";
-            public override string description => "查询两个 Anchor 之间双向存在的 Relation，可限定事实世界或角色认知世界。";
-
-            protected override Task<string> Execute(
-                RelationsBetweenAnchorsToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                HashSet<Guid> firstIds = FindAnchors(graph, arguments.FirstAnchorName)
-                    .Select(anchor => anchor.Id).ToHashSet();
-                HashSet<Guid> secondIds = FindAnchors(graph, arguments.SecondAnchorName)
-                    .Select(anchor => anchor.Id).ToHashSet();
-                IEnumerable<ScopedRelation> relations = GetRelationsByScope(
-                    graph, arguments.Scope, arguments.CharacterName).Where(item =>
-                    (firstIds.Contains(item.Relation.SourceId) && secondIds.Contains(item.Relation.TargetId))
-                    || (secondIds.Contains(item.Relation.SourceId) && firstIds.Contains(item.Relation.TargetId)));
-                return Task.FromResult(SerializeRelations(graph, relations));
-            }
-        }
-
-        public sealed class CompareWorldWithSubWorldToolPara : IToolArgument
-        {
-            [Description("需要对比其认知世界的 Character 名称")]
-            public string CharacterName { get; set; } = string.Empty;
-
-            [Description("用于匹配 Relation 的字符串线索；所有线索必须同时匹配")]
-            public string[] Clues { get; set; } = [];
-        }
-
-        /// <summary>
-        /// 并列查询事实世界和指定 Character 子世界中的 Relation。
-        /// </summary>
-        private sealed class CompareWorldWithSubWorldTool(WorldGraph graph)
-            : Tool<CompareWorldWithSubWorldToolPara>
-        {
-            public override string name => "compare_world_with_sub_world";
-            public override string description => "使用相同字符串线索并列查询事实世界与指定 Character 的认知世界，不对差异作推理。";
-
-            protected override Task<string> Execute(
-                CompareWorldWithSubWorldToolPara arguments, CancellationToken cancellationToken)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                string[] clues = NormalizeClues(arguments.Clues);
-                ScopedRelation[] world = GetWorldRelations(graph)
-                    .Where(item => MatchesRelation(graph, item, clues)).ToArray();
-                ScopedRelation[] subWorld = GetSubWorldRelations(graph, arguments.CharacterName)
-                    .Where(item => MatchesRelation(graph, item, clues)).ToArray();
-                var result = new ComparisonOutput(
-                    CreateRelationResult(graph, world),
-                    CreateRelationResult(graph, subWorld));
-                return Task.FromResult(JsonSerializer.Serialize(result, JsonOptions));
-            }
-        }
-
-        private static QueryResult<RelationOutput> CreateRelationResult(
-            WorldGraph graph, IEnumerable<ScopedRelation> relations)
-        {
-            RelationOutput[] items = SortRelations(graph, relations)
-                .Select(item => ToRelationOutput(graph, item)).ToArray();
-            return new QueryResult<RelationOutput>(
-                items.Length, Math.Min(items.Length, MaxResults), items.Length > MaxResults,
-                items.Take(MaxResults).ToArray());
-        }
-
-        public enum RelationDirection
-        {
-            Incoming,
-            Outgoing,
-            Both
-        }
-
-        public enum RelationQueryScope
-        {
-            World,
-            SubWorld,
-            All
-        }
-
-        private sealed record ScopedRelation(Relation Relation, Anchor? Domain);
-        private sealed record AnchorOutput(string Name, string Description, string Type);
-        private sealed record WorldScopeOutput(string Type);
-        private sealed record SubWorldScopeOutput(string Type, AnchorOutput Character);
-        private sealed record RelationOutput(
-            string Name,
-            string Description,
-            AnchorOutput Source,
-            AnchorOutput Target,
-            object Scope);
-        private sealed record QueryResult<T>(int Total, int Returned, bool Truncated, IReadOnlyList<T> Items);
-        private sealed record ComparisonOutput(
-            QueryResult<RelationOutput> World,
-            QueryResult<RelationOutput> SubWorld);
+        ArgumentNullException.ThrowIfNull(session);
+        return
+        [
+            new GetAnchorTool(session),
+            new QueryAnchorTool(session),
+            new GetWorldRelationTool(session),
+            new GetSubWorldRelationTool(session),
+            new QueryWorldRelationTool(session),
+            new QuerySubWorldRelationTool(session),
+            new QueryRelationTool(session),
+            new ListCharactersTool(session),
+            new GetAnchorRelationsTool(session),
+            new GetRelationsBetweenAnchorsTool(session),
+            new CompareWorldWithSubWorldTool(session),
+            new AddAnchorTool(session),
+            new RemoveAnchorTool(session),
+            new UpdateAnchorNameTool(session),
+            new UpdateAnchorDescriptionTool(session),
+            new UpdateAnchorTypeTool(session),
+            new AddRelationTool(session),
+            new RemoveRelationTool(session),
+            new UpdateRelationNameTool(session),
+            new UpdateRelationDescriptionTool(session),
+            new CreateSubWorldTool(session),
+            new RemoveSubWorldTool(session)
+        ];
     }
+
+    private static string SerializeAnchors(IEnumerable<Anchor> anchors)
+    {
+        return SerializeResult(anchors.Select(ToAnchorOutput));
+    }
+
+    private static string SerializeRelations(WorldSession session, Func<RuntimeWorld, IEnumerable<ScopedRelation>> query)
+    {
+        return InvokeForTool(() => session.Read(world =>
+            SerializeResult(query(world).Select(item => ToRelationOutput(world, item)))));
+    }
+
+    private static string SerializeComparison(WorldSession session, string characterName, IEnumerable<string> clues)
+    {
+        return InvokeForTool(() => session.Read(world =>
+        {
+            WorldRelationComparison comparison = WorldQueries.CompareWorldWithSubWorld(world, characterName, clues);
+            var output = new ComparisonOutput(CreateRelationResult(world, comparison.World), CreateRelationResult(world, comparison.SubWorld));
+            return JsonSerializer.Serialize(output, JsonOptions);
+        }));
+    }
+
+    private static string SerializeMutation(string operation, long revision, object result)
+    {
+        return JsonSerializer.Serialize(new MutationOutput(operation, revision, result), JsonOptions);
+    }
+
+    private static AnchorOutput ToAnchorOutput(Anchor anchor)
+    {
+        return new AnchorOutput(anchor.Name, anchor.Description, anchor.Type.ToString());
+    }
+
+    private static RelationOutput ToRelationOutput(RuntimeWorld world, ScopedRelation scopedRelation)
+    {
+        Relation relation = scopedRelation.Relation;
+        Anchor source = world.GetAnchor(relation.SourceId);
+        Anchor target = world.GetAnchor(relation.TargetId);
+        object scope = scopedRelation.Domain is null
+            ? new WorldScopeOutput("World")
+            : new SubWorldScopeOutput("SubWorld", ToAnchorOutput(scopedRelation.Domain));
+        return new RelationOutput(relation.Name, relation.Description, ToAnchorOutput(source), ToAnchorOutput(target), scope);
+    }
+
+    private static QueryResult<RelationOutput> CreateRelationResult(RuntimeWorld world, IEnumerable<ScopedRelation> relations)
+    {
+        RelationOutput[] items = relations.Select(item => ToRelationOutput(world, item)).ToArray();
+        return new QueryResult<RelationOutput>(items.Length, Math.Min(items.Length, MaxResults), items.Length > MaxResults, items.Take(MaxResults).ToArray());
+    }
+
+    private static string SerializeResult<T>(IEnumerable<T> items)
+    {
+        T[] allItems = items.ToArray();
+        var result = new QueryResult<T>(allItems.Length, Math.Min(allItems.Length, MaxResults), allItems.Length > MaxResults, allItems.Take(MaxResults).ToArray());
+        return JsonSerializer.Serialize(result, JsonOptions);
+    }
+
+    private static TResult InvokeForTool<TResult>(Func<TResult> operation)
+    {
+        try
+        {
+            return operation();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or WorldException)
+        {
+            throw new ToolArgumentException(exception.Message, exception);
+        }
+    }
+
+    private static Guid? ResolveDomainId(RuntimeWorld world, RelationQueryScope scope, string characterName)
+    {
+        return scope switch
+        {
+            RelationQueryScope.World => null,
+            RelationQueryScope.SubWorld => RequireCharacter(world, characterName).Id,
+            _ => throw new ArgumentException("Relation 写操作的 Scope 只能是 World 或 SubWorld。", nameof(scope))
+        };
+    }
+
+    private static Anchor RequireCharacter(RuntimeWorld world, string characterName)
+    {
+        Anchor character = WorldQueries.RequireSingleAnchor(world, characterName);
+        if (character.Type != AnchorType.Character)
+            throw new InvalidOperationException($"Anchor“{characterName}”不是 Character。");
+        return character;
+    }
+
+    public sealed class GetAnchorToolPara : IToolArgument
+    {
+        [Description("需要精确查询的 Anchor 名称")]
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private sealed class GetAnchorTool(WorldSession session) : Tool<GetAnchorToolPara>
+    {
+        public override string name => "get_anchor";
+        public override string description => "依据完整名称查询 Anchor；名称相同的结果会全部返回。";
+
+        protected override Task<string> Execute(GetAnchorToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Read(world => SerializeAnchors(WorldQueries.FindAnchors(world, arguments.Name)))));
+        }
+    }
+
+    public sealed class QueryAnchorToolPara : IToolArgument
+    {
+        [Description("用于匹配 Anchor 名称、描述和类型的字符串线索；所有线索必须同时匹配")]
+        public string[] Clues { get; set; } = [];
+    }
+
+    private sealed class QueryAnchorTool(WorldSession session) : Tool<QueryAnchorToolPara>
+    {
+        public override string name => "query_anchor";
+        public override string description => "使用普通字符串包含匹配查询 Anchor；所有有效线索必须同时匹配。";
+
+        protected override Task<string> Execute(QueryAnchorToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Read(world => SerializeAnchors(WorldQueries.QueryAnchors(world, arguments.Clues)))));
+        }
+    }
+
+    public class RelationNameToolPara : IToolArgument
+    {
+        [Description("需要精确查询的 Relation 名称")]
+        public string Name { get; set; } = string.Empty;
+    }
+
+    public sealed class SubWorldRelationNameToolPara : RelationNameToolPara
+    {
+        [Description("持有目标子世界的 Character 名称")]
+        public string CharacterName { get; set; } = string.Empty;
+    }
+
+    public class RelationCluesToolPara : IToolArgument
+    {
+        [Description("用于匹配 Relation 名称、描述、两端 Anchor 和所属 Character 的字符串线索")]
+        public string[] Clues { get; set; } = [];
+    }
+
+    public sealed class SubWorldRelationCluesToolPara : RelationCluesToolPara
+    {
+        [Description("持有目标子世界的 Character 名称")]
+        public string CharacterName { get; set; } = string.Empty;
+    }
+
+    private sealed class GetWorldRelationTool(WorldSession session) : Tool<RelationNameToolPara>
+    {
+        public override string name => "get_world_relation";
+        public override string description => "依据完整名称查询事实世界中的 Relation。";
+
+        protected override Task<string> Execute(RelationNameToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeRelations(session, world => WorldQueries.FindRelations(world, arguments.Name, RelationQueryScope.World, string.Empty)));
+        }
+    }
+
+    private sealed class GetSubWorldRelationTool(WorldSession session) : Tool<SubWorldRelationNameToolPara>
+    {
+        public override string name => "get_sub_world_relation";
+        public override string description => "依据完整名称查询指定 Character 认知世界中的 Relation。";
+
+        protected override Task<string> Execute(SubWorldRelationNameToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeRelations(session, world => WorldQueries.FindRelations(world, arguments.Name, RelationQueryScope.SubWorld, arguments.CharacterName)));
+        }
+    }
+
+    private sealed class QueryWorldRelationTool(WorldSession session) : Tool<RelationCluesToolPara>
+    {
+        public override string name => "query_world_relation";
+        public override string description => "使用普通字符串包含匹配查询事实世界中的 Relation。";
+
+        protected override Task<string> Execute(RelationCluesToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeRelations(session, world => WorldQueries.QueryRelations(world, arguments.Clues, RelationQueryScope.World, string.Empty)));
+        }
+    }
+
+    private sealed class QuerySubWorldRelationTool(WorldSession session) : Tool<SubWorldRelationCluesToolPara>
+    {
+        public override string name => "query_sub_world_relation";
+        public override string description => "使用普通字符串包含匹配查询指定 Character 认知世界中的 Relation。";
+
+        protected override Task<string> Execute(SubWorldRelationCluesToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeRelations(session, world => WorldQueries.QueryRelations(world, arguments.Clues, RelationQueryScope.SubWorld, arguments.CharacterName)));
+        }
+    }
+
+    private sealed class QueryRelationTool(WorldSession session) : Tool<RelationCluesToolPara>
+    {
+        public override string name => "query_relation";
+        public override string description => "使用普通字符串包含匹配查询事实世界和全部角色认知世界中的 Relation。";
+
+        protected override Task<string> Execute(RelationCluesToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeRelations(session, world => WorldQueries.QueryRelations(world, arguments.Clues, RelationQueryScope.All, string.Empty)));
+        }
+    }
+
+    public sealed class EmptyToolPara : IToolArgument
+    {
+    }
+
+    private sealed class ListCharactersTool(WorldSession session) : Tool<EmptyToolPara>
+    {
+        public override string name => "list_characters";
+        public override string description => "返回世界中的全部 Character。";
+
+        protected override Task<string> Execute(EmptyToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(session.Read(world => SerializeAnchors(WorldQueries.GetCharacters(world))));
+        }
+    }
+
+    public sealed class AnchorRelationsToolPara : IToolArgument
+    {
+        [Description("需要查询关联关系的 Anchor 完整名称")]
+        public string AnchorName { get; set; } = string.Empty;
+
+        [Description("关系方向：Incoming、Outgoing 或 Both")]
+        public RelationDirection Direction { get; set; }
+
+        [Description("查询范围：World、SubWorld 或 All")]
+        public RelationQueryScope Scope { get; set; }
+
+        [Description("Scope 为 SubWorld 时使用的 Character 名称；其它范围传空字符串")]
+        public string CharacterName { get; set; } = string.Empty;
+    }
+
+    private sealed class GetAnchorRelationsTool(WorldSession session) : Tool<AnchorRelationsToolPara>
+    {
+        public override string name => "get_anchor_relations";
+        public override string description => "按方向和世界范围查询与指定名称 Anchor 相连的 Relation。";
+
+        protected override Task<string> Execute(AnchorRelationsToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeRelations(session, world => WorldQueries.GetAnchorRelations(world, arguments.AnchorName, arguments.Direction, arguments.Scope, arguments.CharacterName)));
+        }
+    }
+
+    public sealed class RelationsBetweenAnchorsToolPara : IToolArgument
+    {
+        [Description("第一个 Anchor 的完整名称")]
+        public string FirstAnchorName { get; set; } = string.Empty;
+
+        [Description("第二个 Anchor 的完整名称")]
+        public string SecondAnchorName { get; set; } = string.Empty;
+
+        [Description("查询范围：World、SubWorld 或 All")]
+        public RelationQueryScope Scope { get; set; }
+
+        [Description("Scope 为 SubWorld 时使用的 Character 名称；其它范围传空字符串")]
+        public string CharacterName { get; set; } = string.Empty;
+    }
+
+    private sealed class GetRelationsBetweenAnchorsTool(WorldSession session) : Tool<RelationsBetweenAnchorsToolPara>
+    {
+        public override string name => "get_relations_between_anchors";
+        public override string description => "查询两个 Anchor 之间双向存在的 Relation，可限定事实世界或角色认知世界。";
+
+        protected override Task<string> Execute(RelationsBetweenAnchorsToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeRelations(session, world => WorldQueries.GetRelationsBetweenAnchors(world, arguments.FirstAnchorName, arguments.SecondAnchorName, arguments.Scope, arguments.CharacterName)));
+        }
+    }
+
+    public sealed class CompareWorldWithSubWorldToolPara : IToolArgument
+    {
+        [Description("需要对比其认知世界的 Character 名称")]
+        public string CharacterName { get; set; } = string.Empty;
+
+        [Description("用于匹配 Relation 的字符串线索；所有线索必须同时匹配")]
+        public string[] Clues { get; set; } = [];
+    }
+
+    private sealed class CompareWorldWithSubWorldTool(WorldSession session) : Tool<CompareWorldWithSubWorldToolPara>
+    {
+        public override string name => "compare_world_with_sub_world";
+        public override string description => "使用相同字符串线索并列查询事实世界与指定 Character 的认知世界，不对差异作推理。";
+
+        protected override Task<string> Execute(CompareWorldWithSubWorldToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SerializeComparison(session, arguments.CharacterName, arguments.Clues));
+        }
+    }
+
+    public sealed class AddAnchorToolPara : IToolArgument
+    {
+        [Description("新 Anchor 名称")]
+        public string Name { get; set; } = string.Empty;
+
+        [Description("新 Anchor 描述")]
+        public string Description { get; set; } = string.Empty;
+
+        [Description("新 Anchor 类型")]
+        public AnchorType Type { get; set; }
+    }
+
+    private sealed class AddAnchorTool(WorldSession session) : Tool<AddAnchorToolPara>
+    {
+        public override string name => "add_anchor";
+        public override string description => "向世界添加一个 Anchor。";
+
+        protected override Task<string> Execute(AddAnchorToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                Guid id = world.AddAnchor(arguments.Name, arguments.Description, arguments.Type);
+                return SerializeMutation(name, world.Revision, ToAnchorOutput(world.GetAnchor(id)));
+            })));
+        }
+    }
+
+    public sealed class AnchorSelectorToolPara : IToolArgument
+    {
+        [Description("需要唯一匹配的 Anchor 名称")]
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private sealed class RemoveAnchorTool(WorldSession session) : Tool<AnchorSelectorToolPara>
+    {
+        public override string name => "remove_anchor";
+        public override string description => "删除唯一匹配的 Anchor、相连 Relation 及其子世界。";
+
+        protected override Task<string> Execute(AnchorSelectorToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                Anchor anchor = WorldQueries.RequireSingleAnchor(world, arguments.Name);
+                world.RemoveAnchor(anchor.Id);
+                return SerializeMutation(name, world.Revision, new RemovedOutput("Anchor", anchor.Name));
+            })));
+        }
+    }
+
+    public sealed class UpdateAnchorNameToolPara : IToolArgument
+    {
+        [Description("需要唯一匹配的当前 Anchor 名称")]
+        public string CurrentName { get; set; } = string.Empty;
+
+        [Description("新的 Anchor 名称")]
+        public string NewName { get; set; } = string.Empty;
+    }
+
+    private sealed class UpdateAnchorNameTool(WorldSession session) : Tool<UpdateAnchorNameToolPara>
+    {
+        public override string name => "update_anchor_name";
+        public override string description => "更新唯一匹配的 Anchor 名称。";
+
+        protected override Task<string> Execute(UpdateAnchorNameToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                Anchor anchor = WorldQueries.RequireSingleAnchor(world, arguments.CurrentName);
+                world.UpdateAnchorName(anchor.Id, arguments.NewName);
+                return SerializeMutation(name, world.Revision, ToAnchorOutput(world.GetAnchor(anchor.Id)));
+            })));
+        }
+    }
+
+    public sealed class UpdateAnchorDescriptionToolPara : IToolArgument
+    {
+        [Description("需要唯一匹配的 Anchor 名称")]
+        public string Name { get; set; } = string.Empty;
+
+        [Description("新的 Anchor 描述")]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    private sealed class UpdateAnchorDescriptionTool(WorldSession session) : Tool<UpdateAnchorDescriptionToolPara>
+    {
+        public override string name => "update_anchor_description";
+        public override string description => "更新唯一匹配的 Anchor 描述。";
+
+        protected override Task<string> Execute(UpdateAnchorDescriptionToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                Anchor anchor = WorldQueries.RequireSingleAnchor(world, arguments.Name);
+                world.UpdateAnchorDescription(anchor.Id, arguments.Description);
+                return SerializeMutation(name, world.Revision, ToAnchorOutput(world.GetAnchor(anchor.Id)));
+            })));
+        }
+    }
+
+    public sealed class UpdateAnchorTypeToolPara : IToolArgument
+    {
+        [Description("需要唯一匹配的 Anchor 名称")]
+        public string Name { get; set; } = string.Empty;
+
+        [Description("新的 Anchor 类型")]
+        public AnchorType Type { get; set; }
+    }
+
+    private sealed class UpdateAnchorTypeTool(WorldSession session) : Tool<UpdateAnchorTypeToolPara>
+    {
+        public override string name => "update_anchor_type";
+        public override string description => "更新唯一匹配的 Anchor 类型。";
+
+        protected override Task<string> Execute(UpdateAnchorTypeToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                Anchor anchor = WorldQueries.RequireSingleAnchor(world, arguments.Name);
+                world.UpdateAnchorType(anchor.Id, arguments.Type);
+                return SerializeMutation(name, world.Revision, ToAnchorOutput(world.GetAnchor(anchor.Id)));
+            })));
+        }
+    }
+
+    public sealed class AddRelationToolPara : IToolArgument
+    {
+        [Description("新 Relation 名称")]
+        public string Name { get; set; } = string.Empty;
+
+        [Description("新 Relation 描述")]
+        public string Description { get; set; } = string.Empty;
+
+        [Description("来源 Anchor 的唯一名称")]
+        public string SourceAnchorName { get; set; } = string.Empty;
+
+        [Description("目标 Anchor 的唯一名称")]
+        public string TargetAnchorName { get; set; } = string.Empty;
+
+        [Description("写入范围：World 或 SubWorld")]
+        public RelationQueryScope Scope { get; set; }
+
+        [Description("Scope 为 SubWorld 时持有该子世界的 Character 名称；World 时传空字符串")]
+        public string CharacterName { get; set; } = string.Empty;
+    }
+
+    private sealed class AddRelationTool(WorldSession session) : Tool<AddRelationToolPara>
+    {
+        public override string name => "add_relation";
+        public override string description => "向主世界或指定 Character 子世界添加 Relation。";
+
+        protected override Task<string> Execute(AddRelationToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                Anchor source = WorldQueries.RequireSingleAnchor(world, arguments.SourceAnchorName);
+                Anchor target = WorldQueries.RequireSingleAnchor(world, arguments.TargetAnchorName);
+                Guid? domainId = ResolveDomainId(world, arguments.Scope, arguments.CharacterName);
+                Guid id = world.AddRelation(arguments.Name, arguments.Description, source.Id, target.Id, domainId);
+                Anchor? domain = domainId.HasValue ? world.GetAnchor(domainId.Value) : null;
+                return SerializeMutation(name, world.Revision, ToRelationOutput(world, new ScopedRelation(world.GetRelation(id), domain)));
+            })));
+        }
+    }
+
+    public class RelationSelectorToolPara : IToolArgument
+    {
+        [Description("需要唯一匹配的 Relation 名称")]
+        public string Name { get; set; } = string.Empty;
+
+        [Description("来源 Anchor 的唯一名称")]
+        public string SourceAnchorName { get; set; } = string.Empty;
+
+        [Description("目标 Anchor 的唯一名称")]
+        public string TargetAnchorName { get; set; } = string.Empty;
+
+        [Description("Relation 所在范围：World 或 SubWorld")]
+        public RelationQueryScope Scope { get; set; }
+
+        [Description("Scope 为 SubWorld 时持有该子世界的 Character 名称；World 时传空字符串")]
+        public string CharacterName { get; set; } = string.Empty;
+    }
+
+    private sealed class RemoveRelationTool(WorldSession session) : Tool<RelationSelectorToolPara>
+    {
+        public override string name => "remove_relation";
+        public override string description => "删除选择条件唯一匹配的 Relation。";
+
+        protected override Task<string> Execute(RelationSelectorToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                ScopedRelation selected = WorldQueries.RequireSingleRelation(world, arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
+                world.RemoveRelation(selected.Relation.Id);
+                return SerializeMutation(name, world.Revision, new RemovedOutput("Relation", selected.Relation.Name));
+            })));
+        }
+    }
+
+    public sealed class UpdateRelationNameToolPara : RelationSelectorToolPara
+    {
+        [Description("新的 Relation 名称")]
+        public string NewName { get; set; } = string.Empty;
+    }
+
+    private sealed class UpdateRelationNameTool(WorldSession session) : Tool<UpdateRelationNameToolPara>
+    {
+        public override string name => "update_relation_name";
+        public override string description => "更新选择条件唯一匹配的 Relation 名称。";
+
+        protected override Task<string> Execute(UpdateRelationNameToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                ScopedRelation selected = WorldQueries.RequireSingleRelation(world, arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
+                world.UpdateRelationName(selected.Relation.Id, arguments.NewName);
+                return SerializeMutation(name, world.Revision, ToRelationOutput(world, new ScopedRelation(world.GetRelation(selected.Relation.Id), selected.Domain)));
+            })));
+        }
+    }
+
+    public sealed class UpdateRelationDescriptionToolPara : RelationSelectorToolPara
+    {
+        [Description("新的 Relation 描述")]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    private sealed class UpdateRelationDescriptionTool(WorldSession session) : Tool<UpdateRelationDescriptionToolPara>
+    {
+        public override string name => "update_relation_description";
+        public override string description => "更新选择条件唯一匹配的 Relation 描述。";
+
+        protected override Task<string> Execute(UpdateRelationDescriptionToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                ScopedRelation selected = WorldQueries.RequireSingleRelation(world, arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
+                world.UpdateRelationDescription(selected.Relation.Id, arguments.Description);
+                return SerializeMutation(name, world.Revision, ToRelationOutput(world, new ScopedRelation(world.GetRelation(selected.Relation.Id), selected.Domain)));
+            })));
+        }
+    }
+
+    public sealed class CharacterSelectorToolPara : IToolArgument
+    {
+        [Description("需要唯一匹配的 Character 名称")]
+        public string CharacterName { get; set; } = string.Empty;
+    }
+
+    private sealed class CreateSubWorldTool(WorldSession session) : Tool<CharacterSelectorToolPara>
+    {
+        public override string name => "create_sub_world";
+        public override string description => "为指定 Character 创建子世界。";
+
+        protected override Task<string> Execute(CharacterSelectorToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                Anchor character = RequireCharacter(world, arguments.CharacterName);
+                world.CreateSubWorld(character.Id);
+                return SerializeMutation(name, world.Revision, new SubWorldOutput(character.Name));
+            })));
+        }
+    }
+
+    private sealed class RemoveSubWorldTool(WorldSession session) : Tool<CharacterSelectorToolPara>
+    {
+        public override string name => "remove_sub_world";
+        public override string description => "删除指定 Character 持有的子世界及其中全部 Relation。";
+
+        protected override Task<string> Execute(CharacterSelectorToolPara arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(InvokeForTool(() => session.Update(world =>
+            {
+                Anchor character = RequireCharacter(world, arguments.CharacterName);
+                world.RemoveSubWorld(character.Id);
+                return SerializeMutation(name, world.Revision, new RemovedOutput("SubWorld", character.Name));
+            })));
+        }
+    }
+
+    private static RelationQueryScope RequireWriteScope(RelationQueryScope scope)
+    {
+        if (scope == RelationQueryScope.All)
+            throw new ArgumentException("Relation 写操作的 Scope 只能是 World 或 SubWorld。", nameof(scope));
+        return scope;
+    }
+
+    private sealed record AnchorOutput(string Name, string Description, string Type);
+    private sealed record WorldScopeOutput(string Type);
+    private sealed record SubWorldScopeOutput(string Type, AnchorOutput Character);
+    private sealed record RelationOutput(string Name, string Description, AnchorOutput Source, AnchorOutput Target, object Scope);
+    private sealed record QueryResult<T>(int Total, int Returned, bool Truncated, IReadOnlyList<T> Items);
+    private sealed record ComparisonOutput(QueryResult<RelationOutput> World, QueryResult<RelationOutput> SubWorld);
+    private sealed record MutationOutput(string Operation, long Revision, object Result);
+    private sealed record RemovedOutput(string Type, string Name);
+    private sealed record SubWorldOutput(string CharacterName);
 }

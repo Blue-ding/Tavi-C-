@@ -1,9 +1,9 @@
 namespace Tavi.Domain.World
 {
     /// <summary>
-    /// WorldGraph 错误类型。
+    /// World 错误类型。
     /// </summary>
-    public enum WorldGraphErrorCode
+    public enum WorldErrorCode
     {
         InvalidArgument,
         NotFound,
@@ -13,15 +13,15 @@ namespace Tavi.Domain.World
     }
 
     /// <summary>
-    /// WorldGraph 操作或初始化校验失败时抛出的异常。
+    /// World 操作或初始化校验失败时抛出的异常。
     /// </summary>
-    public sealed class WorldGraphException : Exception
+    public sealed class WorldException : Exception
     {
         /// <summary>
-        /// 创建包含操作上下文和校验详情的 WorldGraph 异常。
+        /// 创建包含操作上下文和校验详情的 World 异常。
         /// </summary>
-        public WorldGraphException(
-            WorldGraphErrorCode errorCode,
+        public WorldException(
+            WorldErrorCode errorCode,
             string operation,
             string detail,
             Guid? entityId = null,
@@ -35,14 +35,14 @@ namespace Tavi.Domain.World
             ValidationErrors = validationErrors?.ToArray() ?? Array.Empty<string>();
         }
 
-        public WorldGraphErrorCode ErrorCode { get; }
+        public WorldErrorCode ErrorCode { get; }
         public string Operation { get; }
         public Guid? EntityId { get; }
         public IReadOnlyList<string> ValidationErrors { get; }
 
         private static string BuildMessage(string operation, string detail, Guid? entityId, IReadOnlyList<string>? validationErrors)
         {
-            var message = $"WorldGraph 操作“{operation}”失败：{detail}";
+            var message = $"World 操作“{operation}”失败：{detail}";
             if (entityId.HasValue)
                 message += $" 实体 Id：{entityId.Value}。";
             if (validationErrors is { Count: > 0 })

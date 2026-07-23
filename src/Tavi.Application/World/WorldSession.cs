@@ -1,9 +1,10 @@
 using Tavi.Domain.World;
+using RuntimeWorld = Tavi.Domain.World.World;
 
 namespace Tavi.Application.World;
 
 /// <summary>
-/// 持有当前世界，并协调加载、脏标记、防抖自动保存和退出刷新。
+/// 持有当前运行时世界，并协调访问、变化通知、加载和自动保存。
 /// </summary>
 public sealed class WorldSession : IAsyncDisposable
 {
@@ -11,12 +12,12 @@ public sealed class WorldSession : IAsyncDisposable
     private readonly string _slot;
     private readonly TimeSpan _autoSaveDelay;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
+    private readonly object _worldSync = new();
     private readonly object _debounceSync = new();
     private readonly CancellationTokenSource _lifetimeSource = new();
     private CancellationTokenSource? _debounceSource;
-    private WorldGraph? _current;
-    private long _changeVersion;
-    private long _savedVersion;
+    private RuntimeWorld? _current;
+    private long _savedRevision;
     private bool _disposed;
 
     /// <summary>
@@ -34,14 +35,26 @@ public sealed class WorldSession : IAsyncDisposable
     }
 
     /// <summary>
-    /// 获取当前世界；会话初始化前访问会抛出异常。
+    /// 在当前运行时世界发生实际修改后触发。
     /// </summary>
-    public WorldGraph Current => _current ?? throw new InvalidOperationException("WorldSession 尚未初始化。");
+    public event EventHandler<WorldSessionChangedEventArgs>? Changed;
+
+    /// <summary>
+    /// 获取当前运行时世界；会话初始化前访问会抛出异常。
+    /// </summary>
+    public RuntimeWorld Current
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return _current ?? throw new InvalidOperationException("WorldSession 尚未初始化。");
+        }
+    }
 
     /// <summary>
     /// 获取会话是否包含尚未保存的修改。
     /// </summary>
-    public bool IsDirty => Volatile.Read(ref _changeVersion) != Volatile.Read(ref _savedVersion);
+    public bool IsDirty => Read(world => world.Revision != Volatile.Read(ref _savedRevision));
 
     /// <summary>
     /// 获取最近一次后台自动保存异常。
@@ -57,34 +70,43 @@ public sealed class WorldSession : IAsyncDisposable
         if (_current is not null)
             throw new InvalidOperationException("WorldSession 已经初始化。");
         WorldSnapshot? snapshot = await _store.LoadAsync(_slot, cancellationToken);
-        _current = WorldGraph.Create(snapshot ?? new WorldSnapshot());
+        AttachWorld(RuntimeWorld.Create(snapshot ?? new WorldSnapshot()));
+        Volatile.Write(ref _savedRevision, snapshot is null ? -1 : Current.Revision);
         if (snapshot is null)
-        {
-            Interlocked.Increment(ref _changeVersion);
             ScheduleAutoSave();
-        }
     }
 
     /// <summary>
-    /// 执行一次世界修改，并在操作成功后标记为待保存。
+    /// 在会话同步边界内读取当前运行时世界。
     /// </summary>
-    public void Update(Action<WorldGraph> update)
+    public TResult Read<TResult>(Func<RuntimeWorld, TResult> query)
     {
-        ArgumentNullException.ThrowIfNull(update);
+        ArgumentNullException.ThrowIfNull(query);
         ThrowIfDisposed();
-        update(Current);
-        MarkDirty();
+        lock (_worldSync)
+            return query(Current);
     }
 
     /// <summary>
-    /// 将当前世界标记为待保存，并重新安排防抖自动保存。
+    /// 在会话同步边界内执行可能修改当前运行时世界的操作。
     /// </summary>
-    public void MarkDirty()
+    public void Update(Action<RuntimeWorld> operation)
     {
+        ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
-        _ = Current;
-        Interlocked.Increment(ref _changeVersion);
-        ScheduleAutoSave();
+        lock (_worldSync)
+            operation(Current);
+    }
+
+    /// <summary>
+    /// 在会话同步边界内执行可能修改当前运行时世界的操作并返回结果。
+    /// </summary>
+    public TResult Update<TResult>(Func<RuntimeWorld, TResult> operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ThrowIfDisposed();
+        lock (_worldSync)
+            return operation(Current);
     }
 
     /// <summary>
@@ -124,6 +146,8 @@ public sealed class WorldSession : IAsyncDisposable
         }
         finally
         {
+            if (_current is not null)
+                _current.Changed -= OnWorldChanged;
             _disposed = true;
             _lifetimeSource.Cancel();
             _lifetimeSource.Dispose();
@@ -131,16 +155,33 @@ public sealed class WorldSession : IAsyncDisposable
         }
     }
 
+    private void AttachWorld(RuntimeWorld world)
+    {
+        lock (_worldSync)
+        {
+            if (_current is not null)
+                _current.Changed -= OnWorldChanged;
+            _current = world;
+            _current.Changed += OnWorldChanged;
+        }
+    }
+
+    private void OnWorldChanged(object? sender, WorldChangedEventArgs eventArgs)
+    {
+        ScheduleAutoSave();
+        Changed?.Invoke(this, new WorldSessionChangedEventArgs(eventArgs.Revision, eventArgs.Operation));
+    }
+
     private async Task SaveCoreAsync(bool force, CancellationToken cancellationToken)
     {
         await _saveGate.WaitAsync(cancellationToken);
         try
         {
-            long targetVersion = Volatile.Read(ref _changeVersion);
-            if (!force && targetVersion == Volatile.Read(ref _savedVersion))
+            (WorldSnapshot Snapshot, long Revision) state = Read(world => (world.CreateSnapshot(), world.Revision));
+            if (!force && state.Revision == Volatile.Read(ref _savedRevision))
                 return;
-            await _store.SaveAsync(_slot, Current.CreateSnapshot(), cancellationToken);
-            Volatile.Write(ref _savedVersion, targetVersion);
+            await _store.SaveAsync(_slot, state.Snapshot, cancellationToken);
+            Volatile.Write(ref _savedRevision, state.Revision);
             LastAutoSaveException = null;
         }
         finally

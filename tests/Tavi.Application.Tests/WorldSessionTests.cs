@@ -1,6 +1,7 @@
 using Tavi.Application.World;
 using Tavi.Domain.World;
 using Xunit;
+using RuntimeWorld = Tavi.Domain.World.World;
 
 namespace Tavi.Application.Tests;
 
@@ -9,9 +10,9 @@ public sealed class WorldSessionTests
     [Fact]
     public async Task InitializeLoadsExistingWorld()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
-        Guid anchorId = graph.AddAnchor("Loaded", "", AnchorType.Item);
-        var store = new RecordingWorldStore(graph.CreateSnapshot());
+        RuntimeWorld world = RuntimeWorld.Create(new WorldSnapshot());
+        Guid anchorId = world.AddAnchor("Loaded", "", AnchorType.Item);
+        var store = new RecordingWorldStore(world.CreateSnapshot());
         await using var session = new WorldSession(store, autoSaveDelay: TimeSpan.FromMinutes(1));
 
         await session.InitializeAsync();
@@ -44,6 +45,41 @@ public sealed class WorldSessionTests
         await session.DisposeAsync();
 
         Assert.Equal(1, store.SaveCount);
+    }
+
+    [Fact]
+    public async Task SessionRepackagesDirectWorldChangesAndAutoSaves()
+    {
+        var store = new RecordingWorldStore(new WorldSnapshot());
+        await using var session = new WorldSession(store, autoSaveDelay: TimeSpan.FromMilliseconds(20));
+        await session.InitializeAsync();
+        WorldSessionChangedEventArgs? observed = null;
+        session.Changed += (_, eventArgs) => observed = eventArgs;
+
+        session.Current.AddAnchor("Direct", "", AnchorType.Item);
+        WorldSnapshot saved = await store.Saved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.NotNull(observed);
+        Assert.Equal(nameof(RuntimeWorld.AddAnchor), observed.Operation);
+        Assert.Equal(session.Current.Revision, observed.Revision);
+        Assert.Single(saved.Anchors);
+    }
+
+    [Fact]
+    public async Task PartialUpdateFailureStillLeavesSessionDirty()
+    {
+        var store = new RecordingWorldStore(new WorldSnapshot());
+        await using var session = new WorldSession(store, autoSaveDelay: TimeSpan.FromMinutes(1));
+        await session.InitializeAsync();
+
+        Assert.Throws<WorldException>(() => session.Update(world =>
+        {
+            world.AddAnchor("Alice", "", AnchorType.Character);
+            world.AddAnchor("Alice", "", AnchorType.Character);
+        }));
+
+        Assert.True(session.IsDirty);
+        Assert.Single(session.Read(world => world.GetAnchors()));
     }
 
     private sealed class RecordingWorldStore(WorldSnapshot? snapshot) : IWorldStore
