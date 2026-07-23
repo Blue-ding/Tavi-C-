@@ -10,7 +10,7 @@ namespace Tavi.Application.World
         }
 
         /// <summary>
-        /// 依据名称返回 Anchor 信息
+        /// 依据精确的名称返回 Anchor 信息
         /// </summary>
         public string GetAnchor(WorldGraph graph, string name)
         {
@@ -18,9 +18,10 @@ namespace Tavi.Application.World
         }
 
         /// <summary>
-        ///
+        /// 依据线索查询 top-k Anchor
         /// </summary>
-        public string QueryAnchor(WorldGraph graph,params string[] clues)
+        public string QueryAnchor(WorldGraph graph,int k,params string[] clues)
+        {}
 
 
 

@@ -7,14 +7,11 @@ namespace Tavi.Domain.World
     /// </summary>
     public sealed record Relation
     {
+        /// <summary>
+        /// 根据持久化数据创建 Relation。
+        /// </summary>
         [JsonConstructor]
-        public Relation(
-            Guid id,
-            string name,
-            string description,
-            Guid sourceId,
-            Guid targetId
-        )
+        public Relation(Guid id, string name, string description, Guid sourceId, Guid targetId)
         {
             Id = id;
             Name = name;
@@ -29,20 +26,9 @@ namespace Tavi.Domain.World
         public Guid SourceId { get; }
         public Guid TargetId { get; }
 
-        internal static Relation Create(
-            string name,
-            string description,
-            Guid sourceId,
-            Guid targetId
-        )
+        internal static Relation Create(string name, string description, Guid sourceId, Guid targetId)
         {
-            return new Relation(
-                Guid.NewGuid(),
-                name,
-                description,
-                sourceId,
-                targetId
-            );
+            return new Relation(Guid.NewGuid(), name, description, sourceId, targetId);
         }
 
         internal void UpdateDescription(string description)
