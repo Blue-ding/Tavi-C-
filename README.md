@@ -47,7 +47,7 @@ cd ../..
 dotnet run --project src/Tavi.Host
 ```
 
-随后访问 `http://127.0.0.1:5178`。Host 默认加载本地 `Tavi/Saves/default` 存档；可使用 `TAVI_SAVE_DIRECTORY` 覆盖存档目录。前端支持 Anchor、Relation 和 Character 子世界的图形化观察与编辑，以及撤销、重做、手动保存和自动保存状态反馈。
+随后访问 `http://127.0.0.1:5178`。Host 默认加载本地 `Tavi/Saves/default` 存档；可使用 `TAVI_SAVE_DIRECTORY` 覆盖存档目录。前端支持 Anchor、Relation 和 Character 子世界的图形化观察与编辑，以及撤销、重做、手动保存和自动保存状态反馈。配置语言模型后，还可以从顶部工具栏打开 Guidance，通过对话生成、逐项审阅并原子提交世界提案。
 
 ## 语言模型配置
 
@@ -63,4 +63,4 @@ TAVI_OPENAI_DISABLE_REQUIRED_TOOL_CHOICE  可选，设为 1 以兼容不支持�
 TAVI_OPENAI_ENABLE_THINKING  可选，兼容端点扩展；0 禁用、1 启用，默认不发送
 ```
 
-未设置前两个变量时，CLI 仍可运行，但不会创建语言模型服务。
+未设置前两个变量时，CLI 和 Host 仍可运行，但不会创建语言模型服务；世界图编辑功能不受影响。

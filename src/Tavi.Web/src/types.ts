@@ -54,4 +54,93 @@ export interface ApiProblem {
   }
 }
 
+export interface GuidanceAvailabilityViewModel {
+  available: boolean
+  provider: string | null
+  message: string
+}
+
+export type GuidanceState = 'Created' | 'Generating' | 'AwaitingPlayer' | 'ReadyForReview' | 'Committing' | 'Completed' | 'Cancelled' | 'Failed'
+export type GuidanceMessageRole = 'Player' | 'Guidance'
+
+export interface GuidanceMessageViewModel {
+  role: GuidanceMessageRole
+  text: string
+}
+
+export interface ProposalAnchorReferenceViewModel {
+  kind: 'Existing' | 'Proposed'
+  anchorId: string
+}
+
+export interface ProposedRelationScopeViewModel {
+  kind: 'World' | 'SubWorld'
+  character: ProposalAnchorReferenceViewModel | null
+}
+
+export interface ProposeAddAnchorViewModel {
+  kind: 'AddAnchor'
+  id: string
+  rationale: string
+  anchorId: string
+  name: string
+  description: string
+  type: AnchorType
+}
+
+export interface ProposeAddRelationViewModel {
+  kind: 'AddRelation'
+  id: string
+  rationale: string
+  name: string
+  description: string
+  source: ProposalAnchorReferenceViewModel
+  target: ProposalAnchorReferenceViewModel
+  scope: ProposedRelationScopeViewModel
+}
+
+export type ProposalChangeViewModel = ProposeAddAnchorViewModel | ProposeAddRelationViewModel
+
+export interface WorldProposalViewModel {
+  id: string
+  baseWorldRevision: number
+  summary: string
+  changes: ProposalChangeViewModel[]
+}
+
+export interface GuidanceSnapshotViewModel {
+  sessionId: string
+  state: GuidanceState
+  baseWorldRevision: number
+  messages: GuidanceMessageViewModel[]
+  proposal: WorldProposalViewModel | null
+  failure: { code: string; message: string; isTransient: boolean } | null
+}
+
+export interface GuidanceOperationViewModel {
+  operationId: string
+  sessionId: string
+  state: string
+  snapshot: GuidanceSnapshotViewModel
+}
+
+export interface GuidanceCommitViewModel {
+  status: 'Committed' | 'InvalidSelection' | 'WorldConflict' | 'SessionNotReady'
+  worldRevision: number | null
+  createdAnchors: { proposalAnchorId: string; worldAnchorId: string }[]
+  issues: { code: string; message: string; changeId: string | null }[]
+  expectedWorldRevision: number | null
+  actualWorldRevision: number | null
+  snapshot: GuidanceSnapshotViewModel
+}
+
+export interface GuidanceEventViewModel {
+  type: string
+  sessionId: string
+  operationId: string | null
+  text: string | null
+  snapshot: GuidanceSnapshotViewModel | null
+  error: string | null
+}
+
 export type Selection = { kind: 'anchor'; id: string } | { kind: 'relation'; id: string } | null

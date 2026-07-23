@@ -187,7 +187,7 @@ internal sealed class GuidanceService : IGuidanceService
                     throw new OperationCanceledException(linkedSource.Token);
                 context.Conversation = result.Conversation;
                 if (!string.IsNullOrWhiteSpace(result.Output))
-                    context.Messages.Add(new GuidanceMessage(result.Output));
+                    context.Messages.Add(new GuidanceMessage(result.Output, GuidanceMessageRole.Guidance));
                 if (candidateProposal.Changes.Count > 0)
                     context.Draft = candidate;
                 context.State = context.Draft?.CreateProposal().Changes.Count > 0 ? GuidanceState.ReadyForReview : GuidanceState.AwaitingPlayer;

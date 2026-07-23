@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow, useNodesState, type Edge, type Node, type NodeChange, type NodePositionChange } from '@xyflow/react'
-import { Box, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Trash2, Undo2, UserRound, X } from 'lucide-react'
+import { Box, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
 import { ApiError, worldApi } from './api'
+import { GuidancePanel } from './GuidancePanel'
 import type { AnchorType, AnchorViewModel, RelationViewModel, Selection, WorldGraphViewModel } from './types'
 
 type ScopeFilter = 'all' | 'world' | string
@@ -24,6 +25,7 @@ function App() {
   const [selection, setSelection] = useState<Selection>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [showInspector, setShowInspector] = useState(true)
+  const [showGuidance, setShowGuidance] = useState(false)
   const [flowNodes, setFlowNodes, applyNodeChanges] = useNodesState<Node>([])
   const refreshSequence = useRef(0)
   const lastRefreshAt = useRef(0)
@@ -186,6 +188,8 @@ function App() {
             <ChevronDown size={14} />
           </label>
           <div className="toolbar-divider" />
+          <button className={`guidance-toggle${showGuidance ? ' active' : ''}`} onClick={() => setShowGuidance(current => !current)}><Sparkles size={16} />Guidance</button>
+          <div className="toolbar-divider" />
           <IconButton label="撤销" disabled={!world.canUndo || working} onClick={() => void perform(() => worldApi.undo(world.revision))}><Undo2 size={17} /></IconButton>
           <IconButton label="重做" disabled={!world.canRedo || working} onClick={() => void perform(() => worldApi.redo(world.revision))}><Redo2 size={17} /></IconButton>
           <button className="save-button" disabled={working} onClick={() => void perform(worldApi.save)}>
@@ -239,6 +243,7 @@ function App() {
       {error && <div className="error-toast" role="alert"><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError(null)}><X size={16} /></button></div>}
       {dialog === 'anchor' && <AnchorDialog revision={world.revision} working={working} close={() => setDialog(null)} submit={perform} />}
       {dialog === 'relation' && <RelationDialog world={world} working={working} close={() => setDialog(null)} submit={perform} />}
+      <GuidancePanel open={showGuidance} world={world} onClose={() => setShowGuidance(false)} onWorldChanged={() => refresh(true)} onError={setError} />
     </main>
   )
 }

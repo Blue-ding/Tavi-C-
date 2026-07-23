@@ -7,6 +7,7 @@
     <ProjectReference Include="..\Tavi.Abstractions\Tavi.Abstractions.csproj" />
     <ProjectReference Include="..\Tavi.Application\Tavi.Application.csproj" />
     <ProjectReference Include="..\Tavi.Domain\Tavi.Domain.csproj" />
+    <ProjectReference Include="..\Tavi.Infrastructure.OpenAI\Tavi.Infrastructure.OpenAI.csproj" />
     <ProjectReference Include="..\Tavi.Infrastructure.Persistence\Tavi.Infrastructure.Persistence.csproj" />
   </ItemGroup>
   <Target Name="BuildWebForPublish" BeforeTargets="Publish">

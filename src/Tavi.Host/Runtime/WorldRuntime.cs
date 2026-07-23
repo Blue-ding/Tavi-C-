@@ -70,6 +70,8 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    internal WorldSession Session => RequireSession();
+
     /// <summary>释放世界会话、存储和访问同步资源。</summary>
     public async ValueTask DisposeAsync()
     {

@@ -21,18 +21,36 @@ public sealed record NarrativePotential
     }
 }
 
+/// <summary>指定 Guidance 对话消息的发送方。</summary>
+public enum GuidanceMessageRole
+{
+    /// <summary>消息由玩家发送。</summary>
+    Player,
+
+    /// <summary>消息由 Guidance 发送。</summary>
+    Guidance
+}
+
 /// <summary>表示玩家或 Guidance 在对话中提供的一段文本。</summary>
 public sealed record GuidanceMessage
 {
     /// <summary>创建 Guidance 对话文本。</summary>
-    public GuidanceMessage(string text)
+    /// <param name="text">消息文本。</param>
+    /// <param name="role">消息发送方。</param>
+    public GuidanceMessage(string text, GuidanceMessageRole role = GuidanceMessageRole.Player)
     {
         ArgumentNullException.ThrowIfNull(text);
+        if (!Enum.IsDefined(role))
+            throw new ArgumentOutOfRangeException(nameof(role));
         Text = string.IsNullOrWhiteSpace(text) ? throw new ArgumentException("Guidance 对话文本不能为空。", nameof(text)) : text;
+        Role = role;
     }
 
     /// <summary>获取对话文本。</summary>
     public string Text { get; }
+
+    /// <summary>获取消息发送方。</summary>
+    public GuidanceMessageRole Role { get; }
 }
 
 /// <summary>指定一次 Guidance 会话当前所处的应用阶段。</summary>
@@ -75,7 +93,7 @@ public sealed record GuidanceSnapshot
     /// <summary>获取 Guidance 开始时的 World revision。</summary>
     public required long BaseWorldRevision { get; init; }
 
-    /// <summary>获取按发生顺序保存的玩家输入和 Guidance 回复；当前文本类型不携带说话方。</summary>
+    /// <summary>获取按发生顺序保存的玩家输入和 Guidance 回复。</summary>
     public IReadOnlyList<GuidanceMessage> Messages { get; init; } = [];
 
     /// <summary>获取当前可供玩家审阅的提案；尚未形成提案时为 null。</summary>
