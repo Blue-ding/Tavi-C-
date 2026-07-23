@@ -9,7 +9,7 @@ namespace Tavi.Domain.World
         NotFound,
         Duplicate,
         InvalidOperation,
-        InvalidWorldData
+        InvalidWorldSnapshot
     }
 
     /// <summary>

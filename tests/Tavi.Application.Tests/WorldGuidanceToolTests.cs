@@ -126,7 +126,7 @@ public sealed class WorldGuidanceToolTests
     [Fact]
     public async Task ResultsAreLimitedAndReportTruncation()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         for (int index = 0; index < 25; index++)
             graph.AddAnchor($"Item {index:D2}", "shared clue", AnchorType.Item);
         ITool tool = GetTool(WorldGuidanceTool.CreateTools(graph), "query_anchor");
@@ -143,7 +143,7 @@ public sealed class WorldGuidanceToolTests
 
     private static WorldGraph CreateGraph()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         Guid aliceId = graph.AddAnchor("Alice", "hero", AnchorType.Character);
         Guid bobId = graph.AddAnchor("Bob", "friend", AnchorType.Character);
         Guid swordId = graph.AddAnchor("Sword", "weapon", AnchorType.Item);

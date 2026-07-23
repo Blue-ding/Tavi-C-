@@ -4,7 +4,7 @@
     <AssemblyName>Tavi.Infrastructure.Persistence</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Tavi.Application\Tavi.Application.csproj" />
     <ProjectReference Include="..\Tavi.Domain\Tavi.Domain.csproj" />
   </ItemGroup>
 </Project>
-

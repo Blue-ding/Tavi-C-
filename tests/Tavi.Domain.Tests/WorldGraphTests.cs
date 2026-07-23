@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Tavi.Domain.World;
 using Xunit;
 
@@ -10,7 +8,7 @@ public sealed class WorldGraphTests
     [Fact]
     public void AddAndQueryGraphStructure()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
 
         Guid characterId = graph.AddAnchor(
             "Alice",
@@ -50,7 +48,7 @@ public sealed class WorldGraphTests
     [Fact]
     public void RemoveRelationWorksForSubWorld()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         Guid characterId = graph.AddAnchor(
             "Alice",
             "Character",
@@ -78,7 +76,7 @@ public sealed class WorldGraphTests
     [Fact]
     public void RemovingCharacterCascadesRelationsAndSubWorld()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         Guid characterId = graph.AddAnchor(
             "Alice",
             "Character",
@@ -105,7 +103,7 @@ public sealed class WorldGraphTests
     [Fact]
     public void RelationOnlyAllowsDescriptionUpdate()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         Guid sourceId = graph.AddAnchor("Source", "", AnchorType.Item);
         Guid targetId = graph.AddAnchor("Target", "", AnchorType.Item);
         Guid relationId = graph.AddRelation(
@@ -127,7 +125,7 @@ public sealed class WorldGraphTests
     [Fact]
     public void CharacterNameInvariantAppliesToUpdates()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         Guid firstId = graph.AddAnchor(
             "Alice",
             "",
@@ -151,7 +149,7 @@ public sealed class WorldGraphTests
     [Fact]
     public void CharacterMustRemoveSubWorldBeforeChangingType()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         Guid characterId = graph.AddAnchor(
             "Alice",
             "",
@@ -176,7 +174,7 @@ public sealed class WorldGraphTests
     [Fact]
     public void CharacterTraversalTracksTypeChangesAndRemoval()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         Guid anchorId = graph.AddAnchor("Alice", "", AnchorType.Item);
 
         Assert.Empty(graph.GetCharacters());
@@ -198,7 +196,7 @@ public sealed class WorldGraphTests
         Guid characterId = Guid.NewGuid();
         Guid wrongKey = Guid.NewGuid();
         Guid relationId = Guid.NewGuid();
-        var data = new WorldData
+        var data = new WorldSnapshot
         {
             Id = Guid.Empty,
             Anchors =
@@ -220,9 +218,9 @@ public sealed class WorldGraphTests
                     Guid.NewGuid()
                 )
             },
-            SubWorldData =
+            SubWorlds =
             {
-                new SubWorldData
+                new SubWorldSnapshot
                 {
                     DomainId = Guid.NewGuid()
                 }
@@ -234,13 +232,13 @@ public sealed class WorldGraphTests
         );
 
         Assert.Equal(
-            WorldGraphErrorCode.InvalidWorldData,
+            WorldGraphErrorCode.InvalidWorldSnapshot,
             exception.ErrorCode
         );
         Assert.True(exception.ValidationErrors.Count >= 4);
         Assert.Contains(
             exception.ValidationErrors,
-            error => error.Contains("WorldData.Id")
+            error => error.Contains("WorldSnapshot.Id")
         );
         Assert.Contains(
             exception.ValidationErrors,
@@ -276,7 +274,7 @@ public sealed class WorldGraphTests
             secondCharacterId,
             firstCharacterId
         );
-        var data = new WorldData
+        var data = new WorldSnapshot
         {
             Anchors =
             {
@@ -297,9 +295,9 @@ public sealed class WorldGraphTests
             {
                 [relationId] = worldRelation
             },
-            SubWorldData =
+            SubWorlds =
             {
-                new SubWorldData
+                new SubWorldSnapshot
                 {
                     DomainId = firstCharacterId,
                     Relations =
@@ -307,7 +305,7 @@ public sealed class WorldGraphTests
                         [relationId] = subWorldRelation
                     }
                 },
-                new SubWorldData
+                new SubWorldSnapshot
                 {
                     DomainId = firstCharacterId
                 }
@@ -333,24 +331,13 @@ public sealed class WorldGraphTests
     }
 
     [Fact]
-    public void SnapshotIsDetachedAndCanRoundTripThroughJson()
+    public void SnapshotIsDetachedFromGraph()
     {
-        WorldGraph graph = WorldGraph.Create(new WorldData());
+        WorldGraph graph = WorldGraph.Create(new WorldSnapshot());
         Guid anchorId = graph.AddAnchor("Anchor", "Before", AnchorType.Item);
-        WorldData snapshot = graph.CreateSnapshot();
+        WorldSnapshot snapshot = graph.CreateSnapshot();
         snapshot.Anchors.Clear();
 
         Assert.Equal(anchorId, graph.GetAnchor(anchorId).Id);
-
-        var options = new JsonSerializerOptions
-        {
-            IncludeFields = true
-        };
-        options.Converters.Add(new JsonStringEnumConverter());
-        string json = JsonSerializer.Serialize(graph.CreateSnapshot(), options);
-        WorldData restored = JsonSerializer.Deserialize<WorldData>(json, options)!;
-        WorldGraph restoredGraph = WorldGraph.Create(restored);
-
-        Assert.Equal(anchorId, restoredGraph.GetAnchor(anchorId).Id);
     }
 }

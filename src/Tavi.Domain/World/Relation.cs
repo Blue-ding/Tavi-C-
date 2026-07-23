@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace Tavi.Domain.World
 {
     /// <summary>
@@ -8,9 +6,8 @@ namespace Tavi.Domain.World
     public sealed record Relation
     {
         /// <summary>
-        /// 根据持久化数据创建 Relation。
+        /// 使用指定标识和属性创建 Relation。
         /// </summary>
-        [JsonConstructor]
         public Relation(Guid id, string name, string description, Guid sourceId, Guid targetId)
         {
             Id = id;

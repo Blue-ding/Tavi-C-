@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace Tavi.Domain.World
 {
     /// <summary>
@@ -18,9 +16,8 @@ namespace Tavi.Domain.World
     public sealed record Anchor
     {
         /// <summary>
-        /// 根据持久化数据创建 Anchor。
+        /// 使用指定标识和属性创建 Anchor。
         /// </summary>
-        [JsonConstructor]
         public Anchor(Guid id, string name, string description, AnchorType type)
         {
             Id = id;

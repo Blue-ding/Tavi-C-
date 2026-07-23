@@ -70,7 +70,7 @@ namespace Tavi.Application.World
         private static IReadOnlyList<ScopedRelation> GetSubWorldRelations(WorldGraph graph, string characterName)
         {
             Anchor character = RequireCharacter(graph, characterName);
-            SubWorldData? subWorld = graph.GetSubWorlds().SingleOrDefault(item => item.DomainId == character.Id);
+            SubWorldSnapshot? subWorld = graph.GetSubWorlds().SingleOrDefault(item => item.DomainId == character.Id);
             return subWorld is null
                 ? Array.Empty<ScopedRelation>()
                 : subWorld.Relations.Values.Select(relation => new ScopedRelation(relation, character)).ToArray();
@@ -79,7 +79,7 @@ namespace Tavi.Application.World
         private static IReadOnlyList<ScopedRelation> GetAllRelations(WorldGraph graph)
         {
             var relations = new List<ScopedRelation>(GetWorldRelations(graph));
-            foreach (SubWorldData subWorld in graph.GetSubWorlds())
+            foreach (SubWorldSnapshot subWorld in graph.GetSubWorlds())
             {
                 Anchor character = graph.GetAnchor(subWorld.DomainId);
                 relations.AddRange(subWorld.Relations.Values.Select(relation => new ScopedRelation(relation, character)));

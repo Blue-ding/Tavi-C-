@@ -6,12 +6,12 @@ namespace Tavi.Domain.World
     /// </summary>
     public sealed class WorldGraph
     {
-        private readonly WorldData _data;
+        private readonly WorldSnapshot _data;
         private readonly Dictionary<string, Guid> _characterIdsByName;
 
-        private WorldGraph(WorldData data)
+        private WorldGraph(WorldSnapshot data)
         {
-            _data = CloneWorldData(data);
+            _data = CloneWorldSnapshot(data);
             _characterIdsByName = _data.Anchors.Values
                 .Where(anchor => anchor.Type == AnchorType.Character)
                 .ToDictionary(
@@ -24,18 +24,18 @@ namespace Tavi.Domain.World
         /// <summary>
         /// 校验并创建运行时世界图。所有初始化错误会在一个异常中汇总。
         /// </summary>
-        public static WorldGraph Create(WorldData data)
+        public static WorldGraph Create(WorldSnapshot data)
         {
-            ValidateWorldData(data);
+            ValidateWorldSnapshot(data);
             return new WorldGraph(data);
         }
 
         /// <summary>
-        /// 创建当前世界图的独立、可序列化快照。
+        /// 创建当前世界图的独立领域快照。
         /// </summary>
-        public WorldData CreateSnapshot()
+        public WorldSnapshot CreateSnapshot()
         {
-            return CloneWorldData(_data);
+            return CloneWorldSnapshot(_data);
         }
 
         /// <summary>
@@ -119,21 +119,21 @@ namespace Tavi.Domain.World
         /// <summary>
         /// 获取指定 Character 持有的子世界快照。
         /// </summary>
-        public SubWorldData GetSubWorld(Guid characterId)
+        public SubWorldSnapshot GetSubWorld(Guid characterId)
         {
             EnsureCharacter(characterId, nameof(GetSubWorld));
-            SubWorldData subWorld = FindSubWorld(characterId) ??
-                                    throw NotFound(nameof(GetSubWorld), "SubWorldData", characterId);
-            return CloneSubWorldData(subWorld);
+            SubWorldSnapshot subWorld = FindSubWorld(characterId) ??
+                                        throw NotFound(nameof(GetSubWorld), "SubWorldSnapshot", characterId);
+            return CloneSubWorldSnapshot(subWorld);
         }
 
         /// <summary>
         /// 获取全部子世界快照。
         /// </summary>
-        public IReadOnlyCollection<SubWorldData> GetSubWorlds()
+        public IReadOnlyCollection<SubWorldSnapshot> GetSubWorlds()
         {
-            return _data.SubWorldData
-                .Select(CloneSubWorldData)
+            return _data.SubWorlds
+                .Select(CloneSubWorldSnapshot)
                 .ToArray();
         }
 
@@ -143,8 +143,8 @@ namespace Tavi.Domain.World
         public IReadOnlyCollection<Relation> GetSubWorldRelations(Guid characterId)
         {
             EnsureCharacter(characterId, nameof(GetSubWorldRelations));
-            SubWorldData subWorld = FindSubWorld(characterId) ??
-                                    throw NotFound(nameof(GetSubWorldRelations), "SubWorldData", characterId);
+            SubWorldSnapshot subWorld = FindSubWorld(characterId) ??
+                                        throw NotFound(nameof(GetSubWorldRelations), "SubWorldSnapshot", characterId);
             return subWorld.Relations.Values.ToArray();
         }
 
@@ -187,7 +187,7 @@ namespace Tavi.Domain.World
             }
 
             EnsureCharacter(domainId.Value, operation);
-            SubWorldData subWorld = FindSubWorld(domainId.Value) ?? CreateSubWorldData(domainId.Value);
+            SubWorldSnapshot subWorld = FindSubWorld(domainId.Value) ?? CreateSubWorldSnapshot(domainId.Value);
             subWorld.Relations.Add(relation.Id, relation);
             return relation.Id;
         }
@@ -208,7 +208,7 @@ namespace Tavi.Domain.World
                     characterId
                 );
             }
-            return CreateSubWorldData(characterId).Id;
+            return CreateSubWorldSnapshot(characterId).Id;
         }
 
         /// <summary>
@@ -229,9 +229,9 @@ namespace Tavi.Domain.World
             if (anchor.Type == AnchorType.Character)
             {
                 _characterIdsByName.Remove(anchor.Name);
-                SubWorldData? subWorld = FindSubWorld(anchorId);
+                SubWorldSnapshot? subWorld = FindSubWorld(anchorId);
                 if (subWorld is not null)
-                    _data.SubWorldData.Remove(subWorld);
+                    _data.SubWorlds.Remove(subWorld);
             }
             _data.Anchors.Remove(anchorId);
         }
@@ -252,9 +252,9 @@ namespace Tavi.Domain.World
         {
             const string operation = nameof(RemoveSubWorld);
             EnsureCharacter(characterId, operation);
-            SubWorldData subWorld = FindSubWorld(characterId) ??
-                                    throw NotFound(operation, "SubWorldData", characterId);
-            _data.SubWorldData.Remove(subWorld);
+            SubWorldSnapshot subWorld = FindSubWorld(characterId) ??
+                                        throw NotFound(operation, "SubWorldSnapshot", characterId);
+            _data.SubWorlds.Remove(subWorld);
         }
 
         /// <summary>
@@ -357,7 +357,7 @@ namespace Tavi.Domain.World
         {
             foreach (Relation relation in _data.Relations.Values)
                 yield return relation;
-            foreach (SubWorldData subWorld in _data.SubWorldData)
+            foreach (SubWorldSnapshot subWorld in _data.SubWorlds)
             {
                 foreach (Relation relation in subWorld.Relations.Values)
                     yield return relation;
@@ -387,19 +387,19 @@ namespace Tavi.Domain.World
             return anchor;
         }
 
-        private SubWorldData? FindSubWorld(Guid characterId)
+        private SubWorldSnapshot? FindSubWorld(Guid characterId)
         {
-            return _data.SubWorldData.Find(subWorld => subWorld.DomainId == characterId);
+            return _data.SubWorlds.Find(subWorld => subWorld.DomainId == characterId);
         }
 
-        private SubWorldData CreateSubWorldData(Guid characterId)
+        private SubWorldSnapshot CreateSubWorldSnapshot(Guid characterId)
         {
-            var subWorld = new SubWorldData
+            var subWorld = new SubWorldSnapshot
             {
                 Id = Guid.NewGuid(),
                 DomainId = characterId
             };
-            _data.SubWorldData.Add(subWorld);
+            _data.SubWorlds.Add(subWorld);
             return subWorld;
         }
 
@@ -408,7 +408,7 @@ namespace Tavi.Domain.World
             EnsureId(relationId, operation, nameof(relationId));
             if (_data.Relations.TryGetValue(relationId, out Relation? relation))
                 return new RelationLocation(_data.Relations, relation);
-            foreach (SubWorldData subWorld in _data.SubWorldData)
+            foreach (SubWorldSnapshot subWorld in _data.SubWorlds)
             {
                 if (subWorld.Relations.TryGetValue(relationId, out relation))
                     return new RelationLocation(subWorld.Relations, relation);
@@ -462,22 +462,22 @@ namespace Tavi.Domain.World
             );
         }
 
-        private static void ValidateWorldData(WorldData data)
+        private static void ValidateWorldSnapshot(WorldSnapshot data)
         {
             const string operation = nameof(Create);
             var errors = new List<string>();
             if (data.Id == Guid.Empty)
-                errors.Add("WorldData.Id 不能是空 Guid。");
+                errors.Add("WorldSnapshot.Id 不能是空 Guid。");
 
             Dictionary<Guid, Anchor>? anchors = data.Anchors;
             if (anchors is null)
-                errors.Add("WorldData.Anchors 不能为 null。");
+                errors.Add("WorldSnapshot.Anchors 不能为 null。");
             Dictionary<Guid, Relation>? worldRelations = data.Relations;
             if (worldRelations is null)
-                errors.Add("WorldData.Relations 不能为 null。");
-            List<SubWorldData>? subWorlds = data.SubWorldData;
+                errors.Add("WorldSnapshot.Relations 不能为 null。");
+            List<SubWorldSnapshot>? subWorlds = data.SubWorlds;
             if (subWorlds is null)
-                errors.Add("WorldData.SubWorldData 不能为 null。");
+                errors.Add("WorldSnapshot.SubWorlds 不能为 null。");
 
             var characterNames = new Dictionary<string, Guid>(StringComparer.Ordinal);
             if (anchors is not null)
@@ -506,8 +506,8 @@ namespace Tavi.Domain.World
             {
                 for (int index = 0; index < subWorlds.Count; index++)
                 {
-                    SubWorldData? subWorld = subWorlds[index];
-                    string path = $"SubWorldData[{index}]";
+                    SubWorldSnapshot? subWorld = subWorlds[index];
+                    string path = $"SubWorlds[{index}]";
                     if (subWorld is null)
                     {
                         errors.Add($"{path} 不能为 null。");
@@ -557,9 +557,9 @@ namespace Tavi.Domain.World
             if (errors.Count > 0)
             {
                 throw new WorldGraphException(
-                    WorldGraphErrorCode.InvalidWorldData,
+                    WorldGraphErrorCode.InvalidWorldSnapshot,
                     operation,
-                    $"WorldData 初始化校验发现 {errors.Count} 个错误。",
+                    $"WorldSnapshot 初始化校验发现 {errors.Count} 个错误。",
                     validationErrors: errors
                 );
             }
@@ -630,9 +630,9 @@ namespace Tavi.Domain.World
             }
         }
 
-        private static WorldData CloneWorldData(WorldData source)
+        private static WorldSnapshot CloneWorldSnapshot(WorldSnapshot source)
         {
-            return new WorldData
+            return new WorldSnapshot
             {
                 Id = source.Id,
                 Anchors = source.Anchors.ToDictionary(
@@ -643,8 +643,8 @@ namespace Tavi.Domain.World
                     pair => pair.Key,
                     pair => CloneRelation(pair.Value)
                 ),
-                SubWorldData = source.SubWorldData
-                    .Select(CloneSubWorldData)
+                SubWorlds = source.SubWorlds
+                    .Select(CloneSubWorldSnapshot)
                     .ToList()
             };
         }
@@ -670,9 +670,9 @@ namespace Tavi.Domain.World
             );
         }
 
-        private static SubWorldData CloneSubWorldData(SubWorldData source)
+        private static SubWorldSnapshot CloneSubWorldSnapshot(SubWorldSnapshot source)
         {
-            return new SubWorldData
+            return new SubWorldSnapshot
             {
                 Id = source.Id,
                 DomainId = source.DomainId,
