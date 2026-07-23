@@ -5,11 +5,13 @@ using System.Reflection;
 namespace Tavi.Application.LanguageModel
 {
     [AttributeUsage(AttributeTargets.Interface, AllowMultiple = false, Inherited = true)]
+    [Obsolete("请在启动层显式组装依赖；UniqueInterfaceAttribute 仅为旧代码兼容而保留。")]
     public class UniqueInterfaceAttribute : Attribute
     {
         
     }
 
+    [Obsolete("请在启动层显式组装依赖；反射实例化机制已弃用。")]
     public static class UniqueInterfaceUtility
     {
         public static T Instantiate<T>()

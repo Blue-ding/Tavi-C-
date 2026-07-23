@@ -1,33 +1,19 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Threading.Tasks;
 using Tavi.Application.LanguageModel;
-using Tavi.Domain.World;
+using Tavi.Application.Logging;
 
-namespace Tavi.Application
+namespace Tavi.Application;
+
+/// <summary>
+/// Application 服务入口。所有依赖由启动层显式提供。
+/// </summary>
+public sealed class TaviCore
 {
-    public class TaviCore
+    public TaviCore(ILanguageModelService languageModels, ILogger logger)
     {
-        public static ILanguageModel languageModel { get; private set; } = null!;
-
-        private static ILogger? _logger;
-        public static ILogger logger => _logger ??= UniqueInterfaceUtility.Instantiate<ILogger>();
-
-        public static Task Init(object llmConfig)
-        {
-            languageModel = UniqueInterfaceUtility.Instantiate<ILanguageModel>();
-            languageModel.Init(llmConfig);
-
-            logger.Log("TaviCore 初始化完成");
-            return Task.CompletedTask;
-        }
-
-        public static async Task Test()
-        {
-            string output = await languageModel.GenerateAsync(new Message() { UserContext = "你好啊！" });
-            logger.Log(output);
-        }
-
+        LanguageModels = languageModels ?? throw new ArgumentNullException(nameof(languageModels));
+        Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    public ILanguageModelService LanguageModels { get; }
+    public ILogger Logger { get; }
 }

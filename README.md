@@ -32,3 +32,17 @@ dotnet test Tavi.sln
 ```
 
 本项目的活动代码不依赖 Newtonsoft.Json；持久化模块使用 `System.Text.Json`。
+
+## 语言模型配置
+
+Application 的模型运行策略保存在本地 `Tavi/Settings/language-model.json`，其中不包含供应商密钥。
+CLI 通过环境变量显式组装 OpenAI 适配器：
+
+```text
+TAVI_OPENAI_API_KEY       必需，OpenAI 或兼容服务密钥
+TAVI_OPENAI_MODEL         必需，模型名称
+TAVI_OPENAI_ENDPOINT      可选，默认为 https://api.openai.com/v1
+TAVI_OPENAI_CLIENT_TYPE   可选，chat（默认）或 responses
+```
+
+未设置前两个变量时，CLI 仍可运行，但不会创建语言模型服务。
