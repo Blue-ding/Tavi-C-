@@ -31,14 +31,9 @@ namespace Tavi.Domain.World
         }
 
         /// <summary>
-        /// 获取当前运行时世界版本；每次实际修改成功后递增。
+        /// 获取当前运行时世界版本；每个实际生效的原子操作组提交后递增一次。
         /// </summary>
         public long Revision { get; private set; }
-
-        /// <summary>
-        /// 在运行时世界发生实际修改后触发。
-        /// </summary>
-        public event EventHandler<WorldChangedEventArgs>? Changed;
 
         /// <summary>
         /// 创建当前世界图的独立领域快照。
@@ -55,7 +50,7 @@ namespace Tavi.Domain.World
         {
             EnsureId(anchorId, nameof(GetAnchor), nameof(anchorId));
             if (_data.Anchors.TryGetValue(anchorId, out var anchor))
-                return anchor;
+                return CloneAnchor(anchor);
             throw NotFound(nameof(GetAnchor), "Anchor", anchorId);
         }
 
@@ -64,7 +59,7 @@ namespace Tavi.Domain.World
         /// </summary>
         public Relation GetRelation(Guid relationId)
         {
-            return FindRelation(relationId, nameof(GetRelation)).Relation;
+            return CloneRelation(FindRelation(relationId, nameof(GetRelation)).Relation);
         }
 
         /// <summary>
@@ -72,7 +67,7 @@ namespace Tavi.Domain.World
         /// </summary>
         public IReadOnlyCollection<Anchor> GetAnchors()
         {
-            return _data.Anchors.Values.ToArray();
+            return _data.Anchors.Values.Select(CloneAnchor).ToArray();
         }
 
         /// <summary>
@@ -81,7 +76,7 @@ namespace Tavi.Domain.World
         public IReadOnlyCollection<Anchor> GetCharacters()
         {
             return _characterIdsByName.Values
-                .Select(characterId => _data.Anchors[characterId])
+                .Select(characterId => CloneAnchor(_data.Anchors[characterId]))
                 .ToArray();
         }
 
@@ -90,7 +85,7 @@ namespace Tavi.Domain.World
         /// </summary>
         public IReadOnlyCollection<Relation> GetWorldRelations()
         {
-            return _data.Relations.Values.ToArray();
+            return _data.Relations.Values.Select(CloneRelation).ToArray();
         }
 
         /// <summary>
@@ -98,9 +93,10 @@ namespace Tavi.Domain.World
         /// </summary>
         public IReadOnlyCollection<Relation> GetIncomingRelations(Guid anchorId)
         {
-            GetAnchor(anchorId);
+            GetAnchorForOperation(anchorId, nameof(GetIncomingRelations), "Anchor");
             return EnumerateAllRelations()
                 .Where(relation => relation.TargetId == anchorId)
+                .Select(CloneRelation)
                 .ToArray();
         }
 
@@ -109,9 +105,10 @@ namespace Tavi.Domain.World
         /// </summary>
         public IReadOnlyCollection<Relation> GetOutgoingRelations(Guid anchorId)
         {
-            GetAnchor(anchorId);
+            GetAnchorForOperation(anchorId, nameof(GetOutgoingRelations), "Anchor");
             return EnumerateAllRelations()
                 .Where(relation => relation.SourceId == anchorId)
+                .Select(CloneRelation)
                 .ToArray();
         }
 
@@ -120,9 +117,10 @@ namespace Tavi.Domain.World
         /// </summary>
         public IReadOnlyCollection<Relation> GetRelations(Guid anchorId)
         {
-            GetAnchor(anchorId);
+            GetAnchorForOperation(anchorId, nameof(GetRelations), "Anchor");
             return EnumerateAllRelations()
                 .Where(relation => relation.SourceId == anchorId || relation.TargetId == anchorId)
+                .Select(CloneRelation)
                 .ToArray();
         }
 
@@ -155,248 +153,310 @@ namespace Tavi.Domain.World
             EnsureCharacter(characterId, nameof(GetSubWorldRelations));
             SubWorldSnapshot subWorld = FindSubWorld(characterId) ??
                                         throw NotFound(nameof(GetSubWorldRelations), "SubWorldSnapshot", characterId);
-            return subWorld.Relations.Values.ToArray();
+            return subWorld.Relations.Values.Select(CloneRelation).ToArray();
         }
 
         /// <summary>
-        /// 添加 Anchor 并返回其 Id。
+        /// 在当前 World 上原地执行操作组。调用方必须持有 WorldSession 写边界；失败时内部回滚，中间状态不改变 revision，也不触发外部事件。
         /// </summary>
-        public Guid AddAnchor(string name, string description, AnchorType type)
+        internal WorldApplyResult Apply(WorldChangeSet changeSet)
         {
-            const string operation = nameof(AddAnchor);
-            EnsureName(name, operation, nameof(name));
-            EnsureAnchorType(type, operation);
-            if (type == AnchorType.Character && _characterIdsByName.TryGetValue(name, out Guid duplicateId))
+            ArgumentNullException.ThrowIfNull(changeSet);
+            if (changeSet.IsEmpty)
+                return WorldApplyResult.Unchanged(Revision);
+            var transaction = new WorldTransaction();
+            try
             {
-                throw new WorldException(WorldErrorCode.Duplicate, operation,
-                    $"Character 名称“{name}”已被 Anchor {duplicateId} 使用。");
+                foreach (WorldOperation operation in changeSet.Operations)
+                    ApplyOperation(operation, transaction);
+            }
+            catch (Exception operationException)
+            {
+                try
+                {
+                    transaction.Rollback();
+                }
+                catch (Exception rollbackException)
+                {
+                    throw new WorldTransactionException(operationException, rollbackException);
+                }
+                throw;
             }
 
-            Anchor anchor = Anchor.Create(name, description, type);
+            if (!transaction.HasChanges)
+                return WorldApplyResult.Unchanged(Revision);
+            long previousRevision = Revision;
+            Revision++;
+            return new WorldApplyResult(previousRevision, Revision, transaction.CreateAppliedChangeSet());
+        }
+
+        private void ApplyOperation(WorldOperation operation, WorldTransaction transaction)
+        {
+            switch (operation)
+            {
+                case AddAnchorOperation add:
+                    ApplyAddAnchor(add, transaction);
+                    break;
+                case RemoveAnchorOperation remove:
+                    ApplyRemoveAnchor(remove, transaction);
+                    break;
+                case UpdateAnchorNameOperation update:
+                    ApplyUpdateAnchorName(update, transaction);
+                    break;
+                case UpdateAnchorDescriptionOperation update:
+                    ApplyUpdateAnchorDescription(update, transaction);
+                    break;
+                case UpdateAnchorTypeOperation update:
+                    ApplyUpdateAnchorType(update, transaction);
+                    break;
+                case AddRelationOperation add:
+                    ApplyAddRelation(add, transaction);
+                    break;
+                case RemoveRelationOperation remove:
+                    ApplyRemoveRelation(remove, transaction);
+                    break;
+                case UpdateRelationNameOperation update:
+                    ApplyUpdateRelationName(update, transaction);
+                    break;
+                case UpdateRelationDescriptionOperation update:
+                    ApplyUpdateRelationDescription(update, transaction);
+                    break;
+                case CreateSubWorldOperation create:
+                    ApplyCreateSubWorld(create, transaction);
+                    break;
+                case RemoveSubWorldOperation remove:
+                    ApplyRemoveSubWorld(remove, transaction);
+                    break;
+                default:
+                    throw new WorldException(WorldErrorCodes.InvalidArgument, nameof(Apply), $"不支持的世界操作类型 {operation.GetType().FullName}。");
+            }
+        }
+
+        private void ApplyAddAnchor(AddAnchorOperation operation, WorldTransaction transaction)
+        {
+            const string operationName = nameof(AddAnchorOperation);
+            EnsureId(operation.AnchorId, operationName, nameof(operation.AnchorId));
+            EnsureName(operation.Name, operationName, nameof(operation.Name));
+            EnsureAnchorType(operation.Type, operationName);
+            if (_data.Anchors.ContainsKey(operation.AnchorId))
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Anchor {operation.AnchorId} 已存在。", operation.AnchorId);
+            if (operation.Type == AnchorType.Character && _characterIdsByName.TryGetValue(operation.Name, out Guid duplicateId))
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Character 名称“{operation.Name}”已被 Anchor {duplicateId} 使用。", operation.AnchorId);
+            var anchor = new Anchor(operation.AnchorId, operation.Name, operation.Description, operation.Type);
+            transaction.RecordRollback(() =>
+            {
+                _data.Anchors.Remove(anchor.Id);
+                if (anchor.Type == AnchorType.Character && _characterIdsByName.GetValueOrDefault(anchor.Name) == anchor.Id)
+                    _characterIdsByName.Remove(anchor.Name);
+            });
             _data.Anchors.Add(anchor.Id, anchor);
-            if (type == AnchorType.Character)
+            if (anchor.Type == AnchorType.Character)
                 _characterIdsByName.Add(anchor.Name, anchor.Id);
-            MarkChanged(operation);
-            return anchor.Id;
+            transaction.RecordApplied(operation, [new RemoveAnchorOperation(anchor.Id)]);
         }
 
-        /// <summary>
-        /// 添加主世界或指定 Character 子世界的 Relation，并返回其 Id。
-        /// </summary>
-        public Guid AddRelation(string name, string description, Guid sourceId, Guid targetId, Guid? domainId = null)
+        private void ApplyRemoveAnchor(RemoveAnchorOperation operation, WorldTransaction transaction)
         {
-            const string operation = nameof(AddRelation);
-            EnsureName(name, operation, nameof(name));
-            GetAnchorForOperation(sourceId, operation, "Source Anchor");
-            GetAnchorForOperation(targetId, operation, "Target Anchor");
-
-            Relation relation = Relation.Create(name, description, sourceId, targetId);
-            if (!domainId.HasValue)
-            {
-                _data.Relations.Add(relation.Id, relation);
-                MarkChanged(operation);
-                return relation.Id;
-            }
-
-            EnsureCharacter(domainId.Value, operation);
-            SubWorldSnapshot subWorld = FindSubWorld(domainId.Value) ?? CreateSubWorldSnapshot(domainId.Value);
-            subWorld.Relations.Add(relation.Id, relation);
-            MarkChanged(operation);
-            return relation.Id;
-        }
-
-        /// <summary>
-        /// 为指定 Character 创建子世界并返回子世界 Id。
-        /// </summary>
-        public Guid CreateSubWorld(Guid characterId)
-        {
-            const string operation = nameof(CreateSubWorld);
-            EnsureCharacter(characterId, operation);
-            if (FindSubWorld(characterId) is { } duplicate)
-            {
-                throw new WorldException(
-                    WorldErrorCode.Duplicate,
-                    operation,
-                    $"Character {characterId} 已持有子世界 {duplicate.Id}。",
-                    characterId
-                );
-            }
-            Guid subWorldId = CreateSubWorldSnapshot(characterId).Id;
-            MarkChanged(operation);
-            return subWorldId;
-        }
-
-        /// <summary>
-        /// 删除 Anchor、相连 Relation，以及该 Character 持有的子世界。
-        /// </summary>
-        public void RemoveAnchor(Guid anchorId)
-        {
-            const string operation = nameof(RemoveAnchor);
-            Anchor anchor = GetAnchorForOperation(anchorId, operation, "Anchor");
-
-            Guid[] connectedRelationIds = EnumerateAllRelations()
-                .Where(relation => relation.SourceId == anchorId || relation.TargetId == anchorId)
-                .Select(relation => relation.Id)
+            const string operationName = nameof(RemoveAnchorOperation);
+            Anchor anchor = GetAnchorForOperation(operation.AnchorId, operationName, "Anchor");
+            SubWorldSnapshot? ownedSubWorld = anchor.Type == AnchorType.Character ? FindSubWorld(anchor.Id) : null;
+            RelationLocation[] externalRelations = EnumerateRelationLocations()
+                .Where(location => !ReferenceEquals(location.Owner, ownedSubWorld?.Relations) && (location.Relation.SourceId == anchor.Id || location.Relation.TargetId == anchor.Id))
                 .ToArray();
-            foreach (Guid relationId in connectedRelationIds)
-                RemoveRelationCore(relationId, operation);
+            RelationLocation[] removedRelations = externalRelations
+                .Concat(ownedSubWorld is null ? [] : ownedSubWorld.Relations.Values.Select(relation => new RelationLocation(ownedSubWorld.Relations, relation, ownedSubWorld.DomainId)))
+                .ToArray();
+            transaction.RecordRollback(() =>
+            {
+                _data.Anchors[anchor.Id] = anchor;
+                if (anchor.Type == AnchorType.Character)
+                    _characterIdsByName[anchor.Name] = anchor.Id;
+                if (ownedSubWorld is not null && !_data.SubWorlds.Contains(ownedSubWorld))
+                    _data.SubWorlds.Add(ownedSubWorld);
+                foreach (RelationLocation location in externalRelations)
+                    location.Owner[location.Relation.Id] = location.Relation;
+            });
+            foreach (RelationLocation location in externalRelations)
+                location.Owner.Remove(location.Relation.Id);
+            if (ownedSubWorld is not null)
+                _data.SubWorlds.Remove(ownedSubWorld);
+            if (anchor.Type == AnchorType.Character)
+                _characterIdsByName.Remove(anchor.Name);
+            _data.Anchors.Remove(anchor.Id);
 
+            var inverse = new List<WorldOperation> { new AddAnchorOperation(anchor.Id, anchor.Name, anchor.Description, anchor.Type) };
+            if (ownedSubWorld is not null)
+                inverse.Add(new CreateSubWorldOperation(ownedSubWorld.Id, anchor.Id));
+            inverse.AddRange(removedRelations.Select(ToAddRelationOperation));
+            transaction.RecordApplied(operation, inverse);
+        }
+
+        private void ApplyUpdateAnchorName(UpdateAnchorNameOperation operation, WorldTransaction transaction)
+        {
+            const string operationName = nameof(UpdateAnchorNameOperation);
+            EnsureName(operation.Name, operationName, nameof(operation.Name));
+            Anchor anchor = GetAnchorForOperation(operation.AnchorId, operationName, "Anchor");
+            if (string.Equals(anchor.Name, operation.Name, StringComparison.Ordinal))
+                return;
+            if (anchor.Type == AnchorType.Character && _characterIdsByName.TryGetValue(operation.Name, out Guid duplicateId) && duplicateId != anchor.Id)
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Character 名称“{operation.Name}”已被 Anchor {duplicateId} 使用。", anchor.Id);
+            string previousName = anchor.Name;
+            transaction.RecordRollback(() =>
+            {
+                if (anchor.Type == AnchorType.Character)
+                {
+                    _characterIdsByName.Remove(operation.Name);
+                    _characterIdsByName[previousName] = anchor.Id;
+                }
+                anchor.UpdateName(previousName);
+            });
             if (anchor.Type == AnchorType.Character)
             {
-                _characterIdsByName.Remove(anchor.Name);
-                SubWorldSnapshot? subWorld = FindSubWorld(anchorId);
-                if (subWorld is not null)
-                    _data.SubWorlds.Remove(subWorld);
+                _characterIdsByName.Remove(previousName);
+                _characterIdsByName.Add(operation.Name, anchor.Id);
             }
-            _data.Anchors.Remove(anchorId);
-            MarkChanged(operation);
+            anchor.UpdateName(operation.Name);
+            transaction.RecordApplied(operation, [new UpdateAnchorNameOperation(anchor.Id, previousName)]);
         }
 
-        /// <summary>
-        /// 删除主世界或子世界中的 Relation。
-        /// </summary>
-        public void RemoveRelation(Guid relationId)
+        private void ApplyUpdateAnchorDescription(UpdateAnchorDescriptionOperation operation, WorldTransaction transaction)
         {
-            const string operation = nameof(RemoveRelation);
-            RemoveRelationCore(relationId, operation);
-            MarkChanged(operation);
-        }
-
-        /// <summary>
-        /// 删除指定 Character 持有的子世界及其中的 Relation。
-        /// </summary>
-        public void RemoveSubWorld(Guid characterId)
-        {
-            const string operation = nameof(RemoveSubWorld);
-            EnsureCharacter(characterId, operation);
-            SubWorldSnapshot subWorld = FindSubWorld(characterId) ??
-                                        throw NotFound(operation, "SubWorldSnapshot", characterId);
-            _data.SubWorlds.Remove(subWorld);
-            MarkChanged(operation);
-        }
-
-        /// <summary>
-        /// 更新 Anchor 名称，并维护 Character 名称唯一性。
-        /// </summary>
-        public void UpdateAnchorName(Guid anchorId, string name)
-        {
-            const string operation = nameof(UpdateAnchorName);
-            EnsureName(name, operation, nameof(name));
-            Anchor anchor = GetAnchorForOperation(anchorId, operation, "Anchor");
-            if (string.Equals(anchor.Name, name, StringComparison.Ordinal))
+            const string operationName = nameof(UpdateAnchorDescriptionOperation);
+            Anchor anchor = GetAnchorForOperation(operation.AnchorId, operationName, "Anchor");
+            if (string.Equals(anchor.Description, operation.Description, StringComparison.Ordinal))
                 return;
-            if (anchor.Type == AnchorType.Character
-                && _characterIdsByName.TryGetValue(name, out Guid duplicateId)
-                && duplicateId != anchorId)
-            {
-                throw new WorldException(
-                    WorldErrorCode.Duplicate,
-                    operation,
-                    $"Character 名称“{name}”已被 Anchor {duplicateId} 使用。",
-                    anchorId
-                );
-            }
-
-            if (anchor.Type == AnchorType.Character)
-            {
-                _characterIdsByName.Remove(anchor.Name);
-                _characterIdsByName.Add(name, anchor.Id);
-            }
-            anchor.UpdateName(name);
-            MarkChanged(operation);
+            string previousDescription = anchor.Description;
+            transaction.RecordRollback(() => anchor.UpdateDescription(previousDescription));
+            anchor.UpdateDescription(operation.Description);
+            transaction.RecordApplied(operation, [new UpdateAnchorDescriptionOperation(anchor.Id, previousDescription)]);
         }
 
-        /// <summary>
-        /// 更新 Anchor 描述。
-        /// </summary>
-        public void UpdateAnchorDescription(Guid anchorId, string description)
+        private void ApplyUpdateAnchorType(UpdateAnchorTypeOperation operation, WorldTransaction transaction)
         {
-            const string operation = nameof(UpdateAnchorDescription);
-            Anchor anchor = GetAnchorForOperation(anchorId, operation, "Anchor");
-            if (string.Equals(anchor.Description, description, StringComparison.Ordinal))
+            const string operationName = nameof(UpdateAnchorTypeOperation);
+            EnsureAnchorType(operation.Type, operationName);
+            Anchor anchor = GetAnchorForOperation(operation.AnchorId, operationName, "Anchor");
+            if (anchor.Type == operation.Type)
                 return;
-            anchor.UpdateDescription(description);
-            MarkChanged(operation);
-        }
-
-        /// <summary>
-        /// 更新 Anchor 类型，并维护 Character 的特殊领域约束。
-        /// </summary>
-        public void UpdateAnchorType(Guid anchorId, AnchorType type)
-        {
-            const string operation = nameof(UpdateAnchorType);
-            EnsureAnchorType(type, operation);
-            Anchor anchor = GetAnchorForOperation(anchorId, operation, "Anchor");
-            if (anchor.Type == type)
-                return;
-
-            bool becomesCharacter = anchor.Type != AnchorType.Character && type == AnchorType.Character;
-            bool stopsBeingCharacter = anchor.Type == AnchorType.Character && type != AnchorType.Character;
-
+            AnchorType previousType = anchor.Type;
+            bool becomesCharacter = previousType != AnchorType.Character && operation.Type == AnchorType.Character;
+            bool stopsBeingCharacter = previousType == AnchorType.Character && operation.Type != AnchorType.Character;
             if (becomesCharacter && _characterIdsByName.TryGetValue(anchor.Name, out Guid duplicateId))
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Character 名称“{anchor.Name}”已被 Anchor {duplicateId} 使用。", anchor.Id);
+            if (stopsBeingCharacter && FindSubWorld(anchor.Id) is { } subWorld)
+                throw new WorldException(WorldErrorCodes.InvalidOperation, operationName, $"Character 持有子世界 {subWorld.Id}，请先显式删除该子世界。", anchor.Id);
+            transaction.RecordRollback(() =>
             {
-                throw new WorldException(
-                    WorldErrorCode.Duplicate,
-                    operation,
-                    $"Character 名称“{anchor.Name}”已被 Anchor {duplicateId} 使用。",
-                    anchorId
-                );
-            }
-            if (stopsBeingCharacter && FindSubWorld(anchorId) is { } subWorld)
-            {
-                throw new WorldException(
-                    WorldErrorCode.InvalidOperation,
-                    operation,
-                    $"Character 持有子世界 {subWorld.Id}，请先显式删除该子世界。",
-                    anchorId
-                );
-            }
-
+                if (becomesCharacter)
+                    _characterIdsByName.Remove(anchor.Name);
+                if (stopsBeingCharacter)
+                    _characterIdsByName[anchor.Name] = anchor.Id;
+                anchor.UpdateType(previousType);
+            });
             if (becomesCharacter)
                 _characterIdsByName.Add(anchor.Name, anchor.Id);
             if (stopsBeingCharacter)
                 _characterIdsByName.Remove(anchor.Name);
-            anchor.UpdateType(type);
-            MarkChanged(operation);
+            anchor.UpdateType(operation.Type);
+            transaction.RecordApplied(operation, [new UpdateAnchorTypeOperation(anchor.Id, previousType)]);
         }
 
-        /// <summary>
-        /// 更新 Relation 名称。其它 Relation 结构变化应删除后重建。
-        /// </summary>
-        public void UpdateRelationName(Guid relationId, string name)
+        private void ApplyAddRelation(AddRelationOperation operation, WorldTransaction transaction)
         {
-            const string operation = nameof(UpdateRelationName);
-            EnsureName(name, operation, nameof(name));
-            Relation relation = FindRelation(relationId, operation).Relation;
-            if (string.Equals(relation.Name, name, StringComparison.Ordinal))
+            const string operationName = nameof(AddRelationOperation);
+            EnsureId(operation.RelationId, operationName, nameof(operation.RelationId));
+            EnsureName(operation.Name, operationName, nameof(operation.Name));
+            GetAnchorForOperation(operation.SourceId, operationName, "Source Anchor");
+            GetAnchorForOperation(operation.TargetId, operationName, "Target Anchor");
+            if (ContainsRelation(operation.RelationId))
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Relation {operation.RelationId} 已存在。", operation.RelationId);
+            SubWorldSnapshot? createdSubWorld = null;
+            Dictionary<Guid, Relation> owner = _data.Relations;
+            if (operation.DomainId.HasValue)
+            {
+                EnsureCharacter(operation.DomainId.Value, operationName);
+                SubWorldSnapshot? existingSubWorld = FindSubWorld(operation.DomainId.Value);
+                createdSubWorld = existingSubWorld is null ? new SubWorldSnapshot { Id = Guid.NewGuid(), DomainId = operation.DomainId.Value } : null;
+                owner = (existingSubWorld ?? createdSubWorld!).Relations;
+            }
+            var relation = new Relation(operation.RelationId, operation.Name, operation.Description, operation.SourceId, operation.TargetId);
+            transaction.RecordRollback(() =>
+            {
+                owner.Remove(relation.Id);
+                if (createdSubWorld is not null)
+                    _data.SubWorlds.Remove(createdSubWorld);
+            });
+            if (createdSubWorld is not null)
+                _data.SubWorlds.Add(createdSubWorld);
+            owner.Add(relation.Id, relation);
+            WorldOperation[] forward = createdSubWorld is null ? [operation] : [new CreateSubWorldOperation(createdSubWorld.Id, createdSubWorld.DomainId), operation];
+            WorldOperation[] inverse = createdSubWorld is null ? [new RemoveRelationOperation(relation.Id)] : [new RemoveRelationOperation(relation.Id), new RemoveSubWorldOperation(createdSubWorld.DomainId)];
+            transaction.RecordApplied(forward, inverse);
+        }
+
+        private void ApplyRemoveRelation(RemoveRelationOperation operation, WorldTransaction transaction)
+        {
+            const string operationName = nameof(RemoveRelationOperation);
+            RelationLocation location = FindRelation(operation.RelationId, operationName);
+            transaction.RecordRollback(() => location.Owner[location.Relation.Id] = location.Relation);
+            location.Owner.Remove(location.Relation.Id);
+            transaction.RecordApplied(operation, [ToAddRelationOperation(location)]);
+        }
+
+        private void ApplyUpdateRelationName(UpdateRelationNameOperation operation, WorldTransaction transaction)
+        {
+            const string operationName = nameof(UpdateRelationNameOperation);
+            EnsureName(operation.Name, operationName, nameof(operation.Name));
+            Relation relation = FindRelation(operation.RelationId, operationName).Relation;
+            if (string.Equals(relation.Name, operation.Name, StringComparison.Ordinal))
                 return;
-            relation.UpdateName(name);
-            MarkChanged(operation);
+            string previousName = relation.Name;
+            transaction.RecordRollback(() => relation.UpdateName(previousName));
+            relation.UpdateName(operation.Name);
+            transaction.RecordApplied(operation, [new UpdateRelationNameOperation(relation.Id, previousName)]);
         }
 
-        /// <summary>
-        /// 更新 Relation 描述。其它 Relation 结构变化应删除后重建。
-        /// </summary>
-        public void UpdateRelationDescription(Guid relationId, string description)
+        private void ApplyUpdateRelationDescription(UpdateRelationDescriptionOperation operation, WorldTransaction transaction)
         {
-            const string operation = nameof(UpdateRelationDescription);
-            Relation relation = FindRelation(relationId, operation).Relation;
-            if (string.Equals(relation.Description, description, StringComparison.Ordinal))
+            const string operationName = nameof(UpdateRelationDescriptionOperation);
+            Relation relation = FindRelation(operation.RelationId, operationName).Relation;
+            if (string.Equals(relation.Description, operation.Description, StringComparison.Ordinal))
                 return;
-            relation.UpdateDescription(description);
-            MarkChanged(operation);
+            string previousDescription = relation.Description;
+            transaction.RecordRollback(() => relation.UpdateDescription(previousDescription));
+            relation.UpdateDescription(operation.Description);
+            transaction.RecordApplied(operation, [new UpdateRelationDescriptionOperation(relation.Id, previousDescription)]);
         }
 
-        private void RemoveRelationCore(Guid relationId, string operation)
+        private void ApplyCreateSubWorld(CreateSubWorldOperation operation, WorldTransaction transaction)
         {
-            RelationLocation location = FindRelation(relationId, operation);
-            location.Owner.Remove(relationId);
+            const string operationName = nameof(CreateSubWorldOperation);
+            EnsureId(operation.SubWorldId, operationName, nameof(operation.SubWorldId));
+            EnsureCharacter(operation.CharacterId, operationName);
+            if (_data.SubWorlds.Any(subWorld => subWorld.Id == operation.SubWorldId))
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"SubWorld {operation.SubWorldId} 已存在。", operation.SubWorldId);
+            if (FindSubWorld(operation.CharacterId) is { } duplicate)
+                throw new WorldException(WorldErrorCodes.Duplicate, operationName, $"Character {operation.CharacterId} 已持有子世界 {duplicate.Id}。", operation.CharacterId);
+            var subWorld = new SubWorldSnapshot { Id = operation.SubWorldId, DomainId = operation.CharacterId };
+            transaction.RecordRollback(() => _data.SubWorlds.Remove(subWorld));
+            _data.SubWorlds.Add(subWorld);
+            transaction.RecordApplied(operation, [new RemoveSubWorldOperation(operation.CharacterId)]);
         }
 
-        private void MarkChanged(string operation)
+        private void ApplyRemoveSubWorld(RemoveSubWorldOperation operation, WorldTransaction transaction)
         {
-            Revision++;
-            Changed?.Invoke(this, new WorldChangedEventArgs(Revision, operation));
+            const string operationName = nameof(RemoveSubWorldOperation);
+            EnsureCharacter(operation.CharacterId, operationName);
+            SubWorldSnapshot subWorld = FindSubWorld(operation.CharacterId) ?? throw NotFound(operationName, "SubWorldSnapshot", operation.CharacterId);
+            transaction.RecordRollback(() =>
+            {
+                if (!_data.SubWorlds.Contains(subWorld))
+                    _data.SubWorlds.Add(subWorld);
+            });
+            _data.SubWorlds.Remove(subWorld);
+            var inverse = new List<WorldOperation> { new CreateSubWorldOperation(subWorld.Id, subWorld.DomainId) };
+            inverse.AddRange(subWorld.Relations.Values.Select(relation => new AddRelationOperation(relation.Id, relation.Name, relation.Description, relation.SourceId, relation.TargetId, subWorld.DomainId)));
+            transaction.RecordApplied(operation, inverse);
         }
 
         private IEnumerable<Relation> EnumerateAllRelations()
@@ -408,6 +468,28 @@ namespace Tavi.Domain.World
                 foreach (Relation relation in subWorld.Relations.Values)
                     yield return relation;
             }
+        }
+
+        private IEnumerable<RelationLocation> EnumerateRelationLocations()
+        {
+            foreach (Relation relation in _data.Relations.Values)
+                yield return new RelationLocation(_data.Relations, relation, null);
+            foreach (SubWorldSnapshot subWorld in _data.SubWorlds)
+            {
+                foreach (Relation relation in subWorld.Relations.Values)
+                    yield return new RelationLocation(subWorld.Relations, relation, subWorld.DomainId);
+            }
+        }
+
+        private bool ContainsRelation(Guid relationId)
+        {
+            return _data.Relations.ContainsKey(relationId) || _data.SubWorlds.Any(subWorld => subWorld.Relations.ContainsKey(relationId));
+        }
+
+        private static AddRelationOperation ToAddRelationOperation(RelationLocation location)
+        {
+            Relation relation = location.Relation;
+            return new AddRelationOperation(relation.Id, relation.Name, relation.Description, relation.SourceId, relation.TargetId, location.DomainId);
         }
 
         private Anchor GetAnchorForOperation(Guid anchorId, string operation, string entityName)
@@ -424,12 +506,13 @@ namespace Tavi.Domain.World
             if (anchor.Type != AnchorType.Character)
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidOperation,
+                    WorldErrorCodes.InvalidOperation,
                     operation,
                     $"Anchor {characterId} 的类型是 {anchor.Type}，只有 Character 可以持有子世界。",
                     characterId
                 );
             }
+
             return anchor;
         }
 
@@ -438,27 +521,17 @@ namespace Tavi.Domain.World
             return _data.SubWorlds.Find(subWorld => subWorld.DomainId == characterId);
         }
 
-        private SubWorldSnapshot CreateSubWorldSnapshot(Guid characterId)
-        {
-            var subWorld = new SubWorldSnapshot
-            {
-                Id = Guid.NewGuid(),
-                DomainId = characterId
-            };
-            _data.SubWorlds.Add(subWorld);
-            return subWorld;
-        }
-
         private RelationLocation FindRelation(Guid relationId, string operation)
         {
             EnsureId(relationId, operation, nameof(relationId));
             if (_data.Relations.TryGetValue(relationId, out Relation? relation))
-                return new RelationLocation(_data.Relations, relation);
+                return new RelationLocation(_data.Relations, relation, null);
             foreach (SubWorldSnapshot subWorld in _data.SubWorlds)
             {
                 if (subWorld.Relations.TryGetValue(relationId, out relation))
-                    return new RelationLocation(subWorld.Relations, relation);
+                    return new RelationLocation(subWorld.Relations, relation, subWorld.DomainId);
             }
+
             throw NotFound(operation, "Relation", relationId);
         }
 
@@ -467,7 +540,7 @@ namespace Tavi.Domain.World
             if (id == Guid.Empty)
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidArgument,
+                    WorldErrorCodes.InvalidArgument,
                     operation,
                     $"参数 {parameterName} 不能是空 Guid。"
                 );
@@ -479,7 +552,7 @@ namespace Tavi.Domain.World
             if (string.IsNullOrWhiteSpace(value))
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidArgument,
+                    WorldErrorCodes.InvalidArgument,
                     operation,
                     $"参数 {parameterName} 不能为空或只包含空白字符。"
                 );
@@ -491,7 +564,7 @@ namespace Tavi.Domain.World
             if (!Enum.IsDefined(type))
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidArgument,
+                    WorldErrorCodes.InvalidArgument,
                     operation,
                     $"AnchorType 值 {Convert.ToInt32(type)} 未定义。"
                 );
@@ -501,7 +574,7 @@ namespace Tavi.Domain.World
         private static WorldException NotFound(string operation, string entityName, Guid entityId)
         {
             return new WorldException(
-                WorldErrorCode.NotFound,
+                WorldErrorCodes.NotFound,
                 operation,
                 $"未找到 {entityName}。",
                 entityId
@@ -516,94 +589,63 @@ namespace Tavi.Domain.World
                 errors.Add("WorldSnapshot.Id 不能是空 Guid。");
 
             Dictionary<Guid, Anchor>? anchors = data.Anchors;
-            if (anchors is null)
-                errors.Add("WorldSnapshot.Anchors 不能为 null。");
-            Dictionary<Guid, Relation>? worldRelations = data.Relations;
-            if (worldRelations is null)
-                errors.Add("WorldSnapshot.Relations 不能为 null。");
-            List<SubWorldSnapshot>? subWorlds = data.SubWorlds;
-            if (subWorlds is null)
-                errors.Add("WorldSnapshot.SubWorlds 不能为 null。");
+            Dictionary<Guid, Relation> worldRelations = data.Relations;
+            List<SubWorldSnapshot> subWorlds = data.SubWorlds;
 
             var characterNames = new Dictionary<string, Guid>(StringComparer.Ordinal);
-            if (anchors is not null)
+            foreach ((Guid key, Anchor anchor) in anchors)
             {
-                foreach ((Guid key, Anchor? anchor) in anchors)
-                {
-                    string path = $"Anchors[{key}]";
-                    if (anchor is null)
-                    {
-                        errors.Add($"{path} 不能为 null。");
-                        continue;
-                    }
-                    ValidateAnchor(key, anchor, path, characterNames, errors);
-                }
+                string path = $"Anchors[{key}]";
+                ValidateAnchor(key, anchor, path, characterNames, errors);
             }
 
             var relationIds = new HashSet<Guid>();
-            if (worldRelations is not null)
-            {
-                ValidateRelations(worldRelations, "Relations", anchors, relationIds, errors);
-            }
+            ValidateRelations(worldRelations, "Relations", anchors, relationIds, errors);
 
             var subWorldIds = new HashSet<Guid>();
             var domainIds = new HashSet<Guid>();
-            if (subWorlds is not null)
+            for (int index = 0; index < subWorlds.Count; index++)
             {
-                for (int index = 0; index < subWorlds.Count; index++)
+                SubWorldSnapshot subWorld = subWorlds[index];
+                string path = $"SubWorlds[{index}]";
+                if (subWorld.Id == Guid.Empty)
+                    errors.Add($"{path}.Id 不能是空 Guid。");
+                else if (!subWorldIds.Add(subWorld.Id))
+                    errors.Add($"{path}.Id {subWorld.Id} 重复。");
+                if (subWorld.DomainId == Guid.Empty)
                 {
-                    SubWorldSnapshot? subWorld = subWorlds[index];
-                    string path = $"SubWorlds[{index}]";
-                    if (subWorld is null)
+                    errors.Add($"{path}.DomainId 不能是空 Guid。");
+                }
+                else
+                {
+                    if (!domainIds.Add(subWorld.DomainId))
                     {
-                        errors.Add($"{path} 不能为 null。");
-                        continue;
-                    }
-                    if (subWorld.Id == Guid.Empty)
-                        errors.Add($"{path}.Id 不能是空 Guid。");
-                    else if (!subWorldIds.Add(subWorld.Id))
-                        errors.Add($"{path}.Id {subWorld.Id} 重复。");
-                    if (subWorld.DomainId == Guid.Empty)
-                    {
-                        errors.Add($"{path}.DomainId 不能是空 Guid。");
-                    }
-                    else
-                    {
-                        if (!domainIds.Add(subWorld.DomainId))
-                        {
-                            errors.Add(
-                                $"{path}.DomainId {subWorld.DomainId} 重复，一个 Character 最多只能持有一个子世界。"
-                            );
-                        }
-                        if (anchors is null || !anchors.TryGetValue(subWorld.DomainId, out Anchor? domain))
-                        {
-                            errors.Add(
-                                $"{path}.DomainId {subWorld.DomainId} 不指向任何 Anchor。"
-                            );
-                        }
-                        else if (domain.Type != AnchorType.Character)
-                        {
-                            errors.Add(
-                                $"{path}.DomainId {subWorld.DomainId} 指向类型 {domain.Type}，只有 Character 可以持有子世界。"
-                            );
-                        }
+                        errors.Add(
+                            $"{path}.DomainId {subWorld.DomainId} 重复，一个 Character 最多只能持有一个子世界。"
+                        );
                     }
 
-                    if (subWorld.Relations is null)
+                    if (anchors is null || !anchors.TryGetValue(subWorld.DomainId, out Anchor? domain))
                     {
-                        errors.Add($"{path}.Relations 不能为 null。");
+                        errors.Add(
+                            $"{path}.DomainId {subWorld.DomainId} 不指向任何 Anchor。"
+                        );
                     }
-                    else
+                    else if (domain.Type != AnchorType.Character)
                     {
-                        ValidateRelations(subWorld.Relations, $"{path}.Relations", anchors, relationIds, errors);
+                        errors.Add(
+                            $"{path}.DomainId {subWorld.DomainId} 指向类型 {domain.Type}，只有 Character 可以持有子世界。"
+                        );
                     }
                 }
+
+                ValidateRelations(subWorld.Relations, $"{path}.Relations", anchors, relationIds, errors);
             }
 
             if (errors.Count > 0)
             {
                 throw new WorldException(
-                    WorldErrorCode.InvalidWorldSnapshot,
+                    WorldErrorCodes.InvalidWorldSnapshot,
                     operation,
                     $"WorldSnapshot 初始化校验发现 {errors.Count} 个错误。",
                     validationErrors: errors
@@ -622,6 +664,7 @@ namespace Tavi.Domain.World
             {
                 errors.Add($"{path} 的字典键与 Anchor.Id {anchor.Id} 不一致。");
             }
+
             if (string.IsNullOrWhiteSpace(anchor.Name))
                 errors.Add($"{path}.Name 不能为空或只包含空白字符。");
             if (!Enum.IsDefined(anchor.Type))
@@ -643,14 +686,10 @@ namespace Tavi.Domain.World
         private static void ValidateRelations(Dictionary<Guid, Relation> relations, string path,
             Dictionary<Guid, Anchor>? anchors, HashSet<Guid> relationIds, List<string> errors)
         {
-            foreach ((Guid key, Relation? relation) in relations)
+            foreach ((Guid key, Relation relation) in relations)
             {
                 string relationPath = $"{path}[{key}]";
-                if (relation is null)
-                {
-                    errors.Add($"{relationPath} 不能为 null。");
-                    continue;
-                }
+
                 if (key == Guid.Empty)
                     errors.Add($"{relationPath} 的字典键不能是空 Guid。");
                 if (relation.Id == Guid.Empty)
@@ -659,16 +698,19 @@ namespace Tavi.Domain.World
                 {
                     errors.Add($"{relationPath} 的字典键与 Relation.Id {relation.Id} 不一致。");
                 }
+
                 if (relation.Id != Guid.Empty && !relationIds.Add(relation.Id))
                 {
                     errors.Add($"{relationPath}.Id {relation.Id} 在世界图中重复。");
                 }
+
                 if (string.IsNullOrWhiteSpace(relation.Name))
                     errors.Add($"{relationPath}.Name 不能为空或只包含空白字符。");
                 if (anchors is null || !anchors.ContainsKey(relation.SourceId))
                 {
                     errors.Add($"{relationPath}.SourceId {relation.SourceId} 不指向任何 Anchor。");
                 }
+
                 if (anchors is null || !anchors.ContainsKey(relation.TargetId))
                 {
                     errors.Add($"{relationPath}.TargetId {relation.TargetId} 不指向任何 Anchor。");
@@ -731,7 +773,65 @@ namespace Tavi.Domain.World
 
         private sealed record RelationLocation(
             Dictionary<Guid, Relation> Owner,
-            Relation Relation
+            Relation Relation,
+            Guid? DomainId
         );
+
+        /// <summary>
+        /// 事务日志只保存精确的内部恢复动作；它不经过领域校验，不触发事件，也不改变 revision。
+        /// </summary>
+        private sealed class WorldTransaction
+        {
+            private readonly Stack<Action> _rollback = new();
+            private readonly List<WorldOperation> _forward = [];
+            private readonly List<WorldOperation> _inverse = [];
+
+            internal bool HasChanges => _forward.Count > 0;
+
+            internal void RecordRollback(Action rollback)
+            {
+                _rollback.Push(rollback);
+            }
+
+            internal void RecordApplied(WorldOperation forward, IEnumerable<WorldOperation> inverse)
+            {
+                RecordApplied([forward], inverse);
+            }
+
+            internal void RecordApplied(IEnumerable<WorldOperation> forward, IEnumerable<WorldOperation> inverse)
+            {
+                _forward.AddRange(forward);
+                _inverse.InsertRange(0, inverse);
+            }
+
+            internal void Rollback()
+            {
+                List<Exception>? failures = null;
+                while (_rollback.TryPop(out Action? rollback))
+                {
+                    try
+                    {
+                        rollback();
+                    }
+                    catch (Exception exception)
+                    {
+                        (failures ??= []).Add(exception);
+                    }
+                }
+                if (failures is not null)
+                    throw new AggregateException("世界事务回滚失败。", failures);
+            }
+
+            internal AppliedWorldChangeSet CreateAppliedChangeSet()
+            {
+                return new AppliedWorldChangeSet(new WorldChangeSet(_forward), new WorldChangeSet(_inverse));
+            }
+        }
+    }
+
+    internal sealed record WorldApplyResult(long PreviousRevision, long Revision, AppliedWorldChangeSet? ChangeSet)
+    {
+        internal bool Changed => ChangeSet is not null;
+        internal static WorldApplyResult Unchanged(long revision) => new(revision, revision, null);
     }
 }

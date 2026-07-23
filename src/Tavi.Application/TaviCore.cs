@@ -1,33 +1,31 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Threading.Tasks;
+using Tavi.Application.Guidance;
 using Tavi.Application.LanguageModel;
-using Tavi.Domain.World;
+using Tavi.Application.Logging;
+using Tavi.Application.World;
 
-namespace Tavi.Application
+namespace Tavi.Application;
+
+/// <summary>
+/// Application 服务入口。所有依赖由启动层显式提供。
+/// </summary>
+public sealed class TaviCore
 {
-    public class TaviCore
+    /// <summary>使用启动层显式提供的服务创建 Application 入口。</summary>
+    public TaviCore(ILanguageModelService languageModels, ILogger logger)
     {
-        public static ILanguageModel languageModel { get; private set; } = null!;
+        LanguageModels = languageModels ?? throw new ArgumentNullException(nameof(languageModels));
+        Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
-        private static ILogger? _logger;
-        public static ILogger logger => _logger ??= UniqueInterfaceUtility.Instantiate<ILogger>();
+    /// <summary>获取语言模型 Application 服务。</summary>
+    public ILanguageModelService LanguageModels { get; }
+    /// <summary>获取 Application 日志端口。</summary>
+    public ILogger Logger { get; }
 
-        public static Task Init(object llmConfig)
-        {
-            languageModel = UniqueInterfaceUtility.Instantiate<ILanguageModel>();
-            languageModel.Init(llmConfig);
-
-            logger.Log("TaviCore 初始化完成");
-            return Task.CompletedTask;
-        }
-
-        public static async Task Test()
-        {
-            string output = await languageModel.GenerateAsync(new Message() { UserContext = "你好啊！" });
-            logger.Log(output);
-        }
-
+    /// <summary>创建绑定到指定 WorldSession 的 Guidance 应用服务。</summary>
+    public IGuidanceService CreateGuidanceService(WorldSession worldSession)
+    {
+        ArgumentNullException.ThrowIfNull(worldSession);
+        return new GuidanceService(worldSession, LanguageModels, Logger);
     }
 }

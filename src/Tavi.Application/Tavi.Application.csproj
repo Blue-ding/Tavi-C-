@@ -4,8 +4,11 @@
     <AssemblyName>Tavi.Application</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Tavi.Abstractions\Tavi.Abstractions.csproj" />
     <ProjectReference Include="..\Tavi.Domain\Tavi.Domain.csproj" />
     <PackageReference Include="System.Memory.Data" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Evolution\" />
+  </ItemGroup>
 </Project>
-

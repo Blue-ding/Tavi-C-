@@ -4,155 +4,207 @@ using RuntimeWorld = Tavi.Domain.World.World;
 namespace Tavi.Application.World;
 
 /// <summary>
-/// 提供不依赖具体前端和序列化格式的标准世界查询。
+/// 提供绑定到 WorldSession 的只读查询。实例不缓存 World 数据；每个公开查询都会在同一次会话锁内完成并返回已物化副本。
 /// </summary>
-public static class WorldQueries
+public sealed class WorldQueries
 {
-    /// <summary>
-    /// 获取按名称排序的全部 Character。
-    /// </summary>
-    public static IReadOnlyList<Anchor> GetCharacters(RuntimeWorld world)
+    private readonly WorldSession _session;
+
+    internal WorldQueries(WorldSession session)
     {
-        ArgumentNullException.ThrowIfNull(world);
-        return world.GetCharacters().OrderBy(anchor => anchor.Name, StringComparer.Ordinal).ToArray();
+        _session = session ?? throw new ArgumentNullException(nameof(session));
     }
+
+    /// <summary>
+    /// 创建当前 World 的独立快照。
+    /// </summary>
+    public WorldSnapshot CreateSnapshot() => _session.ExecuteQuery(world => world.CreateSnapshot());
+
+    /// <summary>
+    /// 根据 Id 获取 Anchor 副本。
+    /// </summary>
+    public Anchor GetAnchor(Guid anchorId) => _session.ExecuteQuery(world => world.GetAnchor(anchorId));
+
+    /// <summary>
+    /// 根据 Id 获取 Relation 副本。
+    /// </summary>
+    public Relation GetRelation(Guid relationId) => _session.ExecuteQuery(world => world.GetRelation(relationId));
+
+    /// <summary>
+    /// 获取全部 Anchor 副本。
+    /// </summary>
+    public IReadOnlyList<Anchor> GetAnchors() => _session.ExecuteQuery(world => world.GetAnchors().ToArray());
+
+    /// <summary>
+    /// 获取按名称排序的全部 Character 副本。
+    /// </summary>
+    public IReadOnlyList<Anchor> GetCharacters() => _session.ExecuteQuery(GetCharactersCore);
 
     /// <summary>
     /// 按名称查询 Anchor，忽略名称大小写。
     /// </summary>
-    public static IReadOnlyList<Anchor> FindAnchors(RuntimeWorld world, string name)
+    public IReadOnlyList<Anchor> FindAnchors(string name) => _session.ExecuteQuery(world => FindAnchorsCore(world, name));
+
+    /// <summary>
+    /// 查询同时包含全部字符串线索的 Anchor。
+    /// </summary>
+    public IReadOnlyList<Anchor> QueryAnchors(IEnumerable<string> clues) => _session.ExecuteQuery(world => QueryAnchorsCore(world, clues));
+
+    /// <summary>
+    /// 获取全部事实世界 Relation 及其端点副本。
+    /// </summary>
+    public IReadOnlyList<ScopedRelation> GetWorldRelations() => _session.ExecuteQuery(GetWorldRelationsCore);
+
+    /// <summary>
+    /// 获取指定 Character 子世界中的全部 Relation 及其端点副本。
+    /// </summary>
+    public IReadOnlyList<ScopedRelation> GetSubWorldRelations(string characterName) => _session.ExecuteQuery(world => GetSubWorldRelationsCore(world, characterName));
+
+    /// <summary>
+    /// 获取事实世界和全部角色子世界中的 Relation 及其端点副本。
+    /// </summary>
+    public IReadOnlyList<ScopedRelation> GetAllRelations() => _session.ExecuteQuery(GetAllRelationsCore);
+
+    /// <summary>
+    /// 获取指定范围中的 Relation 及其端点副本。
+    /// </summary>
+    public IReadOnlyList<ScopedRelation> GetRelationsByScope(RelationQueryScope scope, string characterName) => _session.ExecuteQuery(world => GetRelationsByScopeCore(world, scope, characterName));
+
+    /// <summary>
+    /// 在指定范围中按名称查询 Relation，忽略名称大小写。
+    /// </summary>
+    public IReadOnlyList<ScopedRelation> FindRelations(string name, RelationQueryScope scope, string characterName) => _session.ExecuteQuery(world => FindRelationsCore(world, name, scope, characterName));
+
+    /// <summary>
+    /// 查询指定范围中同时包含全部字符串线索的 Relation。
+    /// </summary>
+    public IReadOnlyList<ScopedRelation> QueryRelations(IEnumerable<string> clues, RelationQueryScope scope, string characterName) => _session.ExecuteQuery(world => QueryRelationsCore(world, clues, scope, characterName));
+
+    /// <summary>
+    /// 按方向查询与指定名称 Anchor 相连的 Relation。
+    /// </summary>
+    public IReadOnlyList<ScopedRelation> GetAnchorRelations(string anchorName, RelationDirection direction, RelationQueryScope scope, string characterName) => _session.ExecuteQuery(world => GetAnchorRelationsCore(world, anchorName, direction, scope, characterName));
+
+    /// <summary>
+    /// 查询两个名称对应的 Anchor 集合之间的 Relation。
+    /// </summary>
+    public IReadOnlyList<ScopedRelation> GetRelationsBetweenAnchors(string firstAnchorName, string secondAnchorName, RelationQueryScope scope, string characterName) => _session.ExecuteQuery(world => GetRelationsBetweenAnchorsCore(world, firstAnchorName, secondAnchorName, scope, characterName));
+
+    /// <summary>
+    /// 使用相同线索分别查询事实世界与指定 Character 子世界。
+    /// </summary>
+    public WorldRelationComparison CompareWorldWithSubWorld(string characterName, IEnumerable<string> clues) => _session.ExecuteQuery(world => CompareWorldWithSubWorldCore(world, characterName, clues));
+
+    /// <summary>
+    /// 返回名称唯一匹配的 Anchor 副本；没有结果或存在歧义时抛出异常。
+    /// </summary>
+    public Anchor RequireSingleAnchor(string name) => _session.ExecuteQuery(world => RequireSingleAnchorCore(world, name));
+
+    /// <summary>
+    /// 返回选择条件唯一匹配的 Relation；没有结果或存在歧义时抛出异常。
+    /// </summary>
+    public ScopedRelation RequireSingleRelation(string name, string sourceAnchorName, string targetAnchorName, RelationQueryScope scope, string characterName) => _session.ExecuteQuery(world => RequireSingleRelationCore(world, name, sourceAnchorName, targetAnchorName, scope, characterName));
+
+    private static IReadOnlyList<Anchor> GetCharactersCore(RuntimeWorld world)
     {
-        ArgumentNullException.ThrowIfNull(world);
+        return world.GetCharacters().OrderBy(anchor => anchor.Name, StringComparer.Ordinal).ToArray();
+    }
+
+    private static IReadOnlyList<Anchor> FindAnchorsCore(RuntimeWorld world, string name)
+    {
         RequireText(name, nameof(name));
         return world.GetAnchors().Where(anchor => string.Equals(anchor.Name, name, StringComparison.OrdinalIgnoreCase))
             .OrderBy(anchor => anchor.Type).ThenBy(anchor => anchor.Description, StringComparer.Ordinal).ToArray();
     }
 
-    /// <summary>
-    /// 查询同时包含全部字符串线索的 Anchor。
-    /// </summary>
-    public static IReadOnlyList<Anchor> QueryAnchors(RuntimeWorld world, IEnumerable<string> clues)
+    private static IReadOnlyList<Anchor> QueryAnchorsCore(RuntimeWorld world, IEnumerable<string> clues)
     {
-        ArgumentNullException.ThrowIfNull(world);
         string[] normalized = NormalizeClues(clues);
         return world.GetAnchors().Where(anchor => MatchesAll($"{anchor.Name}\n{anchor.Description}\n{anchor.Type}", normalized))
             .OrderBy(anchor => anchor.Name, StringComparer.Ordinal).ThenBy(anchor => anchor.Type).ToArray();
     }
 
-    /// <summary>
-    /// 获取全部主世界 Relation 及其范围信息。
-    /// </summary>
-    public static IReadOnlyList<ScopedRelation> GetWorldRelations(RuntimeWorld world)
+    private static IReadOnlyList<ScopedRelation> GetWorldRelationsCore(RuntimeWorld world)
     {
-        ArgumentNullException.ThrowIfNull(world);
-        return world.GetWorldRelations().Select(relation => new ScopedRelation(relation, null)).ToArray();
+        return world.GetWorldRelations().Select(relation => CreateScopedRelation(world, relation, null)).ToArray();
     }
 
-    /// <summary>
-    /// 获取指定 Character 子世界中的全部 Relation。
-    /// </summary>
-    public static IReadOnlyList<ScopedRelation> GetSubWorldRelations(RuntimeWorld world, string characterName)
+    private static IReadOnlyList<ScopedRelation> GetSubWorldRelationsCore(RuntimeWorld world, string characterName)
     {
-        ArgumentNullException.ThrowIfNull(world);
-        Anchor character = RequireCharacter(world, characterName);
+        Anchor character = RequireCharacterCore(world, characterName);
         SubWorldSnapshot? subWorld = world.GetSubWorlds().SingleOrDefault(item => item.DomainId == character.Id);
-        return subWorld is null ? Array.Empty<ScopedRelation>() : subWorld.Relations.Values.Select(relation => new ScopedRelation(relation, character)).ToArray();
+        return subWorld is null ? [] : subWorld.Relations.Values.Select(relation => CreateScopedRelation(world, relation, character)).ToArray();
     }
 
-    /// <summary>
-    /// 获取主世界和全部子世界中的 Relation。
-    /// </summary>
-    public static IReadOnlyList<ScopedRelation> GetAllRelations(RuntimeWorld world)
+    private static IReadOnlyList<ScopedRelation> GetAllRelationsCore(RuntimeWorld world)
     {
-        ArgumentNullException.ThrowIfNull(world);
-        var relations = new List<ScopedRelation>(GetWorldRelations(world));
+        var relations = new List<ScopedRelation>(GetWorldRelationsCore(world));
         foreach (SubWorldSnapshot subWorld in world.GetSubWorlds())
         {
             Anchor character = world.GetAnchor(subWorld.DomainId);
-            relations.AddRange(subWorld.Relations.Values.Select(relation => new ScopedRelation(relation, character)));
+            relations.AddRange(subWorld.Relations.Values.Select(relation => CreateScopedRelation(world, relation, character)));
         }
         return relations;
     }
 
-    /// <summary>
-    /// 获取指定世界范围中的 Relation。
-    /// </summary>
-    public static IReadOnlyList<ScopedRelation> GetRelationsByScope(RuntimeWorld world, RelationQueryScope scope, string characterName)
+    private static IReadOnlyList<ScopedRelation> GetRelationsByScopeCore(RuntimeWorld world, RelationQueryScope scope, string characterName)
     {
         return scope switch
         {
-            RelationQueryScope.World => GetWorldRelations(world),
-            RelationQueryScope.SubWorld => GetSubWorldRelations(world, characterName),
-            RelationQueryScope.All => GetAllRelations(world),
+            RelationQueryScope.World => GetWorldRelationsCore(world),
+            RelationQueryScope.SubWorld => GetSubWorldRelationsCore(world, characterName),
+            RelationQueryScope.All => GetAllRelationsCore(world),
             _ => throw new ArgumentOutOfRangeException(nameof(scope), scope, "不支持的 Relation 查询范围。")
         };
     }
 
-    /// <summary>
-    /// 在指定范围中按名称查询 Relation，忽略名称大小写。
-    /// </summary>
-    public static IReadOnlyList<ScopedRelation> FindRelations(RuntimeWorld world, string name, RelationQueryScope scope, string characterName)
+    private static IReadOnlyList<ScopedRelation> FindRelationsCore(RuntimeWorld world, string name, RelationQueryScope scope, string characterName)
     {
         RequireText(name, nameof(name));
-        return SortRelations(world, GetRelationsByScope(world, scope, characterName)
+        return SortRelations(GetRelationsByScopeCore(world, scope, characterName)
             .Where(item => string.Equals(item.Relation.Name, name, StringComparison.OrdinalIgnoreCase))).ToArray();
     }
 
-    /// <summary>
-    /// 查询指定范围中同时包含全部字符串线索的 Relation。
-    /// </summary>
-    public static IReadOnlyList<ScopedRelation> QueryRelations(RuntimeWorld world, IEnumerable<string> clues, RelationQueryScope scope, string characterName)
+    private static IReadOnlyList<ScopedRelation> QueryRelationsCore(RuntimeWorld world, IEnumerable<string> clues, RelationQueryScope scope, string characterName)
     {
         string[] normalized = NormalizeClues(clues);
-        return SortRelations(world, GetRelationsByScope(world, scope, characterName).Where(item => MatchesRelation(world, item, normalized))).ToArray();
+        return SortRelations(GetRelationsByScopeCore(world, scope, characterName).Where(item => MatchesRelation(item, normalized))).ToArray();
     }
 
-    /// <summary>
-    /// 按方向查询与指定名称 Anchor 相连的 Relation。
-    /// </summary>
-    public static IReadOnlyList<ScopedRelation> GetAnchorRelations(RuntimeWorld world, string anchorName, RelationDirection direction, RelationQueryScope scope, string characterName)
+    private static IReadOnlyList<ScopedRelation> GetAnchorRelationsCore(RuntimeWorld world, string anchorName, RelationDirection direction, RelationQueryScope scope, string characterName)
     {
-        HashSet<Guid> anchorIds = FindAnchors(world, anchorName).Select(anchor => anchor.Id).ToHashSet();
-        IEnumerable<ScopedRelation> relations = GetRelationsByScope(world, scope, characterName).Where(item => direction switch
+        HashSet<Guid> anchorIds = FindAnchorsCore(world, anchorName).Select(anchor => anchor.Id).ToHashSet();
+        IEnumerable<ScopedRelation> relations = GetRelationsByScopeCore(world, scope, characterName).Where(item => direction switch
         {
             RelationDirection.Incoming => anchorIds.Contains(item.Relation.TargetId),
             RelationDirection.Outgoing => anchorIds.Contains(item.Relation.SourceId),
             RelationDirection.Both => anchorIds.Contains(item.Relation.SourceId) || anchorIds.Contains(item.Relation.TargetId),
             _ => throw new ArgumentOutOfRangeException(nameof(direction), direction, "不支持的 Relation 方向。")
         });
-        return SortRelations(world, relations).ToArray();
+        return SortRelations(relations).ToArray();
     }
 
-    /// <summary>
-    /// 查询两个名称对应的 Anchor 集合之间的 Relation。
-    /// </summary>
-    public static IReadOnlyList<ScopedRelation> GetRelationsBetweenAnchors(RuntimeWorld world, string firstAnchorName, string secondAnchorName, RelationQueryScope scope, string characterName)
+    private static IReadOnlyList<ScopedRelation> GetRelationsBetweenAnchorsCore(RuntimeWorld world, string firstAnchorName, string secondAnchorName, RelationQueryScope scope, string characterName)
     {
-        HashSet<Guid> firstIds = FindAnchors(world, firstAnchorName).Select(anchor => anchor.Id).ToHashSet();
-        HashSet<Guid> secondIds = FindAnchors(world, secondAnchorName).Select(anchor => anchor.Id).ToHashSet();
-        IEnumerable<ScopedRelation> relations = GetRelationsByScope(world, scope, characterName).Where(item =>
+        HashSet<Guid> firstIds = FindAnchorsCore(world, firstAnchorName).Select(anchor => anchor.Id).ToHashSet();
+        HashSet<Guid> secondIds = FindAnchorsCore(world, secondAnchorName).Select(anchor => anchor.Id).ToHashSet();
+        IEnumerable<ScopedRelation> relations = GetRelationsByScopeCore(world, scope, characterName).Where(item =>
             firstIds.Contains(item.Relation.SourceId) && secondIds.Contains(item.Relation.TargetId)
             || secondIds.Contains(item.Relation.SourceId) && firstIds.Contains(item.Relation.TargetId));
-        return SortRelations(world, relations).ToArray();
+        return SortRelations(relations).ToArray();
     }
 
-    /// <summary>
-    /// 使用相同线索分别查询主世界与指定 Character 子世界。
-    /// </summary>
-    public static WorldRelationComparison CompareWorldWithSubWorld(RuntimeWorld world, string characterName, IEnumerable<string> clues)
+    private static WorldRelationComparison CompareWorldWithSubWorldCore(RuntimeWorld world, string characterName, IEnumerable<string> clues)
     {
         string[] normalized = NormalizeClues(clues);
-        IReadOnlyList<ScopedRelation> worldRelations = SortRelations(world, GetWorldRelations(world).Where(item => MatchesRelation(world, item, normalized))).ToArray();
-        IReadOnlyList<ScopedRelation> subWorldRelations = SortRelations(world, GetSubWorldRelations(world, characterName).Where(item => MatchesRelation(world, item, normalized))).ToArray();
+        IReadOnlyList<ScopedRelation> worldRelations = SortRelations(GetWorldRelationsCore(world).Where(item => MatchesRelation(item, normalized))).ToArray();
+        IReadOnlyList<ScopedRelation> subWorldRelations = SortRelations(GetSubWorldRelationsCore(world, characterName).Where(item => MatchesRelation(item, normalized))).ToArray();
         return new WorldRelationComparison(worldRelations, subWorldRelations);
     }
 
-    /// <summary>
-    /// 返回名称唯一匹配的 Anchor；没有结果或存在歧义时抛出异常。
-    /// </summary>
-    public static Anchor RequireSingleAnchor(RuntimeWorld world, string name)
+    private static Anchor RequireSingleAnchorCore(RuntimeWorld world, string name)
     {
-        IReadOnlyList<Anchor> anchors = FindAnchors(world, name);
+        IReadOnlyList<Anchor> anchors = FindAnchorsCore(world, name);
         return anchors.Count switch
         {
             1 => anchors[0],
@@ -161,14 +213,11 @@ public static class WorldQueries
         };
     }
 
-    /// <summary>
-    /// 返回选择条件唯一匹配的 Relation；没有结果或存在歧义时抛出异常。
-    /// </summary>
-    public static ScopedRelation RequireSingleRelation(RuntimeWorld world, string name, string sourceAnchorName, string targetAnchorName, RelationQueryScope scope, string characterName)
+    private static ScopedRelation RequireSingleRelationCore(RuntimeWorld world, string name, string sourceAnchorName, string targetAnchorName, RelationQueryScope scope, string characterName)
     {
-        HashSet<Guid> sourceIds = FindAnchors(world, sourceAnchorName).Select(anchor => anchor.Id).ToHashSet();
-        HashSet<Guid> targetIds = FindAnchors(world, targetAnchorName).Select(anchor => anchor.Id).ToHashSet();
-        ScopedRelation[] relations = GetRelationsByScope(world, scope, characterName).Where(item =>
+        HashSet<Guid> sourceIds = FindAnchorsCore(world, sourceAnchorName).Select(anchor => anchor.Id).ToHashSet();
+        HashSet<Guid> targetIds = FindAnchorsCore(world, targetAnchorName).Select(anchor => anchor.Id).ToHashSet();
+        ScopedRelation[] relations = GetRelationsByScopeCore(world, scope, characterName).Where(item =>
             sourceIds.Contains(item.Relation.SourceId) && targetIds.Contains(item.Relation.TargetId)
             && string.Equals(item.Relation.Name, name, StringComparison.OrdinalIgnoreCase)).ToArray();
         return relations.Length switch
@@ -179,7 +228,7 @@ public static class WorldQueries
         };
     }
 
-    private static Anchor RequireCharacter(RuntimeWorld world, string characterName)
+    private static Anchor RequireCharacterCore(RuntimeWorld world, string characterName)
     {
         RequireText(characterName, nameof(characterName));
         Anchor? exactCharacter = world.GetCharacters().SingleOrDefault(anchor => string.Equals(anchor.Name, characterName, StringComparison.Ordinal));
@@ -194,6 +243,11 @@ public static class WorldQueries
         };
     }
 
+    private static ScopedRelation CreateScopedRelation(RuntimeWorld world, Relation relation, Anchor? domain)
+    {
+        return new ScopedRelation(relation, world.GetAnchor(relation.SourceId), world.GetAnchor(relation.TargetId), domain);
+    }
+
     private static string[] NormalizeClues(IEnumerable<string> clues)
     {
         ArgumentNullException.ThrowIfNull(clues);
@@ -204,13 +258,10 @@ public static class WorldQueries
         return normalized;
     }
 
-    private static bool MatchesRelation(RuntimeWorld world, ScopedRelation scopedRelation, IReadOnlyCollection<string> clues)
+    private static bool MatchesRelation(ScopedRelation scopedRelation, IReadOnlyCollection<string> clues)
     {
-        Relation relation = scopedRelation.Relation;
-        Anchor source = world.GetAnchor(relation.SourceId);
-        Anchor target = world.GetAnchor(relation.TargetId);
         string domainName = scopedRelation.Domain?.Name ?? "World";
-        return MatchesAll($"{relation.Name}\n{relation.Description}\n{source.Name}\n{target.Name}\n{domainName}", clues);
+        return MatchesAll($"{scopedRelation.Relation.Name}\n{scopedRelation.Relation.Description}\n{scopedRelation.Source.Name}\n{scopedRelation.Target.Name}\n{domainName}", clues);
     }
 
     private static bool MatchesAll(string candidate, IReadOnlyCollection<string> clues)
@@ -218,12 +269,12 @@ public static class WorldQueries
         return clues.All(clue => candidate.Contains(clue, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static IEnumerable<ScopedRelation> SortRelations(RuntimeWorld world, IEnumerable<ScopedRelation> relations)
+    private static IEnumerable<ScopedRelation> SortRelations(IEnumerable<ScopedRelation> relations)
     {
         return relations.OrderBy(item => item.Relation.Name, StringComparer.Ordinal)
             .ThenBy(item => item.Domain?.Name ?? string.Empty, StringComparer.Ordinal)
-            .ThenBy(item => world.GetAnchor(item.Relation.SourceId).Name, StringComparer.Ordinal)
-            .ThenBy(item => world.GetAnchor(item.Relation.TargetId).Name, StringComparer.Ordinal)
+            .ThenBy(item => item.Source.Name, StringComparer.Ordinal)
+            .ThenBy(item => item.Target.Name, StringComparer.Ordinal)
             .ThenBy(item => item.Relation.Description, StringComparer.Ordinal);
     }
 
@@ -235,12 +286,12 @@ public static class WorldQueries
 }
 
 /// <summary>
-/// 表示 Relation 所在的主世界或 Character 子世界。
+/// 表示 Relation 及其所在范围和端点的独立查询副本。
 /// </summary>
-public sealed record ScopedRelation(Relation Relation, Anchor? Domain);
+public sealed record ScopedRelation(Relation Relation, Anchor Source, Anchor Target, Anchor? Domain);
 
 /// <summary>
-/// 表示主世界与指定子世界的 Relation 查询结果。
+/// 表示事实世界与指定子世界的 Relation 查询结果。
 /// </summary>
 public sealed record WorldRelationComparison(IReadOnlyList<ScopedRelation> World, IReadOnlyList<ScopedRelation> SubWorld);
 

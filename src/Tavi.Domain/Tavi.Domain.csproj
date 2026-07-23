@@ -3,5 +3,7 @@
     <RootNamespace>Tavi.Domain</RootNamespace>
     <AssemblyName>Tavi.Domain</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tavi.Abstractions\Tavi.Abstractions.csproj" />
+  </ItemGroup>
 </Project>
-
