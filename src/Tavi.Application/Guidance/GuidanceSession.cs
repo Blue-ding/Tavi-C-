@@ -202,7 +202,7 @@ public sealed class GuidanceSession : IGuidanceService
         Guid modelOperationId = Guid.Empty;
         try
         {
-            IReadOnlyList<ITool> tools = WorldGuidanceTool.CreateQueryTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld)).ToArray();
+            IReadOnlyList<ITool> tools = WorldGuidanceTool.CreateTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld)).ToArray();
             LanguageModelOperation modelOperation = _languageModels.Start(new LanguageModelRunRequest { Conversation = conversation, Tools = tools, ToolCallMode = ToolCallMode.Auto }, linkedSource.Token);
             modelOperationId = modelOperation.Id;
             modelOperation.TextReceived += (_, text) => operation.ReportText(text);

@@ -20,7 +20,7 @@ internal static class WorldGuidanceTool
     }
 
     /// <summary>创建不会修改真实 World 的全部查询工具。</summary>
-    internal static IReadOnlyCollection<ITool> CreateQueryTools(WorldSession session)
+    private static IReadOnlyCollection<ITool> CreateQueryTools(WorldSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
         return
