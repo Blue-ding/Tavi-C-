@@ -66,3 +66,9 @@ Application 的模型运行策略保存在本地 `Tavi/Settings/language-model.j
 ```
 
 Windows 默认目录为 `%LOCALAPPDATA%\Tavi\Settings`，可使用 `TAVI_SETTINGS_DIRECTORY` 覆盖整个设置目录，也可使用 `TAVI_OPENAI_CONFIGURATION_PATH` 单独覆盖 OpenAI 配置文件。`openai.json` 包含 API Key，不应提交、同步或输出到日志。该文件缺失时 CLI 和 Host 仍可运行，但不会创建语言模型服务；世界图编辑功能不受影响。
+
+## Host 日志
+
+Host 会同时向控制台和本地滚动文件输出结构化日志。Windows 默认日志目录为 `%LOCALAPPDATA%\Tavi\Logs`，可使用配置键 `Tavi:Logging:Directory` 或环境变量 `TAVI_LOG_DIRECTORY` 覆盖，其中配置键优先。文件采用每行一个 JSON 事件的 `.jsonl` 格式，按日期和 20 MB 大小滚动，并在启动时清理最后修改时间超过 14 天的 `tavi-*.jsonl` 文件。
+
+持久化日志初始化失败不会阻止 Host 启动；此时应急诊断和后续日志仍会输出到标准错误与控制台。日志不得包含 API Key、Authorization 请求头、完整用户提示词、世界正文或存档正文。

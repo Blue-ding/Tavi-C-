@@ -19,9 +19,9 @@ public sealed class TaviExceptionHandler : IExceptionHandler
             return false;
         (int status, ErrorViewModel error) = CreateError(httpContext, exception);
         if (status >= StatusCodes.Status500InternalServerError)
-            _logger.LogError(exception, "Host 请求失败，TraceId={TraceId}", httpContext.TraceIdentifier);
+            _logger.LogError(exception, "Host 请求失败，TraceId={TraceId}，ErrorCode={ErrorCode}，Operation={Operation}", httpContext.TraceIdentifier, error.Code, error.Operation);
         else
-            _logger.LogWarning(exception, "Host 请求被拒绝，TraceId={TraceId}", httpContext.TraceIdentifier);
+            _logger.LogWarning("Host 请求被拒绝，TraceId={TraceId}，ErrorCode={ErrorCode}，Operation={Operation}", httpContext.TraceIdentifier, error.Code, error.Operation);
         httpContext.Response.StatusCode = status;
         httpContext.Response.ContentType = "application/problem+json";
         var problem = new ProblemDetails { Status = status, Title = error.Message, Type = $"https://tavi.local/errors/{error.Code.ToLowerInvariant().Replace('.', '-')}", Extensions = { ["error"] = error } };
