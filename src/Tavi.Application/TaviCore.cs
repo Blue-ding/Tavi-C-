@@ -22,10 +22,10 @@ public sealed class TaviCore
     /// <summary>获取 Application 日志端口。</summary>
     public ILogger Logger { get; }
 
-    /// <summary>创建绑定到指定 WorldSession 的 Guidance 应用服务。</summary>
-    public IGuidanceService CreateGuidanceService(WorldSession worldSession)
+    /// <summary>创建绑定到指定 World 服务的 Guidance 应用服务。</summary>
+    public IGuidanceService CreateGuidanceService(IWorldService worldService)
     {
-        ArgumentNullException.ThrowIfNull(worldSession);
-        return new GuidanceSession(worldSession, LanguageModels, Logger);
+        ArgumentNullException.ThrowIfNull(worldService);
+        return new GuidanceSession(worldService, LanguageModels, Logger);
     }
 }

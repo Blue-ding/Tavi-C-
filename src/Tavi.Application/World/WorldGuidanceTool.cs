@@ -13,14 +13,14 @@ internal static class WorldGuidanceTool
     /// <summary>
     /// 创建全部世界查询和写入工具。
     /// </summary>
-    internal static IReadOnlyCollection<ITool> CreateTools(WorldSession session)
+    internal static IReadOnlyCollection<ITool> CreateTools(IWorldService session)
     {
         ArgumentNullException.ThrowIfNull(session);
         return CreateQueryTools(session).Concat(CreateEditingTools(session)).ToArray();
     }
 
     /// <summary>创建不会修改真实 World 的全部查询工具。</summary>
-    private static IReadOnlyCollection<ITool> CreateQueryTools(WorldSession session)
+    private static IReadOnlyCollection<ITool> CreateQueryTools(IWorldService session)
     {
         ArgumentNullException.ThrowIfNull(session);
         return
@@ -40,7 +40,7 @@ internal static class WorldGuidanceTool
         ];
     }
 
-    private static IReadOnlyCollection<ITool> CreateEditingTools(WorldSession session)
+    private static IReadOnlyCollection<ITool> CreateEditingTools(IWorldService session)
     {
         return
         [
@@ -74,7 +74,7 @@ internal static class WorldGuidanceTool
         return InvokeForTool(() => SerializeResult(query().Select(ToRelationOutput)));
     }
 
-    private static string SerializeComparison(WorldSession session, string characterName, IEnumerable<string> clues)
+    private static string SerializeComparison(IWorldService session, string characterName, IEnumerable<string> clues)
     {
         return InvokeForTool(() =>
         {
@@ -128,7 +128,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private static Guid? ResolveDomainId(WorldSession session, RelationQueryScope scope, string characterName)
+    private static Guid? ResolveDomainId(IWorldService session, RelationQueryScope scope, string characterName)
     {
         return scope switch
         {
@@ -138,7 +138,7 @@ internal static class WorldGuidanceTool
         };
     }
 
-    private static Anchor RequireCharacter(WorldSession session, string characterName)
+    private static Anchor RequireCharacter(IWorldService session, string characterName)
     {
         Anchor character = session.Queries.RequireSingleAnchor(characterName);
         if (character.Type != AnchorType.Character)
@@ -146,12 +146,12 @@ internal static class WorldGuidanceTool
         return character;
     }
 
-    private static WorldCommitResult ApplySingle(WorldSession session, WorldOperation operation)
+    private static WorldCommitResult ApplySingle(IWorldService session, WorldOperation operation)
     {
         return session.Apply(WorldOperations.Single(operation), session.StateId);
     }
 
-    private static ScopedRelation GetScopedRelation(WorldSession session, Guid relationId, Guid? domainId)
+    private static ScopedRelation GetScopedRelation(IWorldService session, Guid relationId, Guid? domainId)
     {
         Relation relation = session.Queries.GetRelation(relationId);
         Anchor? domain = domainId.HasValue ? session.Queries.GetAnchor(domainId.Value) : null;
@@ -164,7 +164,7 @@ internal static class WorldGuidanceTool
         public string Name { get; set; } = string.Empty;
     }
 
-    private sealed class GetAnchorTool(WorldSession session) : Tool<GetAnchorToolPara>
+    private sealed class GetAnchorTool(IWorldService session) : Tool<GetAnchorToolPara>
     {
         public override string name => "get_anchor";
         public override string description => "依据完整名称查询 Anchor；名称相同的结果会全部返回。";
@@ -180,7 +180,7 @@ internal static class WorldGuidanceTool
     {
     }
 
-    private sealed class ListAnchorsTool(WorldSession session) : Tool<EmptyToolPara>
+    private sealed class ListAnchorsTool(IWorldService session) : Tool<EmptyToolPara>
     {
         public override string name => "list_anchors";
         public override string description => "无条件返回世界中的全部 Anchor。需要遍历或查看所有 Anchor 时使用本工具；不要为此向 query_anchor 传递空 clues。";
@@ -198,7 +198,7 @@ internal static class WorldGuidanceTool
         public string[] Clues { get; set; } = [];
     }
 
-    private sealed class QueryAnchorTool(WorldSession session) : Tool<QueryAnchorToolPara>
+    private sealed class QueryAnchorTool(IWorldService session) : Tool<QueryAnchorToolPara>
     {
         public override string name => "query_anchor";
         public override string description => "按至少一个非空字符串线索查询 Anchor，所有线索必须同时匹配；本工具不用于无条件遍历，需要全部 Anchor 时使用 list_anchors。";
@@ -234,7 +234,7 @@ internal static class WorldGuidanceTool
         public string CharacterName { get; set; } = string.Empty;
     }
 
-    private sealed class GetWorldRelationTool(WorldSession session) : Tool<RelationNameToolPara>
+    private sealed class GetWorldRelationTool(IWorldService session) : Tool<RelationNameToolPara>
     {
         public override string name => "get_world_relation";
         public override string description => "依据完整名称查询事实世界中的 Relation。";
@@ -246,7 +246,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class GetSubWorldRelationTool(WorldSession session) : Tool<SubWorldRelationNameToolPara>
+    private sealed class GetSubWorldRelationTool(IWorldService session) : Tool<SubWorldRelationNameToolPara>
     {
         public override string name => "get_sub_world_relation";
         public override string description => "依据完整名称查询指定 Character 认知世界中的 Relation。";
@@ -258,7 +258,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class QueryWorldRelationTool(WorldSession session) : Tool<RelationCluesToolPara>
+    private sealed class QueryWorldRelationTool(IWorldService session) : Tool<RelationCluesToolPara>
     {
         public override string name => "query_world_relation";
         public override string description => "使用普通字符串包含匹配查询事实世界中的 Relation。";
@@ -270,7 +270,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class QuerySubWorldRelationTool(WorldSession session) : Tool<SubWorldRelationCluesToolPara>
+    private sealed class QuerySubWorldRelationTool(IWorldService session) : Tool<SubWorldRelationCluesToolPara>
     {
         public override string name => "query_sub_world_relation";
         public override string description => "使用普通字符串包含匹配查询指定 Character 认知世界中的 Relation。";
@@ -282,7 +282,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class QueryRelationTool(WorldSession session) : Tool<RelationCluesToolPara>
+    private sealed class QueryRelationTool(IWorldService session) : Tool<RelationCluesToolPara>
     {
         public override string name => "query_relation";
         public override string description => "使用普通字符串包含匹配查询事实世界和全部角色认知世界中的 Relation。";
@@ -294,7 +294,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class ListCharactersTool(WorldSession session) : Tool<EmptyToolPara>
+    private sealed class ListCharactersTool(IWorldService session) : Tool<EmptyToolPara>
     {
         public override string name => "list_characters";
         public override string description => "返回世界中的全部 Character。";
@@ -321,7 +321,7 @@ internal static class WorldGuidanceTool
         public string CharacterName { get; set; } = string.Empty;
     }
 
-    private sealed class GetAnchorRelationsTool(WorldSession session) : Tool<AnchorRelationsToolPara>
+    private sealed class GetAnchorRelationsTool(IWorldService session) : Tool<AnchorRelationsToolPara>
     {
         public override string name => "get_anchor_relations";
         public override string description => "按方向和世界范围查询与指定名称 Anchor 相连的 Relation。";
@@ -348,7 +348,7 @@ internal static class WorldGuidanceTool
         public string CharacterName { get; set; } = string.Empty;
     }
 
-    private sealed class GetRelationsBetweenAnchorsTool(WorldSession session) : Tool<RelationsBetweenAnchorsToolPara>
+    private sealed class GetRelationsBetweenAnchorsTool(IWorldService session) : Tool<RelationsBetweenAnchorsToolPara>
     {
         public override string name => "get_relations_between_anchors";
         public override string description => "查询两个 Anchor 之间双向存在的 Relation，可限定事实世界或角色认知世界。";
@@ -369,7 +369,7 @@ internal static class WorldGuidanceTool
         public string[] Clues { get; set; } = [];
     }
 
-    private sealed class CompareWorldWithSubWorldTool(WorldSession session) : Tool<CompareWorldWithSubWorldToolPara>
+    private sealed class CompareWorldWithSubWorldTool(IWorldService session) : Tool<CompareWorldWithSubWorldToolPara>
     {
         public override string name => "compare_world_with_sub_world";
         public override string description => "使用相同字符串线索并列查询事实世界与指定 Character 的认知世界，不对差异作推理。";
@@ -393,7 +393,7 @@ internal static class WorldGuidanceTool
         public AnchorType Type { get; set; }
     }
 
-    private sealed class AddAnchorTool(WorldSession session) : Tool<AddAnchorToolPara>
+    private sealed class AddAnchorTool(IWorldService session) : Tool<AddAnchorToolPara>
     {
         public override string name => "add_anchor";
         public override string description => "向世界添加一个 Anchor。";
@@ -416,7 +416,7 @@ internal static class WorldGuidanceTool
         public string Name { get; set; } = string.Empty;
     }
 
-    private sealed class RemoveAnchorTool(WorldSession session) : Tool<AnchorSelectorToolPara>
+    private sealed class RemoveAnchorTool(IWorldService session) : Tool<AnchorSelectorToolPara>
     {
         public override string name => "remove_anchor";
         public override string description => "删除唯一匹配的 Anchor、相连 Relation 及其子世界。";
@@ -442,7 +442,7 @@ internal static class WorldGuidanceTool
         public string NewName { get; set; } = string.Empty;
     }
 
-    private sealed class UpdateAnchorNameTool(WorldSession session) : Tool<UpdateAnchorNameToolPara>
+    private sealed class UpdateAnchorNameTool(IWorldService session) : Tool<UpdateAnchorNameToolPara>
     {
         public override string name => "update_anchor_name";
         public override string description => "更新唯一匹配的 Anchor 名称。";
@@ -468,7 +468,7 @@ internal static class WorldGuidanceTool
         public string Description { get; set; } = string.Empty;
     }
 
-    private sealed class UpdateAnchorDescriptionTool(WorldSession session) : Tool<UpdateAnchorDescriptionToolPara>
+    private sealed class UpdateAnchorDescriptionTool(IWorldService session) : Tool<UpdateAnchorDescriptionToolPara>
     {
         public override string name => "update_anchor_description";
         public override string description => "更新唯一匹配的 Anchor 描述。";
@@ -494,7 +494,7 @@ internal static class WorldGuidanceTool
         public AnchorType Type { get; set; }
     }
 
-    private sealed class UpdateAnchorTypeTool(WorldSession session) : Tool<UpdateAnchorTypeToolPara>
+    private sealed class UpdateAnchorTypeTool(IWorldService session) : Tool<UpdateAnchorTypeToolPara>
     {
         public override string name => "update_anchor_type";
         public override string description => "更新唯一匹配的 Anchor 类型。";
@@ -532,7 +532,7 @@ internal static class WorldGuidanceTool
         public string CharacterName { get; set; } = string.Empty;
     }
 
-    private sealed class AddRelationTool(WorldSession session) : Tool<AddRelationToolPara>
+    private sealed class AddRelationTool(IWorldService session) : Tool<AddRelationToolPara>
     {
         public override string name => "add_relation";
         public override string description => "向主世界或指定 Character 子世界添加 Relation。";
@@ -570,7 +570,7 @@ internal static class WorldGuidanceTool
         public string CharacterName { get; set; } = string.Empty;
     }
 
-    private sealed class RemoveRelationTool(WorldSession session) : Tool<RelationSelectorToolPara>
+    private sealed class RemoveRelationTool(IWorldService session) : Tool<RelationSelectorToolPara>
     {
         public override string name => "remove_relation";
         public override string description => "删除选择条件唯一匹配的 Relation。";
@@ -593,7 +593,7 @@ internal static class WorldGuidanceTool
         public string NewName { get; set; } = string.Empty;
     }
 
-    private sealed class UpdateRelationNameTool(WorldSession session) : Tool<UpdateRelationNameToolPara>
+    private sealed class UpdateRelationNameTool(IWorldService session) : Tool<UpdateRelationNameToolPara>
     {
         public override string name => "update_relation_name";
         public override string description => "更新选择条件唯一匹配的 Relation 名称。";
@@ -617,7 +617,7 @@ internal static class WorldGuidanceTool
         public string Description { get; set; } = string.Empty;
     }
 
-    private sealed class UpdateRelationDescriptionTool(WorldSession session) : Tool<UpdateRelationDescriptionToolPara>
+    private sealed class UpdateRelationDescriptionTool(IWorldService session) : Tool<UpdateRelationDescriptionToolPara>
     {
         public override string name => "update_relation_description";
         public override string description => "更新选择条件唯一匹配的 Relation 描述。";
@@ -641,7 +641,7 @@ internal static class WorldGuidanceTool
         public string CharacterName { get; set; } = string.Empty;
     }
 
-    private sealed class CreateSubWorldTool(WorldSession session) : Tool<CharacterSelectorToolPara>
+    private sealed class CreateSubWorldTool(IWorldService session) : Tool<CharacterSelectorToolPara>
     {
         public override string name => "create_sub_world";
         public override string description => "为指定 Character 创建子世界。";
@@ -658,7 +658,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class RemoveSubWorldTool(WorldSession session) : Tool<CharacterSelectorToolPara>
+    private sealed class RemoveSubWorldTool(IWorldService session) : Tool<CharacterSelectorToolPara>
     {
         public override string name => "remove_sub_world";
         public override string description => "删除指定 Character 持有的子世界及其中全部 Relation。";

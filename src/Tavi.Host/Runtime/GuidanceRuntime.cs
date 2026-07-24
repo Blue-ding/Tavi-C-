@@ -42,9 +42,9 @@ internal sealed class GuidanceRuntime : IHostedService
     {
         get
         {
-            if (_service is not GuidanceSession session)
+            if (_service is null)
                 return false;
-            return session.GetSnapshot(session.Id).State == GuidanceState.Generating;
+            return _service.GetSnapshot(_service.Id).State == GuidanceState.Generating;
         }
     }
 
@@ -240,7 +240,7 @@ internal sealed class GuidanceRuntime : IHostedService
     private void InitializeService(ILanguageModelService languageModels)
     {
         _provider = languageModels.Capabilities.Provider;
-        _service = new TaviCore(languageModels, _applicationLogger).CreateGuidanceService(_world.Session);
+        _service = new TaviCore(languageModels, _applicationLogger).CreateGuidanceService(_world.Service);
     }
 
     private IGuidanceService RequireService() => _service ?? throw LanguageModelConfigurationException.Invalid(_availabilityMessage);

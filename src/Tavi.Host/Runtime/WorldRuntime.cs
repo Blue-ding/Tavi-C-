@@ -11,7 +11,7 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     private readonly WorldEventBroker _events;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private JsonFileWorldStore? _store;
-    private WorldSession? _session;
+    private IWorldService? _service;
     private bool _disposed;
     private readonly object _disposeSync = new();
     private Task? _disposeTask;
@@ -31,24 +31,24 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
         string saveDirectory = _configuration["Tavi:SaveDirectory"] ?? Environment.GetEnvironmentVariable("TAVI_SAVE_DIRECTORY") ?? defaultDirectory;
         string slot = _configuration["Tavi:WorldSlot"] ?? "default";
         _store = new JsonFileWorldStore(saveDirectory);
-        _session = new WorldSession(_store, slot);
-        _session.Changed += OnWorldChanged;
-        _session.StateChanged += OnWorldStateChanged;
-        await _session.InitializeAsync(cancellationToken);
+        _service = new WorldSession(_store, slot);
+        _service.Changed += OnWorldChanged;
+        _service.StateChanged += OnWorldStateChanged;
+        await _service.InitializeAsync(cancellationToken);
     }
 
     /// <summary>停止运行时并刷新尚未保存的世界修改。</summary>
     public Task StopAsync(CancellationToken cancellationToken) => DisposeAsync().AsTask();
 
-    /// <summary>在运行时访问锁内执行同步世界操作。</summary>
-    public async Task<TResult> ExecuteAsync<TResult>(Func<WorldSession, TResult> operation, CancellationToken cancellationToken = default)
+    /// <summary>在运行时访问锁内执行同步 World 服务操作。</summary>
+    public async Task<TResult> ExecuteAsync<TResult>(Func<IWorldService, TResult> operation, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
         await _accessGate.WaitAsync(cancellationToken);
         try
         {
-            return operation(RequireSession());
+            return operation(RequireService());
         }
         finally
         {
@@ -56,15 +56,15 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
         }
     }
 
-    /// <summary>在运行时访问锁内执行异步世界操作。</summary>
-    public async Task<TResult> ExecuteAsync<TResult>(Func<WorldSession, Task<TResult>> operation, CancellationToken cancellationToken = default)
+    /// <summary>在运行时访问锁内执行异步 World 服务操作。</summary>
+    public async Task<TResult> ExecuteAsync<TResult>(Func<IWorldService, Task<TResult>> operation, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
         await _accessGate.WaitAsync(cancellationToken);
         try
         {
-            return await operation(RequireSession());
+            return await operation(RequireService());
         }
         finally
         {
@@ -72,7 +72,8 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
         }
     }
 
-    internal WorldSession Session => RequireSession();
+    /// <summary>获取已初始化的 World Application 服务。</summary>
+    internal IWorldService Service => RequireService();
 
     /// <summary>释放世界会话、存储和访问同步资源。</summary>
     public ValueTask DisposeAsync()
@@ -84,11 +85,11 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     private async Task DisposeCoreAsync()
     {
         _disposed = true;
-        if (_session is not null)
+        if (_service is not null)
         {
-            _session.Changed -= OnWorldChanged;
-            _session.StateChanged -= OnWorldStateChanged;
-            await _session.DisposeAsync();
+            _service.Changed -= OnWorldChanged;
+            _service.StateChanged -= OnWorldStateChanged;
+            await _service.DisposeAsync();
         }
         _store?.Dispose();
         _accessGate.Dispose();
@@ -96,17 +97,17 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
 
     private void OnWorldChanged(object? sender, WorldSessionChangedEventArgs eventArgs)
     {
-        WorldSession session = RequireSession();
-        _events.Publish(new WorldEventViewModel("world.changed", eventArgs.StateId, session.IsDirty, eventArgs.CommitId, eventArgs.Operation.ToString(), null));
+        IWorldService service = RequireService();
+        _events.Publish(new WorldEventViewModel("world.changed", eventArgs.StateId, service.IsDirty, eventArgs.CommitId, eventArgs.Operation.ToString(), null));
     }
 
     private void OnWorldStateChanged(object? sender, WorldSessionStateChangedEventArgs eventArgs)
     {
-        Guid stateId = _session?.StateId ?? Guid.Empty;
+        Guid stateId = _service?.StateId ?? Guid.Empty;
         _events.Publish(new WorldEventViewModel($"world.{ToKebabCase(eventArgs.Change.ToString())}", stateId, eventArgs.IsDirty, null, null, eventArgs.Exception?.Message));
     }
 
-    private WorldSession RequireSession() => _session ?? throw new InvalidOperationException("世界运行时尚未初始化。");
+    private IWorldService RequireService() => _service ?? throw new InvalidOperationException("世界运行时尚未初始化。");
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 

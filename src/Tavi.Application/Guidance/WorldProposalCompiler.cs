@@ -14,13 +14,13 @@ public sealed record ProposalCompilationResult(WorldChangeSet ChangeSet, IReadOn
 public static class WorldProposalCompiler
 {
     /// <summary>
-    /// 编译指定提案。Relation 引用的临时 Anchor 必须同时被接受；现有 Anchor 和 SubWorld Character 会通过 WorldSession 查询边界校验。
+    /// 编译指定提案。Relation 引用的临时 Anchor 必须同时被接受；现有 Anchor 和 SubWorld Character 会通过 World 服务查询边界校验。
     /// </summary>
-    public static ProposalCompilationResult Compile(WorldProposal proposal, IEnumerable<string> acceptedChangeIds, WorldSession worldSession)
+    public static ProposalCompilationResult Compile(WorldProposal proposal, IEnumerable<string> acceptedChangeIds, IWorldService worldService)
     {
         ArgumentNullException.ThrowIfNull(proposal);
         ArgumentNullException.ThrowIfNull(acceptedChangeIds);
-        ArgumentNullException.ThrowIfNull(worldSession);
+        ArgumentNullException.ThrowIfNull(worldService);
         string[] acceptedIds = acceptedChangeIds.ToArray();
         HashSet<string> accepted = acceptedIds.ToHashSet(StringComparer.Ordinal);
         if (accepted.Count != acceptedIds.Length)
@@ -33,7 +33,7 @@ public static class WorldProposalCompiler
         ProposeAddAnchor[] anchors = proposal.Changes.OfType<ProposeAddAnchor>().Where(change => accepted.Contains(change.Id)).ToArray();
         ProposeAddRelation[] relations = proposal.Changes.OfType<ProposeAddRelation>().Where(change => accepted.Contains(change.Id)).ToArray();
         var anchorIds = anchors.ToDictionary(change => change.AnchorId, change => change.AnchorId.Value);
-        WorldSnapshot projectedWorld = worldSession.CreateStagingSnapshot().ProjectedWorld;
+        WorldSnapshot projectedWorld = worldService.CreateStagingSnapshot().ProjectedWorld;
         var operations = new List<WorldOperation>(anchors.Length + relations.Length);
         operations.AddRange(anchors.Select(change => new AddAnchorOperation(anchorIds[change.AnchorId], change.Name, change.Description, change.Type)));
         foreach (ProposeAddRelation relation in relations)

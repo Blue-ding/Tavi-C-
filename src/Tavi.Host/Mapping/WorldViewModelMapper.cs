@@ -6,9 +6,9 @@ namespace Tavi.Host.Mapping;
 
 internal static class WorldViewModelMapper
 {
-    internal static WorldGraphViewModel ToGraph(WorldSession session)
+    internal static WorldGraphViewModel ToGraph(IWorldService service)
     {
-        WorldStagingSnapshot staging = session.CreateStagingSnapshot();
+        WorldStagingSnapshot staging = service.CreateStagingSnapshot();
         WorldSnapshot snapshot = staging.ProjectedWorld;
         HashSet<Guid> subWorldCharacters = snapshot.SubWorlds.Select(subWorld => subWorld.DomainId).ToHashSet();
         AnchorViewModel[] nodes = snapshot.Anchors.Values.OrderBy(anchor => anchor.Name, StringComparer.OrdinalIgnoreCase).Select(anchor => new AnchorViewModel(anchor.Id, anchor.Name, anchor.Description, anchor.Type.ToString(), subWorldCharacters.Contains(anchor.Id))).ToArray();
@@ -18,7 +18,7 @@ internal static class WorldViewModelMapper
             edges.AddRange(subWorld.Relations.Values.Select(relation => ToRelation(relation, subWorld.DomainId)));
         SubWorldViewModel[] subWorlds = snapshot.SubWorlds.Select(subWorld => new SubWorldViewModel(subWorld.Id, subWorld.DomainId)).ToArray();
         WorldStagedChangeViewModel[] changes = staging.Changes.Select(change => new WorldStagedChangeViewModel(change.Id, change.Source.ToString(), change.Status.ToString(), string.Join("；", change.ChangeSet.Operations.Select(Describe)), change.Issue, change.ConflictingChangeIds)).ToArray();
-        return new WorldGraphViewModel(staging.WorldStateId, staging.Revision, session.IsDirty, session.CanUndo, session.CanRedo, session.Health.ToString(), nodes, edges.OrderBy(edge => edge.Name, StringComparer.OrdinalIgnoreCase).ToArray(), subWorlds, changes);
+        return new WorldGraphViewModel(staging.WorldStateId, staging.Revision, service.IsDirty, service.CanUndo, service.CanRedo, service.Health.ToString(), nodes, edges.OrderBy(edge => edge.Name, StringComparer.OrdinalIgnoreCase).ToArray(), subWorlds, changes);
     }
 
     internal static WorldCommitViewModel ToCommit(WorldCommitResult result, Guid? entityId = null) => new(result.CommitId, result.PreviousStateId, result.StateId, result.Changed, entityId);

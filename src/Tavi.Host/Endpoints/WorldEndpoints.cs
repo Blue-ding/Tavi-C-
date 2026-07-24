@@ -162,9 +162,9 @@ internal static class WorldEndpoints
             throw new ArgumentException("更新请求至少需要包含一个可修改属性。");
     }
 
-    private static WorldStagingResultViewModel Stage(WorldSession session, WorldOperation operation)
+    private static WorldStagingResultViewModel Stage(IWorldService service, WorldOperation operation)
     {
-        Guid id = session.Stage(operation);
-        return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(session));
+        Guid id = service.Stage(operation);
+        return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(service));
     }
 }

@@ -4,7 +4,7 @@
 
 ## 依赖约定
 
-- Endpoint 只能通过 `WorldRuntime` 访问 `WorldSession`。
+- Endpoint 只能通过 `WorldRuntime` 访问 `IWorldService`。
 - ViewModel 是稳定的 HTTP/SSE 契约，不直接暴露运行时 `World`。
 - Domain 和 Application 决定操作是否合法，Host 只完成协议解析与结果映射。
 - 当前世界会话由 Host 单例持有，避免丢失状态标识、撤销历史和自动保存状态。
