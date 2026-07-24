@@ -12,8 +12,8 @@ internal sealed class GuidanceSession : IGuidanceService
     private const string SystemInstruction = """
         你是 Tavi 的 Guidance。你的目标是从玩家给出的微小叙事势能出发，协助构筑可供审阅的 World 暂存修改。
         你可以使用只读工具了解当前 World，但绝不能直接修改真实 World。
-        使用 propose_anchor 时临时 Anchor 和修改标识由系统生成；只有收到工具返回的 proposalAnchorId 后，才能使用该标识创建引用它的 Relation。
-        当信息足够时，使用 propose_anchor、propose_relation 和 set_guidance_summary 构造本轮新增内容。完成工具调用后，用自然语言简要回应玩家。
+        使用 propose_element 和 propose_scope 时，临时标识与修改标识由系统生成；只有收到工具返回的标识后，才能创建引用它们的 Aspect 或 Relation。
+        当信息足够时，使用 propose_element、propose_scope、propose_aspect、propose_relation 和 set_guidance_summary 构造本轮新增内容。每个断言必须属于一个显式 Scope。完成工具调用后，用自然语言简要回应玩家。
         当信息不足时可以直接向玩家提出一个聚焦问题，此时不必创建提案。
         """;
     private const string LogCategory = "GuidanceSession";
@@ -213,10 +213,13 @@ internal sealed class GuidanceSession : IGuidanceService
             {
                 ProposalCompilationResult compilation = WorldProposalCompiler.Compile(proposal, proposal.Changes.Select(change => change.Id), _world);
                 IReadOnlyList<Guid> stagedIds = _world.Stage(compilation.ChangeSet.Operations, WorldStagedChangeSource.Guidance);
-                ProposalChange[] changes = proposal.Changes.Select((change, index) => change switch
+                Dictionary<string, Guid> stagedIdsByChangeId = compilation.OperationChangeIds.Select((changeId, index) => (changeId, stagedId: stagedIds[index])).ToDictionary(item => item.changeId, item => item.stagedId, StringComparer.Ordinal);
+                ProposalChange[] changes = proposal.Changes.Select(change => change switch
                 {
-                    ProposeAddAnchor anchor => (ProposalChange)(anchor with { Id = stagedIds[index].ToString() }),
-                    ProposeAddRelation relation => relation with { Id = stagedIds[index].ToString() },
+                    ProposeAddElement element => (ProposalChange)(element with { Id = stagedIdsByChangeId[element.Id].ToString() }),
+                    ProposeAddScope scope => scope with { Id = stagedIdsByChangeId[scope.Id].ToString() },
+                    ProposeAddAspect aspect => aspect with { Id = stagedIdsByChangeId[aspect.Id].ToString() },
+                    ProposeAddRelation relation => relation with { Id = stagedIdsByChangeId[relation.Id].ToString() },
                     _ => throw new InvalidOperationException($"不支持的提案类型 {change.GetType().Name}。")
                 }).ToArray();
                 published = proposal with { Changes = Array.AsReadOnly(changes) };

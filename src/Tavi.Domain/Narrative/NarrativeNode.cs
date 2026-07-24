@@ -67,11 +67,14 @@ public sealed record NarrativeBeatNode : NarrativeNode
 
     /// <summary>获取支持该 Beat 的 World Relation 标识；这些标识只提供来源追踪，不把 World 关系复制为 Narrative 状态。</summary>
     public IReadOnlySet<Guid> EvidenceRelationIds { get; init; } = new HashSet<Guid>();
+
+    /// <summary>获取支持该 Beat 的 World Aspect 标识；这些标识只提供来源追踪，不把 World 断言复制为 Narrative 状态。</summary>
+    public IReadOnlySet<Guid> EvidenceAspectIds { get; init; } = new HashSet<Guid>();
 }
 
-/// <summary>表示 NarrativeGraph 对一个 World Anchor 的轻量引用。它不复制 Anchor 内容，World 仍是事实权威来源。</summary>
+/// <summary>表示 NarrativeGraph 对一个 World Element 的轻量引用；它不复制 Element 内容，World 仍是权威来源。</summary>
 public sealed record NarrativeWorldReferenceNode : NarrativeNode
 {
-    /// <summary>获取被引用的 World Anchor 标识。</summary>
-    public required Guid WorldAnchorId { get; init; }
+    /// <summary>获取被引用的 World Element 标识。</summary>
+    public required Guid WorldElementId { get; init; }
 }

@@ -6,17 +6,17 @@ public sealed class NarrativeGraph
     private readonly NarrativeGraphSnapshot _snapshot;
     private readonly IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> _outgoingLinkIds;
     private readonly IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> _incomingLinkIds;
-    private readonly IReadOnlyDictionary<Guid, Guid> _nodeIdsByWorldAnchor;
+    private readonly IReadOnlyDictionary<Guid, Guid> _nodeIdsByWorldElement;
 
     private NarrativeGraph(NarrativeGraphSnapshot snapshot)
     {
         _snapshot = CloneSnapshot(snapshot);
         _outgoingLinkIds = _snapshot.Links.Values.GroupBy(link => link.SourceId).ToDictionary(group => group.Key, group => (IReadOnlyList<Guid>)group.Select(link => link.Id).ToArray());
         _incomingLinkIds = _snapshot.Links.Values.GroupBy(link => link.TargetId).ToDictionary(group => group.Key, group => (IReadOnlyList<Guid>)group.Select(link => link.Id).ToArray());
-        _nodeIdsByWorldAnchor = _snapshot.Nodes.Values.OfType<NarrativeWorldReferenceNode>().ToDictionary(node => node.WorldAnchorId, node => node.Id);
+        _nodeIdsByWorldElement = _snapshot.Nodes.Values.OfType<NarrativeWorldReferenceNode>().ToDictionary(node => node.WorldElementId, node => node.Id);
     }
 
-    /// <summary>校验并创建 NarrativeGraph；校验保证标识非空、边端点存在、数值有限且每个 World Anchor 最多对应一个引用节点。</summary>
+    /// <summary>校验并创建 NarrativeGraph；校验保证标识非空、边端点存在、数值有限且每个 World Element 最多对应一个引用节点。</summary>
     public static NarrativeGraph Create(NarrativeGraphSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -56,12 +56,12 @@ public sealed class NarrativeGraph
         return _incomingLinkIds.GetValueOrDefault(nodeId, []).Select(linkId => CloneLink(_snapshot.Links[linkId])).ToArray();
     }
 
-    /// <summary>根据 World Anchor 标识获取唯一的轻量引用节点；当前工作集未引用该 Anchor 时返回 null。</summary>
-    public NarrativeWorldReferenceNode? FindWorldReference(Guid worldAnchorId)
+    /// <summary>根据 World Element 标识获取唯一的轻量引用节点；当前工作集未引用该 Element 时返回 null。</summary>
+    public NarrativeWorldReferenceNode? FindWorldReference(Guid worldElementId)
     {
-        if (worldAnchorId == Guid.Empty)
-            throw new ArgumentException("World Anchor 标识不能为空。", nameof(worldAnchorId));
-        return _nodeIdsByWorldAnchor.TryGetValue(worldAnchorId, out Guid nodeId) ? (NarrativeWorldReferenceNode)CloneNode(_snapshot.Nodes[nodeId]) : null;
+        if (worldElementId == Guid.Empty)
+            throw new ArgumentException("World Element 标识不能为空。", nameof(worldElementId));
+        return _nodeIdsByWorldElement.TryGetValue(worldElementId, out Guid nodeId) ? (NarrativeWorldReferenceNode)CloneNode(_snapshot.Nodes[nodeId]) : null;
     }
 
     private void EnsureNode(Guid nodeId)
@@ -91,9 +91,9 @@ public sealed class NarrativeGraph
             ValidateNode(node);
             ValidateFeatures(node.Features, $"Narrative 节点 {node.Id}");
         }
-        Guid duplicateAnchorId = snapshot.Nodes.Values.OfType<NarrativeWorldReferenceNode>().GroupBy(node => node.WorldAnchorId).Where(group => group.Count() > 1).Select(group => group.Key).FirstOrDefault();
-        if (duplicateAnchorId != Guid.Empty)
-            throw new ArgumentException($"World Anchor {duplicateAnchorId} 在 NarrativeGraph 中存在多个引用节点。", nameof(snapshot));
+        Guid duplicateElementId = snapshot.Nodes.Values.OfType<NarrativeWorldReferenceNode>().GroupBy(node => node.WorldElementId).Where(group => group.Count() > 1).Select(group => group.Key).FirstOrDefault();
+        if (duplicateElementId != Guid.Empty)
+            throw new ArgumentException($"World Element {duplicateElementId} 在 NarrativeGraph 中存在多个引用节点。", nameof(snapshot));
         foreach ((Guid key, NarrativeLink link) in snapshot.Links)
         {
             if (link is null)
@@ -118,13 +118,15 @@ public sealed class NarrativeGraph
                     throw new ArgumentException($"Narrative Beat {beat.Id} 的生命周期值不合法。", nameof(node));
                 if (beat.EvidenceRelationIds.Any(id => id == Guid.Empty))
                     throw new ArgumentException($"Narrative Beat {beat.Id} 的来源 Relation 标识不能为空。", nameof(node));
+                if (beat.EvidenceAspectIds.Any(id => id == Guid.Empty))
+                    throw new ArgumentException($"Narrative Beat {beat.Id} 的来源 Aspect 标识不能为空。", nameof(node));
                 EnsureUnitValue(beat.Salience, $"Narrative Beat {beat.Id} 的 Salience");
                 EnsureUnitValue(beat.Tension, $"Narrative Beat {beat.Id} 的 Tension");
                 EnsureUnitValue(beat.Momentum, $"Narrative Beat {beat.Id} 的 Momentum");
                 EnsureUnitValue(beat.Novelty, $"Narrative Beat {beat.Id} 的 Novelty");
                 break;
-            case NarrativeWorldReferenceNode worldReference when worldReference.WorldAnchorId == Guid.Empty:
-                throw new ArgumentException($"Narrative World 引用节点 {worldReference.Id} 的 WorldAnchorId 不能为空。", nameof(node));
+            case NarrativeWorldReferenceNode worldReference when worldReference.WorldElementId == Guid.Empty:
+                throw new ArgumentException($"Narrative World 引用节点 {worldReference.Id} 的 WorldElementId 不能为空。", nameof(node));
             case NarrativeWorldReferenceNode:
                 break;
             default:
@@ -157,7 +159,7 @@ public sealed class NarrativeGraph
 
     private static NarrativeNode CloneNode(NarrativeNode source) => source switch
     {
-        NarrativeBeatNode beat => beat with { Features = CloneFeatures(beat.Features), EvidenceRelationIds = beat.EvidenceRelationIds.ToHashSet() },
+        NarrativeBeatNode beat => beat with { Features = CloneFeatures(beat.Features), EvidenceRelationIds = beat.EvidenceRelationIds.ToHashSet(), EvidenceAspectIds = beat.EvidenceAspectIds.ToHashSet() },
         NarrativeWorldReferenceNode worldReference => worldReference with { Features = CloneFeatures(worldReference.Features) },
         _ => throw new InvalidOperationException($"不支持的 Narrative 节点类型 {source.GetType().FullName}。")
     };

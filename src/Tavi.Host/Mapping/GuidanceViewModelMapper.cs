@@ -3,6 +3,7 @@ using Tavi.Host.ViewModels;
 
 namespace Tavi.Host.Mapping;
 
+/// <summary>将 Guidance Application 契约转换为可序列化的 Host ViewModel。</summary>
 internal static class GuidanceViewModelMapper
 {
     internal static GuidanceSnapshotViewModel ToSnapshot(GuidanceSnapshot snapshot)
@@ -16,40 +17,34 @@ internal static class GuidanceViewModelMapper
 
     internal static GuidanceCommitViewModel ToCommit(GuidanceCommitResult result, GuidanceSnapshot snapshot)
     {
-        CreatedAnchorViewModel[] anchors = result.CreatedAnchorIds.Select(pair => new CreatedAnchorViewModel(pair.Key.Value, pair.Value)).ToArray();
+        CreatedWorldEntityViewModel[] elements = result.CreatedElementIds.Select(pair => new CreatedWorldEntityViewModel(pair.Key.Value, pair.Value)).ToArray();
+        CreatedWorldEntityViewModel[] scopes = result.CreatedScopeIds.Select(pair => new CreatedWorldEntityViewModel(pair.Key.Value, pair.Value)).ToArray();
         GuidanceIssueViewModel[] issues = result.Issues.Select(issue => new GuidanceIssueViewModel(issue.Code, issue.Message, issue.ChangeId)).ToArray();
-        return new GuidanceCommitViewModel(result.Status.ToString(), result.WorldStateId, anchors, issues, result.ExpectedWorldStateId, result.ActualWorldStateId, ToSnapshot(snapshot));
+        return new GuidanceCommitViewModel(result.Status.ToString(), result.WorldStateId, elements, scopes, issues, result.ExpectedWorldStateId, result.ActualWorldStateId, ToSnapshot(snapshot));
     }
 
     private static WorldProposalViewModel ToProposal(WorldProposal proposal) => new(proposal.Id, proposal.BaseWorldStateId, proposal.Summary, proposal.Changes.Select(ToChange).ToArray());
 
-    private static ProposalChangeViewModel ToChange(ProposalChange change)
+    private static ProposalChangeViewModel ToChange(ProposalChange change) => change switch
     {
-        return change switch
-        {
-            ProposeAddAnchor anchor => new ProposeAddAnchorViewModel { Id = anchor.Id, Rationale = anchor.Rationale, AnchorId = anchor.AnchorId.Value, Name = anchor.Name, Description = anchor.Description, Type = anchor.Type.ToString() },
-            ProposeAddRelation relation => new ProposeAddRelationViewModel { Id = relation.Id, Rationale = relation.Rationale, Name = relation.Name, Description = relation.Description, Source = ToReference(relation.Source), Target = ToReference(relation.Target), Scope = ToScope(relation.Scope) },
-            _ => throw new InvalidOperationException($"不支持的 Guidance 提案修改类型 {change.GetType().Name}。")
-        };
-    }
+        ProposeAddElement value => new ProposeAddElementViewModel { Id = value.Id, Rationale = value.Rationale, ElementId = value.ElementId.Value, Name = value.Name, Description = value.Description, Type = value.Type.Value },
+        ProposeAddScope value => new ProposeAddScopeViewModel { Id = value.Id, Rationale = value.Rationale, ScopeId = value.ScopeId.Value, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Type = value.Type.Value, Owner = ToReference(value.Owner) },
+        ProposeAddAspect value => new ProposeAddAspectViewModel { Id = value.Id, Rationale = value.Rationale, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Type = value.Type.Value, Element = ToReference(value.Element), Scope = ToReference(value.Scope) },
+        ProposeAddRelation value => new ProposeAddRelationViewModel { Id = value.Id, Rationale = value.Rationale, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Type = value.Type.Value, Source = ToReference(value.Source), Target = ToReference(value.Target), Scope = ToReference(value.Scope) },
+        _ => throw new InvalidOperationException($"不支持的 Guidance 提案修改类型 {change.GetType().Name}。")
+    };
 
-    private static ProposalAnchorReferenceViewModel ToReference(ProposalAnchorReference reference)
+    private static ProposalElementReferenceViewModel ToReference(ProposalElementReference reference) => reference switch
     {
-        return reference switch
-        {
-            ProposalAnchorReference.Existing existing => new ProposalAnchorReferenceViewModel("Existing", existing.AnchorId),
-            ProposalAnchorReference.Proposed proposed => new ProposalAnchorReferenceViewModel("Proposed", proposed.AnchorId.Value),
-            _ => throw new InvalidOperationException($"不支持的 Guidance Anchor 引用类型 {reference.GetType().Name}。")
-        };
-    }
+        ProposalElementReference.Existing value => new ProposalElementReferenceViewModel("Existing", value.ElementId),
+        ProposalElementReference.Proposed value => new ProposalElementReferenceViewModel("Proposed", value.ElementId.Value),
+        _ => throw new InvalidOperationException($"不支持的 Guidance Element 引用类型 {reference.GetType().Name}。")
+    };
 
-    private static ProposedRelationScopeViewModel ToScope(ProposedRelationScope scope)
+    private static ProposalScopeReferenceViewModel ToReference(ProposalScopeReference reference) => reference switch
     {
-        return scope switch
-        {
-            ProposedRelationScope.World => new ProposedRelationScopeViewModel("World", null),
-            ProposedRelationScope.SubWorld subWorld => new ProposedRelationScopeViewModel("SubWorld", ToReference(subWorld.Character)),
-            _ => throw new InvalidOperationException($"不支持的 Guidance Relation 范围类型 {scope.GetType().Name}。")
-        };
-    }
+        ProposalScopeReference.Existing value => new ProposalScopeReferenceViewModel("Existing", value.ScopeId),
+        ProposalScopeReference.Proposed value => new ProposalScopeReferenceViewModel("Proposed", value.ScopeId.Value),
+        _ => throw new InvalidOperationException($"不支持的 Guidance Scope 引用类型 {reference.GetType().Name}。")
+    };
 }

@@ -14,7 +14,9 @@
 - 每一个提交请求都携带 `expectedStateId`；状态标识只判断提案是否仍基于当前完整状态，不表达提交顺序。
 - 状态冲突统一返回 HTTP 409，前端随后重新读取完整世界快照。
 - 多属性更新被组合成一个 `WorldChangeSet`，因此只产生一次提交和一次撤销记录。
-- Relation 的端点和所属范围不可直接更新；结构变化通过删除后重建完成。
+- Aspect 的 Element 与 Scope、Relation 的端点与 Scope、Scope 的 Owner 均不可直接更新；结构变化通过删除后重建完成。
+- `ElementType`、`AspectType`、`RelationType` 和 `ScopeType` 是大小写敏感的开放键，Host 不要求对应 Module 已加载。
+- Aspect 与 Relation 各自只属于一个 Scope；同一命题进入多个 Scope 时由调用方创建具有独立 ID 和生命周期的副本。
 
 ## 异常约定
 

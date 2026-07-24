@@ -92,7 +92,7 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
             string savePath = GetSavePath(normalizedSlot);
             string backupPath = GetBackupPath(normalizedSlot);
             tempPath = Path.Combine(_saveDirectory, $"{normalizedSlot}.{Guid.NewGuid():N}.tmp");
-            var document = new SaveDocumentV1 { SavedAtUtc = DateTimeOffset.UtcNow, World = WorldSaveMapper.FromDomain(snapshot) };
+            var document = new SaveDocumentV2 { SavedAtUtc = DateTimeOffset.UtcNow, World = WorldSaveMapper.FromDomain(snapshot) };
             await WriteDocumentAsync(tempPath, document, cancellationToken);
             if (!File.Exists(savePath))
                 File.Move(tempPath, savePath);
@@ -128,17 +128,32 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
     private async Task<WorldSnapshot> ReadSnapshotAsync(string path, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        SaveDocumentV1 document = await JsonSerializer.DeserializeAsync<SaveDocumentV1>(stream, _options, cancellationToken) ?? throw new InvalidDataException("存档内容为空。");
-        if (document.Version != SaveDocumentV1.CurrentVersion)
-            throw new InvalidDataException($"不支持存档版本 {document.Version}，当前版本为 {SaveDocumentV1.CurrentVersion}。");
-        if (document.World is null)
-            throw new InvalidDataException("存档缺少 world 数据。");
-        WorldSnapshot snapshot = WorldSaveMapper.ToDomain(document.World);
+        using JsonDocument json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (!json.RootElement.TryGetProperty("version", out JsonElement versionElement) || !versionElement.TryGetInt32(out int version))
+            throw new InvalidDataException("存档缺少有效 version。");
+        WorldSnapshot snapshot = version switch
+        {
+            SaveDocumentV1.CurrentVersion => ReadV1(json.RootElement),
+            SaveDocumentV2.CurrentVersion => ReadV2(json.RootElement),
+            _ => throw new InvalidDataException($"不支持存档版本 {version}，当前版本为 {SaveDocumentV2.CurrentVersion}。")
+        };
         _ = RuntimeWorld.Create(snapshot);
         return snapshot;
     }
 
-    private async Task WriteDocumentAsync(string path, SaveDocumentV1 document, CancellationToken cancellationToken)
+    private WorldSnapshot ReadV1(JsonElement root)
+    {
+        SaveDocumentV1 document = root.Deserialize<SaveDocumentV1>(_options) ?? throw new InvalidDataException("V1 存档内容为空。");
+        return WorldSaveMapper.MigrateFromV1(document.World ?? throw new InvalidDataException("V1 存档缺少 world 数据。"));
+    }
+
+    private WorldSnapshot ReadV2(JsonElement root)
+    {
+        SaveDocumentV2 document = root.Deserialize<SaveDocumentV2>(_options) ?? throw new InvalidDataException("V2 存档内容为空。");
+        return WorldSaveMapper.ToDomain(document.World ?? throw new InvalidDataException("V2 存档缺少 world 数据。"));
+    }
+
+    private async Task WriteDocumentAsync(string path, SaveDocumentV2 document, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough);
         await JsonSerializer.SerializeAsync(stream, document, _options, cancellationToken);

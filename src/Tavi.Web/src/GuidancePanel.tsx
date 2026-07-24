@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ArrowRight, Bot, Check, CircleStop, GitBranch, LoaderCircle, RefreshCw, Send, Sparkles, UserRound, X } from 'lucide-react'
 import { ApiError, guidanceApi } from './api'
-import type { GuidanceAvailabilityViewModel, GuidanceEventViewModel, GuidanceSnapshotViewModel, ProposalAnchorReferenceViewModel, ProposalChangeViewModel, ProposeAddRelationViewModel, WorldGraphViewModel } from './types'
+import type { GuidanceAvailabilityViewModel, GuidanceEventViewModel, GuidanceSnapshotViewModel, ProposalChangeViewModel, ProposalElementReferenceViewModel, ProposalScopeReferenceViewModel, WorldGraphViewModel } from './types'
 
 const sessionStorageKey = 'tavi.guidance.session'
 
@@ -92,7 +92,8 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
       conversationEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [open, snapshot?.messages.length, streamingText])
 
-  const proposedAnchors = useMemo(() => new Map(snapshot?.proposal?.changes.filter(change => change.kind === 'AddAnchor').map(change => [change.anchorId, change]) ?? []), [snapshot?.proposal])
+  const proposedElements = useMemo(() => new Map(snapshot?.proposal?.changes.filter(change => change.kind === 'AddElement').map(change => [change.elementId, change]) ?? []), [snapshot?.proposal])
+  const proposedScopes = useMemo(() => new Map(snapshot?.proposal?.changes.filter(change => change.kind === 'AddScope').map(change => [change.scopeId, change]) ?? []), [snapshot?.proposal])
 
   async function start(event: FormEvent) {
     event.preventDefault()
@@ -178,17 +179,29 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
   function toggleChange(change: ProposalChangeViewModel) {
     if (!snapshot?.proposal)
       return
-    const anchorChanges = new Map(snapshot.proposal.changes.filter(candidate => candidate.kind === 'AddAnchor').map(candidate => [candidate.anchorId, candidate.id]))
+    const elementChanges = new Map(snapshot.proposal.changes.filter(candidate => candidate.kind === 'AddElement').map(candidate => [candidate.elementId, candidate.id]))
+    const scopeChanges = new Map(snapshot.proposal.changes.filter(candidate => candidate.kind === 'AddScope').map(candidate => [candidate.scopeId, candidate.id]))
+    const dependencies = (candidate: ProposalChangeViewModel) => proposalDependencies(candidate).flatMap(reference => reference.kind === 'element' ? [elementChanges.get(reference.id)] : [scopeChanges.get(reference.id)]).filter((id): id is string => !!id)
     setSelectedChanges(current => {
       const next = new Set(current)
       if (next.has(change.id)) {
         next.delete(change.id)
-        if (change.kind === 'AddAnchor')
-          snapshot.proposal?.changes.filter(candidate => candidate.kind === 'AddRelation' && relationReferences(candidate).includes(change.anchorId)).forEach(candidate => next.delete(candidate.id))
+        let removed = true
+        while (removed) {
+          removed = false
+          snapshot.proposal?.changes.filter(candidate => next.has(candidate.id) && dependencies(candidate).some(id => !next.has(id))).forEach(candidate => { next.delete(candidate.id); removed = true })
+        }
       } else {
         next.add(change.id)
-        if (change.kind === 'AddRelation')
-          relationReferences(change).forEach(anchorId => { const dependency = anchorChanges.get(anchorId); if (dependency) next.add(dependency) })
+        const addDependencies = (candidate: ProposalChangeViewModel) => dependencies(candidate).forEach(id => {
+          if (next.has(id))
+            return
+          next.add(id)
+          const dependency = snapshot.proposal?.changes.find(item => item.id === id)
+          if (dependency)
+            addDependencies(dependency)
+        })
+        addDependencies(change)
       }
       return next
     })
@@ -242,7 +255,7 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
                 <header><div><span>WORLD PROPOSAL</span><h3>{snapshot.proposal.summary || '世界变化提案'}</h3></div><small>{selectedChanges.size}/{snapshot.proposal.changes.length}</small></header>
                 {conflict && <div className="proposal-conflict">World 已不再是该提案所基于的状态。请重新开始 Guidance，以当前 World 生成新提案。</div>}
                 <div className="proposal-changes">
-                  {snapshot.proposal.changes.map(change => <ProposalChange key={change.id} change={change} selected={selectedChanges.has(change.id)} world={world} proposedAnchors={proposedAnchors} onToggle={() => toggleChange(change)} />)}
+                  {snapshot.proposal.changes.map(change => <ProposalChange key={change.id} change={change} selected={selectedChanges.has(change.id)} world={world} proposedElements={proposedElements} proposedScopes={proposedScopes} onToggle={() => toggleChange(change)} />)}
                 </div>
               </section>
             )}
@@ -258,18 +271,37 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
   )
 }
 
-function ProposalChange({ change, selected, world, proposedAnchors, onToggle }: { change: ProposalChangeViewModel; selected: boolean; world: WorldGraphViewModel; proposedAnchors: Map<string, Extract<ProposalChangeViewModel, { kind: 'AddAnchor' }>>; onToggle: () => void }) {
-  if (change.kind === 'AddAnchor')
-    return <button className={`proposal-change${selected ? ' selected' : ''}`} onClick={onToggle}><span className="proposal-check">{selected && <Check size={13} />}</span><span className={`anchor-icon ${change.type.toLowerCase()}`}>{change.type === 'Character' ? <UserRound size={14} /> : <Sparkles size={14} />}</span><span><strong>{change.name}</strong><small>添加{change.type === 'Character' ? '角色' : '物品'} · {change.rationale}</small></span></button>
-  return <button className={`proposal-change relation${selected ? ' selected' : ''}`} onClick={onToggle}><span className="proposal-check">{selected && <Check size={13} />}</span><span className="anchor-icon relation"><GitBranch size={14} /></span><span><strong>{change.name}</strong><small>{referenceName(change.source, world, proposedAnchors)} <ArrowRight size={10} /> {referenceName(change.target, world, proposedAnchors)} · {change.rationale}</small></span></button>
+function ProposalChange({ change, selected, world, proposedElements, proposedScopes, onToggle }: { change: ProposalChangeViewModel; selected: boolean; world: WorldGraphViewModel; proposedElements: Map<string, Extract<ProposalChangeViewModel, { kind: 'AddElement' }>>; proposedScopes: Map<string, Extract<ProposalChangeViewModel, { kind: 'AddScope' }>>; onToggle: () => void }) {
+  let detail: React.ReactNode
+  if (change.kind === 'AddElement')
+    detail = <>Element · {change.type} · {change.rationale}</>
+  else if (change.kind === 'AddScope')
+    detail = <>Scope · {elementReferenceName(change.owner, world, proposedElements)} 持有 · {change.rationale}</>
+  else if (change.kind === 'AddAspect')
+    detail = <>{elementReferenceName(change.element, world, proposedElements)} · {scopeReferenceName(change.scope, world, proposedScopes)} · {change.rationale}</>
+  else
+    detail = <>{elementReferenceName(change.source, world, proposedElements)} <ArrowRight size={10} /> {elementReferenceName(change.target, world, proposedElements)} · {scopeReferenceName(change.scope, world, proposedScopes)} · {change.rationale}</>
+  return <button className={`proposal-change ${change.kind.toLowerCase()}${selected ? ' selected' : ''}`} onClick={onToggle}><span className="proposal-check">{selected && <Check size={13} />}</span><span className="anchor-icon relation"><GitBranch size={14} /></span><span><strong>{change.name}</strong><small>{detail}</small></span></button>
 }
 
-function relationReferences(change: ProposeAddRelationViewModel) {
-  return [change.source, change.target, change.scope.character].filter((reference): reference is ProposalAnchorReferenceViewModel => reference?.kind === 'Proposed').map(reference => reference.anchorId)
+function proposalDependencies(change: ProposalChangeViewModel): { kind: 'element' | 'scope'; id: string }[] {
+  if (change.kind === 'AddElement')
+    return []
+  if (change.kind === 'AddScope')
+    return change.owner.kind === 'Proposed' ? [{ kind: 'element', id: change.owner.elementId }] : []
+  const elementReferences = change.kind === 'AddAspect' ? [change.element] : [change.source, change.target]
+  return [
+    ...elementReferences.filter((reference): reference is ProposalElementReferenceViewModel & { kind: 'Proposed' } => reference.kind === 'Proposed').map(reference => ({ kind: 'element' as const, id: reference.elementId })),
+    ...(change.scope.kind === 'Proposed' ? [{ kind: 'scope' as const, id: change.scope.scopeId }] : []),
+  ]
 }
 
-function referenceName(reference: ProposalAnchorReferenceViewModel, world: WorldGraphViewModel, proposedAnchors: Map<string, Extract<ProposalChangeViewModel, { kind: 'AddAnchor' }>>) {
-  return reference.kind === 'Existing' ? world.nodes.find(anchor => anchor.id === reference.anchorId)?.name ?? '现有要素' : proposedAnchors.get(reference.anchorId)?.name ?? '提议要素'
+function elementReferenceName(reference: ProposalElementReferenceViewModel, world: WorldGraphViewModel, proposedElements: Map<string, Extract<ProposalChangeViewModel, { kind: 'AddElement' }>>) {
+  return reference.kind === 'Existing' ? world.elements.find(element => element.id === reference.elementId)?.name ?? '现有 Element' : proposedElements.get(reference.elementId)?.name ?? '提议 Element'
+}
+
+function scopeReferenceName(reference: ProposalScopeReferenceViewModel, world: WorldGraphViewModel, proposedScopes: Map<string, Extract<ProposalChangeViewModel, { kind: 'AddScope' }>>) {
+  return reference.kind === 'Existing' ? world.scopes.find(scope => scope.id === reference.scopeId)?.name ?? '现有 Scope' : proposedScopes.get(reference.scopeId)?.name ?? '提议 Scope'
 }
 
 function stateLabel(state: GuidanceSnapshotViewModel['state']) {

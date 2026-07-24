@@ -30,7 +30,7 @@ public sealed class LoggingPersistenceTests
                 WorldGraphViewModel initial = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
                 var configuration = new UpdateOpenAIConfigurationRequest("https://example.test/v1", "test-model", "must-not-leak", "Chat", false, null);
                 await RequireJsonAsync<OpenAIConfigurationViewModel>(await client.PutAsJsonAsync("/api/v1/settings/openai", configuration));
-                HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.StateId, "Place", "", "Location"));
+                HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(initial.StateId, "Place", "", "Location"));
                 Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
                 using JsonDocument problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
                 traceId = problem.RootElement.GetProperty("error").GetProperty("traceId").GetString();

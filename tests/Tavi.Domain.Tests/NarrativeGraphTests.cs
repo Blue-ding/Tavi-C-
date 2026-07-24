@@ -16,8 +16,8 @@ public sealed class NarrativeGraphTests
         var nodes = new Dictionary<Guid, NarrativeNode>
         {
             [beatId] = new NarrativeBeatNode { Id = beatId, Meaning = "展示线索", State = NarrativeBeatState.Eligible, Salience = .8, Tension = .7, Momentum = .6, Novelty = .9 },
-            [actorNodeId] = new NarrativeWorldReferenceNode { Id = actorNodeId, WorldAnchorId = Guid.NewGuid() },
-            [targetNodeId] = new NarrativeWorldReferenceNode { Id = targetNodeId, WorldAnchorId = Guid.NewGuid() }
+            [actorNodeId] = new NarrativeWorldReferenceNode { Id = actorNodeId, WorldElementId = Guid.NewGuid() },
+            [targetNodeId] = new NarrativeWorldReferenceNode { Id = targetNodeId, WorldElementId = Guid.NewGuid() }
         };
         NarrativeLink actor = new() { Id = Guid.NewGuid(), SourceId = beatId, TargetId = actorNodeId, Type = CoreNarrativeLinkTypes.Participant };
         NarrativeLink target = new() { Id = Guid.NewGuid(), SourceId = beatId, TargetId = targetNodeId, Type = CoreNarrativeLinkTypes.Participant };

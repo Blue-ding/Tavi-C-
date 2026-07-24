@@ -1,12 +1,11 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Tavi.Application.LanguageModel;
-using Tavi.Application.World;
 using Tavi.Domain.World;
 
 namespace Tavi.Application.Guidance;
 
-/// <summary>创建只修改 Guidance 草稿而不修改真实 World 的模型工具。</summary>
+/// <summary>创建只修改 Guidance 草稿而不修改真实 World 的结构化模型工具。</summary>
 internal static class GuidanceProposalTool
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -15,38 +14,68 @@ internal static class GuidanceProposalTool
     {
         ArgumentNullException.ThrowIfNull(guidance);
         ArgumentNullException.ThrowIfNull(projectedWorld);
-        return [new SetSummaryTool(guidance), new ProposeAnchorTool(guidance), new ProposeRelationTool(guidance, projectedWorld)];
+        return [new SetSummaryTool(guidance), new ProposeElementTool(guidance), new ProposeScopeTool(guidance, projectedWorld), new ProposeAspectTool(guidance, projectedWorld), new ProposeRelationTool(guidance, projectedWorld)];
     }
 
-    private static ProposalAnchorReference ResolveReference(GuidanceDraft guidance, WorldSnapshot projectedWorld, ReferenceKind kind, string selector)
+    private static ProposalElementReference ResolveElementReference(GuidanceDraft guidance, WorldSnapshot world, ReferenceKind kind, string selector)
     {
         if (string.IsNullOrWhiteSpace(selector))
-            throw new ToolArgumentException("Anchor 引用不能为空。");
+            throw new ToolArgumentException("Element 引用不能为空。");
         return kind switch
         {
-            ReferenceKind.Existing => new ProposalAnchorReference.Existing(RequireSingleProjectedAnchor(projectedWorld, selector).Id),
-            ReferenceKind.Proposed => new ProposalAnchorReference.Proposed(RequireProposedAnchor(guidance, selector)),
-            _ => throw new ToolArgumentException($"不支持的 Anchor 引用类型：{kind}。")
+            ReferenceKind.Existing => new ProposalElementReference.Existing(RequireSingleElement(world, selector).Id),
+            ReferenceKind.Proposed => new ProposalElementReference.Proposed(RequireProposedElement(guidance, selector)),
+            _ => throw new ToolArgumentException($"不支持的 Element 引用类型：{kind}。")
         };
     }
 
-    private static ProposalAnchorId RequireProposedAnchor(GuidanceDraft guidance, string selector)
+    private static ProposalScopeReference ResolveScopeReference(GuidanceDraft guidance, WorldSnapshot world, ReferenceKind kind, string selector)
     {
-        if (!Guid.TryParse(selector, out Guid id))
-            throw new ToolArgumentException($"临时 Anchor 标识“{selector}”格式无效。");
-        ProposalAnchorId anchorId = new(id);
-        bool exists = guidance.CreateProposal().Changes.OfType<ProposeAddAnchor>().Any(change => change.AnchorId == anchorId);
-        return exists ? anchorId : throw new ToolArgumentException($"当前 GuidanceOperation 不存在临时 Anchor {id}。");
+        if (string.IsNullOrWhiteSpace(selector))
+            throw new ToolArgumentException("Scope 引用不能为空。");
+        return kind switch
+        {
+            ReferenceKind.Existing => new ProposalScopeReference.Existing(RequireSingleScope(world, selector).Id),
+            ReferenceKind.Proposed => new ProposalScopeReference.Proposed(RequireProposedScope(guidance, selector)),
+            _ => throw new ToolArgumentException($"不支持的 Scope 引用类型：{kind}。")
+        };
     }
 
-    private static Anchor RequireSingleProjectedAnchor(WorldSnapshot projectedWorld, string selector)
+    private static ProposalElementId RequireProposedElement(GuidanceDraft guidance, string selector)
     {
-        Anchor[] anchors = projectedWorld.Anchors.Values.Where(anchor => string.Equals(anchor.Name, selector, StringComparison.OrdinalIgnoreCase)).ToArray();
-        return anchors.Length switch
+        if (!Guid.TryParse(selector, out Guid id))
+            throw new ToolArgumentException($"临时 Element 标识“{selector}”格式无效。");
+        ProposalElementId proposalId = new(id);
+        return guidance.CreateProposal().Changes.OfType<ProposeAddElement>().Any(change => change.ElementId == proposalId) ? proposalId : throw new ToolArgumentException($"当前 GuidanceOperation 不存在临时 Element {id}。");
+    }
+
+    private static ProposalScopeId RequireProposedScope(GuidanceDraft guidance, string selector)
+    {
+        if (!Guid.TryParse(selector, out Guid id))
+            throw new ToolArgumentException($"临时 Scope 标识“{selector}”格式无效。");
+        ProposalScopeId proposalId = new(id);
+        return guidance.CreateProposal().Changes.OfType<ProposeAddScope>().Any(change => change.ScopeId == proposalId) ? proposalId : throw new ToolArgumentException($"当前 GuidanceOperation 不存在临时 Scope {id}。");
+    }
+
+    private static Element RequireSingleElement(WorldSnapshot world, string selector)
+    {
+        Element[] values = world.Elements.Values.Where(value => string.Equals(value.Name, selector, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return values.Length switch
         {
-            1 => anchors[0],
-            0 => throw new ToolArgumentException($"当前临时 World 不存在名称为“{selector}”的 Anchor。"),
-            _ => throw new ToolArgumentException($"名称“{selector}”匹配多个 Anchor。")
+            1 => values[0],
+            0 => throw new ToolArgumentException($"当前临时 World 不存在名称为“{selector}”的 Element。"),
+            _ => throw new ToolArgumentException($"名称“{selector}”匹配多个 Element。")
+        };
+    }
+
+    private static Scope RequireSingleScope(WorldSnapshot world, string selector)
+    {
+        Scope[] values = world.Scopes.Values.Where(value => string.Equals(value.Name, selector, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return values.Length switch
+        {
+            1 => values[0],
+            0 => throw new ToolArgumentException($"当前临时 World 不存在名称为“{selector}”的 Scope。"),
+            _ => throw new ToolArgumentException($"名称“{selector}”匹配多个 Scope。")
         };
     }
 
@@ -62,16 +91,17 @@ internal static class GuidanceProposalTool
         }
     }
 
+    private static double RequireFinite(double quantity)
+    {
+        if (!double.IsFinite(quantity))
+            throw new ToolArgumentException("Quantity 必须是有限 double。");
+        return quantity;
+    }
+
     private enum ReferenceKind
     {
         Existing,
         Proposed
-    }
-
-    private enum ProposalScope
-    {
-        World,
-        SubWorld
     }
 
     private sealed class SetSummaryArguments : IToolArgument
@@ -96,89 +126,155 @@ internal static class GuidanceProposalTool
         }
     }
 
-    private sealed class ProposeAnchorArguments : IToolArgument
+    private sealed class ProposeElementArguments : IToolArgument
     {
         [Description("向玩家说明这项修改如何发展叙事势能")]
         public string Rationale { get; set; } = string.Empty;
 
-        [Description("拟添加 Anchor 的名称")]
+        [Description("拟添加 Element 的名称")]
         public string Name { get; set; } = string.Empty;
 
-        [Description("拟添加 Anchor 的描述")]
+        [Description("拟添加 Element 的描述")]
         public string Description { get; set; } = string.Empty;
 
-        [Description("拟添加 Anchor 的领域类型")]
-        public AnchorType Type { get; set; }
+        [Description("符合 namespace:name 约定的 ElementType")]
+        public string Type { get; set; } = "core:none";
     }
 
-    private sealed class ProposeAnchorTool(GuidanceDraft guidance) : Tool<ProposeAnchorArguments>
+    private sealed class ProposeElementTool(GuidanceDraft guidance) : Tool<ProposeElementArguments>
     {
-        public override string name => "propose_anchor";
-        public override string description => "向当前 Guidance 草稿添加一个临时 Anchor；只形成待玩家审阅的修改，不会修改真实 World。";
+        public override string name => "propose_element";
+        public override string description => "向当前 Guidance 草稿添加临时 Element；只形成待玩家审阅的修改。";
 
-        protected override Task<string> Execute(ProposeAnchorArguments arguments, CancellationToken cancellationToken)
+        protected override Task<string> Execute(ProposeElementArguments arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(Invoke(() =>
             {
-                ProposeAddAnchor change = guidance.ProposeAnchor(arguments.Rationale, arguments.Name, arguments.Description, arguments.Type);
-                return new { changeId = change.Id, proposalAnchorId = change.AnchorId.Value };
+                ProposeAddElement change = guidance.ProposeElement(arguments.Rationale, arguments.Name, arguments.Description, new ElementType(arguments.Type));
+                return new { changeId = change.Id, proposalElementId = change.ElementId.Value };
             }));
         }
     }
 
-    private sealed class ProposeRelationArguments : IToolArgument
+    private sealed class ProposeScopeArguments : IToolArgument
     {
         [Description("向玩家说明这项修改如何发展叙事势能")]
         public string Rationale { get; set; } = string.Empty;
 
-        [Description("拟添加 Relation 的名称")]
+        [Description("拟添加 Scope 的名称")]
         public string Name { get; set; } = string.Empty;
 
-        [Description("拟添加 Relation 的描述")]
+        [Description("拟添加 Scope 的描述")]
         public string Description { get; set; } = string.Empty;
 
-        [Description("Source 是现有 Anchor 名称还是系统返回的临时 Anchor 标识")]
-        public ReferenceKind SourceKind { get; set; }
+        [Description("由对应 Module 解释的有限强度")]
+        public double Quantity { get; set; } = 1;
 
-        [Description("SourceKind 为 Existing 时填写唯一 Anchor 名称，为 Proposed 时填写 propose_anchor 返回的 proposalAnchorId")]
-        public string Source { get; set; } = string.Empty;
+        [Description("符合 namespace:name 约定的 ScopeType")]
+        public string Type { get; set; } = "core:none";
 
-        [Description("Target 是现有 Anchor 名称还是系统返回的临时 Anchor 标识")]
-        public ReferenceKind TargetKind { get; set; }
+        [Description("Owner 是现有 Element 还是 propose_element 返回的临时 Element")]
+        public ReferenceKind OwnerKind { get; set; }
 
-        [Description("TargetKind 为 Existing 时填写唯一 Anchor 名称，为 Proposed 时填写 propose_anchor 返回的 proposalAnchorId")]
-        public string Target { get; set; } = string.Empty;
-
-        [Description("Relation 位于事实 World 还是某个 Character 的 SubWorld")]
-        public ProposalScope Scope { get; set; }
-
-        [Description("Scope 为 SubWorld 时说明 Character 是现有 Anchor 还是本轮临时 Anchor；Scope 为 World 时填写 Existing")]
-        public ReferenceKind CharacterKind { get; set; }
-
-        [Description("Scope 为 SubWorld 时填写 Character 的唯一名称或 propose_anchor 返回的 proposalAnchorId；Scope 为 World 时填写空字符串")]
-        public string Character { get; set; } = string.Empty;
+        [Description("现有 Element 的唯一名称或 proposalElementId")]
+        public string Owner { get; set; } = string.Empty;
     }
 
-    private sealed class ProposeRelationTool(GuidanceDraft guidance, WorldSnapshot projectedWorld) : Tool<ProposeRelationArguments>
+    private sealed class ProposeScopeTool(GuidanceDraft guidance, WorldSnapshot world) : Tool<ProposeScopeArguments>
+    {
+        public override string name => "propose_scope";
+        public override string description => "向当前 Guidance 草稿添加由一个 Element 持有的临时 Scope。";
+
+        protected override Task<string> Execute(ProposeScopeArguments arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Invoke(() =>
+            {
+                ProposeAddScope change = guidance.ProposeScope(arguments.Rationale, arguments.Name, arguments.Description, RequireFinite(arguments.Quantity), new ScopeType(arguments.Type), ResolveElementReference(guidance, world, arguments.OwnerKind, arguments.Owner));
+                return new { changeId = change.Id, proposalScopeId = change.ScopeId.Value };
+            }));
+        }
+    }
+
+    private abstract class AssertionArguments : IToolArgument
+    {
+        [Description("向玩家说明这项修改如何发展叙事势能")]
+        public string Rationale { get; set; } = string.Empty;
+
+        [Description("断言名称")]
+        public string Name { get; set; } = string.Empty;
+
+        [Description("断言描述")]
+        public string Description { get; set; } = string.Empty;
+
+        [Description("由对应 Module 解释的有限强度")]
+        public double Quantity { get; set; } = 1;
+
+        [Description("Scope 是现有 Scope 还是 propose_scope 返回的临时 Scope")]
+        public ReferenceKind ScopeKind { get; set; }
+
+        [Description("现有 Scope 的唯一名称或 proposalScopeId")]
+        public string Scope { get; set; } = string.Empty;
+    }
+
+    private sealed class ProposeAspectArguments : AssertionArguments
+    {
+        [Description("符合 namespace:name 约定的 AspectType")]
+        public string Type { get; set; } = "core:none";
+
+        [Description("目标是现有 Element 还是临时 Element")]
+        public ReferenceKind ElementKind { get; set; }
+
+        [Description("现有 Element 的唯一名称或 proposalElementId")]
+        public string Element { get; set; } = string.Empty;
+    }
+
+    private sealed class ProposeAspectTool(GuidanceDraft guidance, WorldSnapshot world) : Tool<ProposeAspectArguments>
+    {
+        public override string name => "propose_aspect";
+        public override string description => "向当前 Guidance 草稿添加唯一属于一个 Scope 的一元断言。";
+
+        protected override Task<string> Execute(ProposeAspectArguments arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Invoke(() =>
+            {
+                ProposeAddAspect change = guidance.ProposeAspect(arguments.Rationale, arguments.Name, arguments.Description, RequireFinite(arguments.Quantity), new AspectType(arguments.Type), ResolveElementReference(guidance, world, arguments.ElementKind, arguments.Element), ResolveScopeReference(guidance, world, arguments.ScopeKind, arguments.Scope));
+                return new { changeId = change.Id, proposed = true };
+            }));
+        }
+    }
+
+    private sealed class ProposeRelationArguments : AssertionArguments
+    {
+        [Description("符合 namespace:name 约定的 RelationType")]
+        public string Type { get; set; } = "core:none";
+
+        [Description("Source 是现有 Element 还是临时 Element")]
+        public ReferenceKind SourceKind { get; set; }
+
+        [Description("现有 Source Element 的唯一名称或 proposalElementId")]
+        public string Source { get; set; } = string.Empty;
+
+        [Description("Target 是现有 Element 还是临时 Element")]
+        public ReferenceKind TargetKind { get; set; }
+
+        [Description("现有 Target Element 的唯一名称或 proposalElementId")]
+        public string Target { get; set; } = string.Empty;
+    }
+
+    private sealed class ProposeRelationTool(GuidanceDraft guidance, WorldSnapshot world) : Tool<ProposeRelationArguments>
     {
         public override string name => "propose_relation";
-        public override string description => "向当前 Guidance 草稿添加 Relation，可引用现有 Anchor 或本轮临时 Anchor；不会修改真实 World。";
+        public override string description => "向当前 Guidance 草稿添加唯一属于一个 Scope 的有向二元断言。";
 
         protected override Task<string> Execute(ProposeRelationArguments arguments, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(Invoke(() =>
             {
-                ProposalAnchorReference source = ResolveReference(guidance, projectedWorld, arguments.SourceKind, arguments.Source);
-                ProposalAnchorReference target = ResolveReference(guidance, projectedWorld, arguments.TargetKind, arguments.Target);
-                ProposedRelationScope scope = arguments.Scope switch
-                {
-                    ProposalScope.World => new ProposedRelationScope.World(),
-                    ProposalScope.SubWorld => new ProposedRelationScope.SubWorld(ResolveReference(guidance, projectedWorld, arguments.CharacterKind, arguments.Character)),
-                    _ => throw new ToolArgumentException($"不支持的 Relation Scope：{arguments.Scope}。")
-                };
-                ProposeAddRelation change = guidance.ProposeRelation(arguments.Rationale, arguments.Name, arguments.Description, source, target, scope);
+                ProposeAddRelation change = guidance.ProposeRelation(arguments.Rationale, arguments.Name, arguments.Description, RequireFinite(arguments.Quantity), new RelationType(arguments.Type), ResolveElementReference(guidance, world, arguments.SourceKind, arguments.Source), ResolveElementReference(guidance, world, arguments.TargetKind, arguments.Target), ResolveScopeReference(guidance, world, arguments.ScopeKind, arguments.Scope));
                 return new { changeId = change.Id, proposed = true };
             }));
         }

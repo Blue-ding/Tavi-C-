@@ -31,7 +31,10 @@ public enum WorldSessionOperation
 /// <summary>表示提交所基于的状态标识与当前 World 状态标识不一致。</summary>
 public sealed class WorldStateConflictException : TaviException
 {
-    internal WorldStateConflictException(Guid expectedStateId, Guid actualStateId)
+    /// <summary>使用调用方期望状态和当前实际状态创建可稳定映射的并发冲突。</summary>
+    /// <param name="expectedStateId">调用方观察到的 World 状态标识。</param>
+    /// <param name="actualStateId">World 当前状态标识。</param>
+    public WorldStateConflictException(Guid expectedStateId, Guid actualStateId)
         : base(
             WorldSessionErrorCodes.StateConflict,
             TaviErrorCategory.Conflict,

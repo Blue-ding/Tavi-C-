@@ -213,8 +213,11 @@ public sealed record GuidanceCommitResult
     /// <summary>获取成功提交后的 World 状态标识；未提交时为 null。</summary>
     public Guid? WorldStateId { get; init; }
 
-    /// <summary>获取临时 Anchor 标识到真实 World 标识的映射。</summary>
-    public IReadOnlyDictionary<ProposalAnchorId, Guid> CreatedAnchorIds { get; init; } = new Dictionary<ProposalAnchorId, Guid>();
+    /// <summary>获取临时 Element 标识到真实 World 标识的映射。</summary>
+    public IReadOnlyDictionary<ProposalElementId, Guid> CreatedElementIds { get; init; } = new Dictionary<ProposalElementId, Guid>();
+
+    /// <summary>获取临时 Scope 标识到真实 World 标识的映射。</summary>
+    public IReadOnlyDictionary<ProposalScopeId, Guid> CreatedScopeIds { get; init; } = new Dictionary<ProposalScopeId, Guid>();
 
     /// <summary>获取阻止提交或需要玩家处理的问题。</summary>
     public IReadOnlyList<GuidanceIssue> Issues { get; init; } = [];

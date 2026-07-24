@@ -27,13 +27,13 @@ public sealed class GuidanceEndpointTests
         GuidanceSnapshotViewModel snapshot = await WaitForProposalAsync(client, operation.SessionId);
         Assert.Equal(["Player", "Guidance"], snapshot.Messages.Select(message => message.Role));
         Assert.NotNull(snapshot.Proposal);
-        Assert.IsType<ProposeAddAnchorViewModel>(Assert.Single(snapshot.Proposal.Changes));
+        Assert.IsType<ProposeAddElementViewModel>(Assert.Single(snapshot.Proposal.Changes));
         var commitRequest = new CommitGuidanceRequest(snapshot.Proposal.Changes.Select(change => change.Id).ToArray());
         GuidanceCommitViewModel commit = await RequireJsonAsync<GuidanceCommitViewModel>(await client.PostAsJsonAsync($"/api/v1/guidance/sessions/{operation.SessionId}/commit", commitRequest));
         Assert.Equal("Committed", commit.Status);
         Assert.Equal("Idle", commit.Snapshot.State);
         WorldGraphViewModel world = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
-        Assert.Collection(world.Nodes, anchor => Assert.Equal("雨夜钟", anchor.Name));
+        Assert.Collection(world.Elements, element => Assert.Equal("雨夜钟", element.Name));
     }
 
     /// <summary>验证未配置语言模型时，世界工作台仍可用且 Guidance 返回稳定配置错误。</summary>
@@ -45,7 +45,7 @@ public sealed class GuidanceEndpointTests
         GuidanceAvailabilityViewModel availability = await RequireJsonAsync<GuidanceAvailabilityViewModel>(await client.GetAsync("/api/v1/guidance/"));
         Assert.False(availability.Available);
         WorldGraphViewModel world = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
-        Assert.Empty(world.Nodes);
+        Assert.Empty(world.Elements);
         HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/guidance/sessions", new StartGuidanceRequest("一声钟响。"));
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Contains(LanguageModelErrorCodes.InvalidConfiguration, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
@@ -112,8 +112,8 @@ public sealed class GuidanceEndpointTests
             operation.SetStatus(LanguageModelRunStatus.Running);
             try
             {
-                ITool tool = request.Tools.Single(candidate => candidate.name == "propose_anchor");
-                await tool.Execute(BinaryData.FromString("""{"Rationale":"承载雨夜谜团","Name":"雨夜钟","Description":"只在无人看见时响起","Type":"Item"}"""), cancellationToken);
+                ITool tool = request.Tools.Single(candidate => candidate.name == "propose_element");
+                await tool.Execute(BinaryData.FromString("""{"Rationale":"承载雨夜谜团","Name":"雨夜钟","Description":"只在无人看见时响起","Type":"story:artifact"}"""), cancellationToken);
                 const string output = "我整理了一项可以审阅的世界变化。";
                 operation.ReportText(output);
                 operation.SetStatus(LanguageModelRunStatus.Completed);

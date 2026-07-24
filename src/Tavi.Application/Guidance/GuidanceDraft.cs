@@ -2,11 +2,12 @@ using Tavi.Domain.World;
 
 namespace Tavi.Application.Guidance;
 
-/// <summary>维护单次 GuidanceOperation 隔离的提案构造缓冲区；失败的操作不会污染已发布状态。</summary>
+/// <summary>维护单次 GuidanceOperation 隔离的提案构造缓冲区；失败的工具调用不会污染已发布状态。</summary>
 internal sealed class GuidanceDraft
 {
     private readonly object _sync = new();
-    private readonly Dictionary<ProposalAnchorId, ProposeAddAnchor> _anchors = new();
+    private readonly Dictionary<ProposalElementId, ProposeAddElement> _elements = new();
+    private readonly Dictionary<ProposalScopeId, ProposeAddScope> _scopes = new();
     private readonly List<ProposalChange> _changes = [];
     private string _summary = string.Empty;
 
@@ -29,18 +30,45 @@ internal sealed class GuidanceDraft
             _summary = summary ?? throw new ArgumentNullException(nameof(summary));
     }
 
-    internal ProposeAddAnchor ProposeAnchor(string rationale, string name, string description, AnchorType type)
+    internal ProposeAddElement ProposeElement(string rationale, string name, string description, ElementType type)
     {
-        var change = new ProposeAddAnchor(Guid.NewGuid().ToString("N"), rationale ?? string.Empty, ProposalAnchorId.New(), name, description, type);
+        var change = new ProposeAddElement(NewChangeId(), rationale ?? string.Empty, ProposalElementId.New(), name, description, type);
         lock (_sync)
         {
-            _anchors.Add(change.AnchorId, change);
+            _elements.Add(change.ElementId, change);
             _changes.Add(change);
             return change;
         }
     }
 
-    internal ProposeAddRelation ProposeRelation(string rationale, string name, string description, ProposalAnchorReference source, ProposalAnchorReference target, ProposedRelationScope scope)
+    internal ProposeAddScope ProposeScope(string rationale, string name, string description, double quantity, ScopeType type, ProposalElementReference owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        lock (_sync)
+        {
+            EnsureKnownReference(owner);
+            var change = new ProposeAddScope(NewChangeId(), rationale ?? string.Empty, ProposalScopeId.New(), name, description, quantity, type, owner);
+            _scopes.Add(change.ScopeId, change);
+            _changes.Add(change);
+            return change;
+        }
+    }
+
+    internal ProposeAddAspect ProposeAspect(string rationale, string name, string description, double quantity, AspectType type, ProposalElementReference element, ProposalScopeReference scope)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        ArgumentNullException.ThrowIfNull(scope);
+        lock (_sync)
+        {
+            EnsureKnownReference(element);
+            EnsureKnownReference(scope);
+            var change = new ProposeAddAspect(NewChangeId(), rationale ?? string.Empty, name, description, quantity, type, element, scope);
+            _changes.Add(change);
+            return change;
+        }
+    }
+
+    internal ProposeAddRelation ProposeRelation(string rationale, string name, string description, double quantity, RelationType type, ProposalElementReference source, ProposalElementReference target, ProposalScopeReference scope)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
@@ -49,9 +77,8 @@ internal sealed class GuidanceDraft
         {
             EnsureKnownReference(source);
             EnsureKnownReference(target);
-            if (scope is ProposedRelationScope.SubWorld subWorld)
-                EnsureKnownReference(subWorld.Character);
-            var change = new ProposeAddRelation(Guid.NewGuid().ToString("N"), rationale ?? string.Empty, name, description, source, target, scope);
+            EnsureKnownReference(scope);
+            var change = new ProposeAddRelation(NewChangeId(), rationale ?? string.Empty, name, description, quantity, type, source, target, scope);
             _changes.Add(change);
             return change;
         }
@@ -63,9 +90,17 @@ internal sealed class GuidanceDraft
             return new WorldProposal { Id = ProposalId, BaseWorldStateId = BaseWorldStateId, Summary = _summary, Changes = Array.AsReadOnly(_changes.ToArray()) };
     }
 
-    private void EnsureKnownReference(ProposalAnchorReference reference)
+    private void EnsureKnownReference(ProposalElementReference reference)
     {
-        if (reference is ProposalAnchorReference.Proposed proposed && !_anchors.ContainsKey(proposed.AnchorId))
-            throw new ArgumentException($"临时 Anchor {proposed.AnchorId.Value} 不属于当前 GuidanceOperation。", nameof(reference));
+        if (reference is ProposalElementReference.Proposed proposed && !_elements.ContainsKey(proposed.ElementId))
+            throw new ArgumentException($"临时 Element {proposed.ElementId.Value} 不属于当前 GuidanceOperation。", nameof(reference));
     }
+
+    private void EnsureKnownReference(ProposalScopeReference reference)
+    {
+        if (reference is ProposalScopeReference.Proposed proposed && !_scopes.ContainsKey(proposed.ScopeId))
+            throw new ArgumentException($"临时 Scope {proposed.ScopeId.Value} 不属于当前 GuidanceOperation。", nameof(reference));
+    }
+
+    private static string NewChangeId() => Guid.NewGuid().ToString("N");
 }

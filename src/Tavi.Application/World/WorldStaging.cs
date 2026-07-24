@@ -3,20 +3,20 @@ using RuntimeWorld = Tavi.Domain.World.World;
 
 namespace Tavi.Application.World;
 
-/// <summary>指定暂存世界操作经过当前投影校验后的状态。</summary>
+/// <summary>指定暂存 World 操作经过当前投影校验后的状态。</summary>
 public enum WorldStagedChangeStatus
 {
     /// <summary>操作可以参与临时 World 投影并允许提交。</summary>
     Valid,
 
-    /// <summary>多个暂存操作指向同一个 World 项目标识，解决冲突前均不参与投影。</summary>
+    /// <summary>多个暂存项修改同一类别和标识的实体，解决冲突前均不参与投影。</summary>
     Conflict,
 
-    /// <summary>操作缺少引用或不再适用于当前临时 World，只能查看或删除。</summary>
+    /// <summary>操作缺少依赖或不再适用于当前临时 World，只能查看或删除。</summary>
     Invalid
 }
 
-/// <summary>指定暂存世界操作的来源。</summary>
+/// <summary>指定暂存 World 操作的来源。</summary>
 public enum WorldStagedChangeSource
 {
     /// <summary>操作由玩家直接编辑产生。</summary>
@@ -26,7 +26,7 @@ public enum WorldStagedChangeSource
     Guidance
 }
 
-/// <summary>描述不可变的暂存世界操作及其当前校验结果。</summary>
+/// <summary>描述不可变的暂存 World 操作组及其当前校验结果。</summary>
 public sealed record WorldStagedChange
 {
     /// <summary>获取暂存日志项的系统标识。</summary>
@@ -44,7 +44,7 @@ public sealed record WorldStagedChange
     /// <summary>获取状态说明；有效项为空。</summary>
     public string? Issue { get; init; }
 
-    /// <summary>获取与本项指向相同 World 项目的其他暂存日志项标识。</summary>
+    /// <summary>获取与本项修改相同类别和标识实体的其他暂存日志项标识。</summary>
     public IReadOnlyList<Guid> ConflictingChangeIds { get; init; } = [];
 }
 
@@ -74,6 +74,7 @@ public sealed record WorldStagingCommitResult
     public IReadOnlyList<Guid> ConsumedChangeIds { get; init; } = [];
 }
 
+/// <summary>维护不可变暂存日志，并从真实 World 快照重放有效项形成临时投影。</summary>
 internal sealed class WorldStagingArea
 {
     private readonly List<Entry> _entries = [];
@@ -134,8 +135,8 @@ internal sealed class WorldStagingArea
     internal int DeleteInvalid(WorldSnapshot worldSnapshot)
     {
         Evaluation evaluation = Evaluate(worldSnapshot);
-        HashSet<Guid> invalid = evaluation.Changes.Where(change => change.Status == WorldStagedChangeStatus.Invalid).Select(change => change.Id).ToHashSet();
-        int removed = _entries.RemoveAll(entry => invalid.Contains(entry.Id));
+        HashSet<Guid> invalidIds = evaluation.Changes.Where(change => change.Status == WorldStagedChangeStatus.Invalid).Select(change => change.Id).ToHashSet();
+        int removed = _entries.RemoveAll(entry => invalidIds.Contains(entry.Id));
         if (removed > 0)
             _revision++;
         return removed;
@@ -164,9 +165,18 @@ internal sealed class WorldStagingArea
         if (unavailable is not null)
             throw new InvalidOperationException($"暂存项 {unavailable.Id} 当前状态为 {unavailable.Status}，不能提交。");
         HashSet<Guid> selectedSet = selected.ToHashSet();
-        Entry[] entries = _entries.Where(entry => selectedSet.Contains(entry.Id)).ToArray();
-        ValidateSelectionDependencies(entries, worldSnapshot);
-        return (new WorldChangeSet(entries.SelectMany(entry => entry.ChangeSet.Operations)), selected);
+        Entry[] selectedEntries = _entries.Where(entry => selectedSet.Contains(entry.Id)).ToArray();
+        var selectedProjection = RuntimeWorld.Create(worldSnapshot);
+        try
+        {
+            foreach (Entry entry in selectedEntries)
+                selectedProjection.Apply(entry.ChangeSet);
+        }
+        catch (WorldException exception)
+        {
+            throw new InvalidOperationException($"选中的暂存项缺少未选中的依赖或组合后无效：{exception.Message}", exception);
+        }
+        return (new WorldChangeSet(selectedEntries.SelectMany(entry => entry.ChangeSet.Operations)), selected);
     }
 
     internal void Consume(IReadOnlyCollection<Guid> changeIds)
@@ -180,138 +190,95 @@ internal sealed class WorldStagingArea
 
     private Evaluation Evaluate(WorldSnapshot worldSnapshot)
     {
-        Dictionary<Guid, Guid[]> conflicts = _entries.GroupBy(entry => Target(entry.ChangeSet)).Where(group => group.Count() > 1)
-            .SelectMany(group =>
-            {
-                Guid[] ids = group.Select(entry => entry.Id).ToArray();
-                return ids.Select(id => new KeyValuePair<Guid, Guid[]>(id, ids.Where(other => other != id).ToArray()));
-            }).ToDictionary(pair => pair.Key, pair => pair.Value);
-        var statuses = new Dictionary<Guid, (WorldStagedChangeStatus Status, string? Issue)>();
-        foreach (Entry entry in _entries.Where(entry => conflicts.ContainsKey(entry.Id)))
-            statuses[entry.Id] = (WorldStagedChangeStatus.Conflict, "多个暂存项指向同一个 World 项目标识。");
-
-        RuntimeWorld projected = RuntimeWorld.Create(worldSnapshot);
-        foreach (Entry entry in _entries.Where(entry => !conflicts.ContainsKey(entry.Id)))
+        ArgumentNullException.ThrowIfNull(worldSnapshot);
+        var conflicts = _entries.ToDictionary(entry => entry.Id, _ => new HashSet<Guid>());
+        Dictionary<TargetKey, Entry[]> entriesByTarget = _entries.SelectMany(entry => GetTargets(entry.ChangeSet).Select(target => (Target: target, Entry: entry))).GroupBy(item => item.Target).ToDictionary(group => group.Key, group => group.Select(item => item.Entry).Distinct().ToArray());
+        foreach (Entry[] entries in entriesByTarget.Values.Where(entries => entries.Length > 1))
         {
+            foreach (Entry entry in entries)
+                conflicts[entry.Id].UnionWith(entries.Where(other => other.Id != entry.Id).Select(other => other.Id));
+        }
+        var projected = RuntimeWorld.Create(worldSnapshot);
+        var changes = new List<WorldStagedChange>(_entries.Count);
+        foreach (Entry entry in _entries)
+        {
+            Guid[] conflictingIds = conflicts[entry.Id].OrderBy(id => id).ToArray();
+            if (conflictingIds.Length > 0)
+            {
+                changes.Add(ToChange(entry, WorldStagedChangeStatus.Conflict, "多个暂存项修改同一 World 实体。", conflictingIds));
+                continue;
+            }
             try
             {
                 projected.Apply(entry.ChangeSet);
-                statuses[entry.Id] = (WorldStagedChangeStatus.Valid, null);
+                changes.Add(ToChange(entry, WorldStagedChangeStatus.Valid, null, []));
             }
-            catch (Exception exception) when (exception is WorldException or InvalidOperationException or ArgumentException)
+            catch (Exception exception) when (exception is WorldException or ArgumentException or InvalidOperationException)
             {
-                statuses[entry.Id] = (WorldStagedChangeStatus.Invalid, exception.Message);
+                changes.Add(ToChange(entry, WorldStagedChangeStatus.Invalid, exception.Message, []));
             }
         }
-
-        WorldSnapshot projectedSnapshot = projected.CreateSnapshot();
-        HashSet<Guid> relationIds = projectedSnapshot.Relations.Keys.Concat(projectedSnapshot.SubWorlds.SelectMany(subWorld => subWorld.Relations.Keys)).ToHashSet();
-        foreach (Entry entry in _entries.Where(entry => statuses.GetValueOrDefault(entry.Id).Status == WorldStagedChangeStatus.Valid))
-        {
-            Guid? missingRelation = entry.ChangeSet.Operations.Select(ExpectsRelation).FirstOrDefault(id => id.HasValue && !relationIds.Contains(id.Value));
-            if (missingRelation.HasValue)
-            {
-                Guid relationId = missingRelation.Value;
-                statuses[entry.Id] = (WorldStagedChangeStatus.Invalid, $"Relation {relationId} 已因依赖的 Anchor 缺失而不再存在。");
-            }
-        }
-
-        if (statuses.Values.Any(value => value.Status == WorldStagedChangeStatus.Invalid))
-        {
-            projected = RuntimeWorld.Create(worldSnapshot);
-            foreach (Entry entry in _entries.Where(entry => statuses[entry.Id].Status == WorldStagedChangeStatus.Valid))
-                projected.Apply(entry.ChangeSet);
-            projectedSnapshot = projected.CreateSnapshot();
-        }
-
-        WorldStagedChange[] changes = _entries.Select(entry =>
-        {
-            (WorldStagedChangeStatus status, string? issue) = statuses[entry.Id];
-            return new WorldStagedChange { Id = entry.Id, Source = entry.Source, ChangeSet = entry.ChangeSet, Status = status, Issue = issue, ConflictingChangeIds = conflicts.GetValueOrDefault(entry.Id) ?? [] };
-        }).ToArray();
-        return new Evaluation(changes, projectedSnapshot);
+        return new Evaluation(changes, projected.CreateSnapshot());
     }
 
-    private static void ValidateSelectionDependencies(IReadOnlyCollection<Entry> entries, WorldSnapshot worldSnapshot)
+    private static WorldStagedChange ToChange(Entry entry, WorldStagedChangeStatus status, string? issue, IReadOnlyList<Guid> conflictingIds) => new()
     {
-        HashSet<Guid> availableAnchors = worldSnapshot.Anchors.Keys.ToHashSet();
-        foreach (Entry entry in entries)
-        {
-            foreach (WorldOperation operation in entry.ChangeSet.Operations)
-            {
-                switch (operation)
-                {
-                    case AddAnchorOperation add:
-                        availableAnchors.Add(add.AnchorId);
-                        break;
-                    case RemoveAnchorOperation remove:
-                        availableAnchors.Remove(remove.AnchorId);
-                        break;
-                    case AddRelationOperation add when !availableAnchors.Contains(add.SourceId) || !availableAnchors.Contains(add.TargetId) || add.DomainId.HasValue && !availableAnchors.Contains(add.DomainId.Value):
-                        throw new InvalidOperationException($"暂存 Relation {entry.Id} 的 Anchor 依赖未包含在本次提交中。");
-                }
-            }
-        }
-    }
+        Id = entry.Id,
+        Source = entry.Source,
+        ChangeSet = entry.ChangeSet,
+        Status = status,
+        Issue = issue,
+        ConflictingChangeIds = conflictingIds
+    };
 
-    private static TargetKey Target(WorldChangeSet changeSet)
-    {
-        ValidateChangeSet(changeSet);
-        return Target(changeSet.Operations[0]);
-    }
+    private static IEnumerable<TargetKey> GetTargets(WorldChangeSet changeSet) => changeSet.Operations.Select(GetTarget).Distinct();
 
-    private static TargetKey Target(WorldOperation operation) => operation switch
+    private static TargetKey GetTarget(WorldOperation operation) => operation switch
     {
-        AddAnchorOperation value => new("Anchor", value.AnchorId),
-        RemoveAnchorOperation value => new("Anchor", value.AnchorId),
-        UpdateAnchorNameOperation value => new("Anchor", value.AnchorId),
-        UpdateAnchorDescriptionOperation value => new("Anchor", value.AnchorId),
-        UpdateAnchorTypeOperation value => new("Anchor", value.AnchorId),
+        AddElementOperation value => new("Element", value.ElementId),
+        RemoveElementOperation value => new("Element", value.ElementId),
+        UpdateElementNameOperation value => new("Element", value.ElementId),
+        UpdateElementDescriptionOperation value => new("Element", value.ElementId),
+        UpdateElementTypeOperation value => new("Element", value.ElementId),
+        AddAspectOperation value => new("Aspect", value.AspectId),
+        RemoveAspectOperation value => new("Aspect", value.AspectId),
+        UpdateAspectNameOperation value => new("Aspect", value.AspectId),
+        UpdateAspectDescriptionOperation value => new("Aspect", value.AspectId),
+        UpdateAspectQuantityOperation value => new("Aspect", value.AspectId),
+        UpdateAspectTypeOperation value => new("Aspect", value.AspectId),
         AddRelationOperation value => new("Relation", value.RelationId),
         RemoveRelationOperation value => new("Relation", value.RelationId),
         UpdateRelationNameOperation value => new("Relation", value.RelationId),
         UpdateRelationDescriptionOperation value => new("Relation", value.RelationId),
-        CreateSubWorldOperation value => new("SubWorld", value.CharacterId),
-        RemoveSubWorldOperation value => new("SubWorld", value.CharacterId),
-        _ => throw new ArgumentOutOfRangeException(nameof(operation), $"不支持的 WorldOperation 类型 {operation.GetType().Name}。")
+        UpdateRelationQuantityOperation value => new("Relation", value.RelationId),
+        UpdateRelationTypeOperation value => new("Relation", value.RelationId),
+        AddScopeOperation value => new("Scope", value.ScopeId),
+        RemoveScopeOperation value => new("Scope", value.ScopeId),
+        UpdateScopeNameOperation value => new("Scope", value.ScopeId),
+        UpdateScopeDescriptionOperation value => new("Scope", value.ScopeId),
+        UpdateScopeQuantityOperation value => new("Scope", value.ScopeId),
+        UpdateScopeTypeOperation value => new("Scope", value.ScopeId),
+        _ => throw new ArgumentException($"不支持的 World 操作类型 {operation.GetType().FullName}。", nameof(operation))
     };
-
-    private static Guid? ExpectsRelation(WorldOperation operation) => operation switch
-    {
-        AddRelationOperation value => value.RelationId,
-        UpdateRelationNameOperation value => value.RelationId,
-        UpdateRelationDescriptionOperation value => value.RelationId,
-        _ => null
-    };
-
-    private static void ValidateOperation(WorldOperation operation)
-    {
-        TargetKey target = Target(operation);
-        EnsureId(target.Id, nameof(operation));
-        if (operation is AddRelationOperation relation)
-        {
-            EnsureId(relation.SourceId, nameof(relation.SourceId));
-            EnsureId(relation.TargetId, nameof(relation.TargetId));
-            if (relation.DomainId.HasValue)
-                EnsureId(relation.DomainId.Value, nameof(relation.DomainId));
-        }
-    }
 
     private static void ValidateChangeSet(WorldChangeSet changeSet)
     {
         if (changeSet.IsEmpty)
-            throw new ArgumentException("暂存操作组不能为空。", nameof(changeSet));
+            throw new ArgumentException("不能暂存空 World 操作组。", nameof(changeSet));
         foreach (WorldOperation operation in changeSet.Operations)
             ValidateOperation(operation);
-        TargetKey[] targets = changeSet.Operations.Select(Target).Distinct().ToArray();
-        if (targets.Length != 1)
-            throw new ArgumentException("一个暂存项内的操作必须指向同一个 World 项目。", nameof(changeSet));
+    }
+
+    private static void ValidateOperation(WorldOperation operation)
+    {
+        TargetKey target = GetTarget(operation);
+        EnsureId(target.Id, $"{operation.GetType().Name} 目标标识");
     }
 
     private static void EnsureId(Guid id, string parameterName)
     {
         if (id == Guid.Empty)
-            throw new ArgumentException("暂存项及其 World 项目标识不能是空 Guid。", parameterName);
+            throw new ArgumentException($"{parameterName} 不能是空 Guid。", parameterName);
     }
 
     private sealed record Entry(Guid Id, WorldStagedChangeSource Source, WorldChangeSet ChangeSet);

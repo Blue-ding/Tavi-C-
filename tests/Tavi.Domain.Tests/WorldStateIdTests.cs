@@ -11,16 +11,16 @@ public sealed class WorldStateIdTests
     [Fact]
     public void StateIdChangesOnlyWhenWorldActuallyChanges()
     {
-        Guid anchorId = Guid.NewGuid();
+        Guid elementId = Guid.NewGuid();
         WorldSnapshot initial = new();
         RuntimeWorld world = RuntimeWorld.Create(initial);
 
         world.Apply(new WorldChangeSet([]));
         Assert.Equal(initial.Id, world.StateId);
-        world.Apply(WorldOperations.Single(new AddAnchorOperation(anchorId, "Alice", "", AnchorType.Character)));
+        world.Apply(WorldOperations.Single(new AddElementOperation(elementId, "Alice", "", ElementType.None)));
         Guid changedStateId = world.StateId;
         Assert.NotEqual(initial.Id, changedStateId);
-        world.Apply(WorldOperations.Single(new UpdateAnchorNameOperation(anchorId, "Alice")));
+        world.Apply(WorldOperations.Single(new UpdateElementNameOperation(elementId, "Alice")));
         Assert.Equal(changedStateId, world.StateId);
         Assert.Equal(changedStateId, world.CreateSnapshot().Id);
     }

@@ -1,50 +1,20 @@
-namespace Tavi.Domain.World
+namespace Tavi.Domain.World;
+
+/// <summary>表示世界断言图在特定时刻的独立领域快照；World 会在初始化时深复制并完整校验该数据。</summary>
+public sealed record WorldSnapshot
 {
-    /// <summary>
-    /// 世界图在特定时刻的独立领域快照。
-    /// World 在初始化时复制并校验该数据，之后不再受快照外部修改影响。
-    /// </summary>
-    public sealed record WorldSnapshot
-    {
-        /// <summary>
-        /// 获取或设置世界状态标识；World 每次完成实际写入后都会生成新值，因此该标识可作为不透明的并发基准，但不表达先后顺序。
-        /// </summary>
-        public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>获取或设置不透明的世界状态标识；每次实际领域写入后都会生成新值，但该值不表达时间顺序。</summary>
+    public Guid Id { get; set; } = Guid.NewGuid();
 
-        /// <summary>
-        /// 获取或设置按标识索引的全部锚点。
-        /// </summary>
-        public Dictionary<Guid, Anchor> Anchors { get; set; } = new();
+    /// <summary>获取或设置按标识索引的全部 Element。</summary>
+    public Dictionary<Guid, Element> Elements { get; set; } = new();
 
-        /// <summary>
-        /// 获取或设置按标识索引的主世界关系。
-        /// </summary>
-        public Dictionary<Guid, Relation> Relations { get; set; } = new();
+    /// <summary>获取或设置按标识索引的全部一元断言。</summary>
+    public Dictionary<Guid, Aspect> Aspects { get; set; } = new();
 
-        /// <summary>
-        /// 获取或设置全部子世界。
-        /// </summary>
-        public List<SubWorldSnapshot> SubWorlds { get; set; } = new();
-    }
+    /// <summary>获取或设置按标识索引的全部二元断言。</summary>
+    public Dictionary<Guid, Relation> Relations { get; set; } = new();
 
-    /// <summary>
-    /// 归属于一个 Character 的子世界快照。
-    /// </summary>
-    public sealed record SubWorldSnapshot
-    {
-        /// <summary>
-        /// 获取或设置子世界标识。
-        /// </summary>
-        public Guid Id { get; set; } = Guid.NewGuid();
-
-        /// <summary>
-        /// 获取或设置持有该子世界的 Character 标识。
-        /// </summary>
-        public Guid DomainId { get; set; }
-
-        /// <summary>
-        /// 获取或设置按标识索引的子世界关系。
-        /// </summary>
-        public Dictionary<Guid, Relation> Relations { get; set; } = new();
-    }
+    /// <summary>获取或设置按标识索引的全部断言域。</summary>
+    public Dictionary<Guid, Scope> Scopes { get; set; } = new();
 }

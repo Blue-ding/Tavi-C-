@@ -1,27 +1,38 @@
-export type AnchorType = 'Character' | 'Item'
-export type WorldScope = 'World' | 'SubWorld'
-
-export interface AnchorViewModel {
+export interface ElementViewModel {
   id: string
   name: string
   description: string
-  type: AnchorType
-  hasSubWorld: boolean
+  type: string
+}
+
+export interface AspectViewModel {
+  id: string
+  name: string
+  description: string
+  quantity: number
+  type: string
+  elementId: string
+  scopeId: string
 }
 
 export interface RelationViewModel {
   id: string
   name: string
   description: string
-  sourceId: string
-  targetId: string
-  scope: WorldScope
-  domainCharacterId: string | null
+  quantity: number
+  type: string
+  sourceElementId: string
+  targetElementId: string
+  scopeId: string
 }
 
-export interface SubWorldViewModel {
+export interface ScopeViewModel {
   id: string
-  characterId: string
+  name: string
+  description: string
+  quantity: number
+  type: string
+  ownerElementId: string
 }
 
 export interface WorldGraphViewModel {
@@ -31,9 +42,10 @@ export interface WorldGraphViewModel {
   canUndo: boolean
   canRedo: boolean
   health: 'Healthy' | 'Faulted'
-  nodes: AnchorViewModel[]
-  edges: RelationViewModel[]
-  subWorlds: SubWorldViewModel[]
+  elements: ElementViewModel[]
+  aspects: AspectViewModel[]
+  relations: RelationViewModel[]
+  scopes: ScopeViewModel[]
   stagedChanges: WorldStagedChangeViewModel[]
 }
 
@@ -111,24 +123,48 @@ export interface GuidanceMessageViewModel {
   text: string
 }
 
-export interface ProposalAnchorReferenceViewModel {
+export interface ProposalElementReferenceViewModel {
   kind: 'Existing' | 'Proposed'
-  anchorId: string
+  elementId: string
 }
 
-export interface ProposedRelationScopeViewModel {
-  kind: 'World' | 'SubWorld'
-  character: ProposalAnchorReferenceViewModel | null
+export interface ProposalScopeReferenceViewModel {
+  kind: 'Existing' | 'Proposed'
+  scopeId: string
 }
 
-export interface ProposeAddAnchorViewModel {
-  kind: 'AddAnchor'
+export interface ProposeAddElementViewModel {
+  kind: 'AddElement'
   id: string
   rationale: string
-  anchorId: string
+  elementId: string
   name: string
   description: string
-  type: AnchorType
+  type: string
+}
+
+export interface ProposeAddScopeViewModel {
+  kind: 'AddScope'
+  id: string
+  rationale: string
+  scopeId: string
+  name: string
+  description: string
+  quantity: number
+  type: string
+  owner: ProposalElementReferenceViewModel
+}
+
+export interface ProposeAddAspectViewModel {
+  kind: 'AddAspect'
+  id: string
+  rationale: string
+  name: string
+  description: string
+  quantity: number
+  type: string
+  element: ProposalElementReferenceViewModel
+  scope: ProposalScopeReferenceViewModel
 }
 
 export interface ProposeAddRelationViewModel {
@@ -137,12 +173,14 @@ export interface ProposeAddRelationViewModel {
   rationale: string
   name: string
   description: string
-  source: ProposalAnchorReferenceViewModel
-  target: ProposalAnchorReferenceViewModel
-  scope: ProposedRelationScopeViewModel
+  quantity: number
+  type: string
+  source: ProposalElementReferenceViewModel
+  target: ProposalElementReferenceViewModel
+  scope: ProposalScopeReferenceViewModel
 }
 
-export type ProposalChangeViewModel = ProposeAddAnchorViewModel | ProposeAddRelationViewModel
+export type ProposalChangeViewModel = ProposeAddElementViewModel | ProposeAddScopeViewModel | ProposeAddAspectViewModel | ProposeAddRelationViewModel
 
 export interface WorldProposalViewModel {
   id: string
@@ -171,7 +209,8 @@ export interface GuidanceOperationViewModel {
 export interface GuidanceCommitViewModel {
   status: 'Committed' | 'InvalidSelection' | 'WorldConflict' | 'SessionNotReady'
   worldStateId: string | null
-  createdAnchors: { proposalAnchorId: string; worldAnchorId: string }[]
+  createdElements: { proposalId: string; worldId: string }[]
+  createdScopes: { proposalId: string; worldId: string }[]
   issues: { code: string; message: string; changeId: string | null }[]
   expectedWorldStateId: string | null
   actualWorldStateId: string | null
@@ -187,7 +226,7 @@ export interface GuidanceEventViewModel {
   error: string | null
 }
 
-export type Selection = { kind: 'anchor'; id: string } | { kind: 'relation'; id: string } | null
+export type Selection = { kind: 'element' | 'aspect' | 'relation' | 'scope'; id: string } | null
 
 export type ManuscriptStatus = 'Editing' | 'Archived'
 

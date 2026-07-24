@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, Handle, MarkerType, MiniMap, Position, ReactFlow, getStraightPath, useNodesState, type Edge, type EdgeProps, type Node, type NodeChange, type NodePositionChange, type NodeProps } from '@xyflow/react'
-import { Archive, BookOpen, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
+import { Archive, BookOpen, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, Layers3, LoaderCircle, Network, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, X } from 'lucide-react'
 import { ApiError, settingsApi, worldApi } from './api'
 import { GuidancePanel } from './GuidancePanel'
 import { WritingWorkspace } from './WritingWorkspace'
-import type { AnchorType, AnchorViewModel, FeaturePolicy, LanguageModelSettingsViewModel, OpenAIConfigurationInput, OpenAIClientType, RelationViewModel, Selection, WorldGraphViewModel } from './types'
+import type { AspectViewModel, ElementViewModel, FeaturePolicy, LanguageModelSettingsViewModel, OpenAIConfigurationInput, OpenAIClientType, RelationViewModel, ScopeViewModel, Selection, WorldGraphViewModel } from './types'
 
-type ScopeFilter = 'all' | 'world' | string
-type Dialog = 'anchor' | 'relation' | null
+type ScopeFilter = 'all' | string
+type Dialog = 'element' | 'scope' | 'aspect' | 'relation' | null
 
-const emptyWorld: WorldGraphViewModel = { stateId: '', stagingRevision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', nodes: [], edges: [], subWorlds: [], stagedChanges: [] }
+const emptyWorld: WorldGraphViewModel = { stateId: '', stagingRevision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', elements: [], aspects: [], relations: [], scopes: [], stagedChanges: [] }
 
 interface RelationshipBundleData extends Record<string, unknown> {
   relations: RelationViewModel[]
@@ -19,14 +19,14 @@ interface RelationshipBundleData extends Record<string, unknown> {
   onSelect: (relationId: string) => void
 }
 
-interface AnchorNodeData extends Record<string, unknown> {
-  anchor: AnchorViewModel
+interface ElementNodeData extends Record<string, unknown> {
+  element: ElementViewModel
 }
 
 type RelationshipBundleEdge = Edge<RelationshipBundleData, 'relationshipBundle'>
-type AnchorFlowNode = Node<AnchorNodeData, 'anchorNode'>
+type ElementFlowNode = Node<ElementNodeData, 'elementNode'>
 const edgeTypes = { relationshipBundle: RelationshipBundle }
-const nodeTypes = { anchorNode: AnchorNode }
+const nodeTypes = { elementNode: ElementNode }
 
 function layoutPosition(index: number, total: number) {
   const columns = Math.max(1, Math.ceil(Math.sqrt(total)))
@@ -37,7 +37,7 @@ function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, markerStar
   const [hovered, setHovered] = useState(false)
   const closeTimer = useRef<number | null>(null)
   const relations = data?.relations ?? []
-  const containsSubWorldRelation = relations.some(relation => relation.scope !== 'World')
+  const containsMultipleScopes = new Set(relations.map(relation => relation.scopeId)).size > 1
   const distance = Math.hypot(targetX - sourceX, targetY - sourceY)
   const direction = distance > 0 ? { x: (targetX - sourceX) / distance, y: (targetY - sourceY) / distance } : { x: 0, y: 0 }
   const endpointInset = Math.min(17, distance / 3)
@@ -86,7 +86,7 @@ function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, markerStar
           id={id}
           path={path}
           interactionWidth={30}
-          className={`${containsSubWorldRelation ? 'subworld' : 'world'}${selected ? ' selected' : ''}`}
+          className={`${containsMultipleScopes ? 'subworld' : 'world'}${selected ? ' selected' : ''}`}
           markerStart={markerStart}
           markerEnd={markerEnd}
         />
@@ -111,8 +111,8 @@ function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, markerStar
                   setHovered(false)
                 }}
               >
-                <span><strong>{relation.name}</strong><small>{data?.nodeNames[relation.sourceId] ?? '未知节点'} → {data?.nodeNames[relation.targetId] ?? '未知节点'}</small></span>
-                <i>{relation.scope === 'World' ? '事实' : '认知'}</i>
+                <span><strong>{relation.name}</strong><small>{data?.nodeNames[relation.sourceElementId] ?? '未知节点'} → {data?.nodeNames[relation.targetElementId] ?? '未知节点'}</small></span>
+                <i>{relation.type}</i>
               </button>
             ))}
           </div>
@@ -122,16 +122,15 @@ function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, markerStar
   )
 }
 
-function AnchorNode({ data, selected }: NodeProps<AnchorFlowNode>) {
-  const { anchor } = data
+function ElementNode({ data, selected }: NodeProps<ElementFlowNode>) {
+  const { element } = data
   return (
-    <div className={`anchor-node-core ${anchor.type.toLowerCase()}${selected ? ' selected' : ''}`}>
+    <div className={`anchor-node-core${selected ? ' selected' : ''}`}>
       <Handle className="anchor-handle anchor-handle-center" type="target" position={Position.Left} />
       <span className="anchor-node-dot" />
       <div className="anchor-node-tooltip">
-        <header><strong>{anchor.name}</strong><span>{anchor.type === 'Character' ? '角色' : '物品'}</span></header>
-        <p>{anchor.description || '暂无描述'}</p>
-        {anchor.hasSubWorld && <small><GitBranch size={11} />拥有认知世界</small>}
+        <header><strong>{element.name}</strong><span>{element.type}</span></header>
+        <p>{element.description || '暂无描述'}</p>
       </div>
       <Handle className="anchor-handle anchor-handle-center" type="source" position={Position.Right} />
     </div>
@@ -218,35 +217,35 @@ function App() {
     }
   }, [refresh])
 
-  const visibleRelations = useMemo(() => world.edges.filter(edge => scope === 'all' || scope === 'world' ? scope === 'all' || edge.scope === 'World' : edge.domainCharacterId === scope), [scope, world.edges])
-  const connectedIds = useMemo(() => new Set(visibleRelations.flatMap(edge => [edge.sourceId, edge.targetId])), [visibleRelations])
-  const visibleAnchors = useMemo(() => {
+  const visibleRelations = useMemo(() => world.relations.filter(relation => scope === 'all' || relation.scopeId === scope), [scope, world.relations])
+  const connectedIds = useMemo(() => new Set(visibleRelations.flatMap(relation => [relation.sourceElementId, relation.targetElementId])), [visibleRelations])
+  const visibleElements = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
-    return world.nodes.filter(anchor => {
-      const matchesSearch = !query || `${anchor.name}\n${anchor.description}\n${anchor.type}`.toLocaleLowerCase().includes(query)
-      const matchesScope = scope === 'all' || scope === 'world' || anchor.id === scope || connectedIds.has(anchor.id)
+    return world.elements.filter(element => {
+      const matchesSearch = !query || `${element.name}\n${element.description}\n${element.type}`.toLocaleLowerCase().includes(query)
+      const matchesScope = scope === 'all' || connectedIds.has(element.id) || world.aspects.some(aspect => aspect.scopeId === scope && aspect.elementId === element.id) || world.scopes.some(candidate => candidate.id === scope && candidate.ownerElementId === element.id)
       return matchesSearch && matchesScope
     })
-  }, [connectedIds, scope, search, world.nodes])
-  const visibleAnchorIds = useMemo(() => new Set(visibleAnchors.map(anchor => anchor.id)), [visibleAnchors])
+  }, [connectedIds, scope, search, world.aspects, world.elements, world.scopes])
+  const visibleElementIds = useMemo(() => new Set(visibleElements.map(element => element.id)), [visibleElements])
 
   useEffect(() => {
     setFlowNodes(current => {
       const existing = new Map(current.map(node => [node.id, node]))
-      return visibleAnchors.map((anchor, index) => {
-        const previous = existing.get(anchor.id)
+      return visibleElements.map((element, index) => {
+        const previous = existing.get(element.id)
         return {
           ...previous,
-          id: anchor.id,
-          position: previous?.position ?? positionCache.current.get(anchor.id) ?? layoutPosition(index, visibleAnchors.length),
-          type: 'anchorNode',
-          data: { anchor },
-          className: `world-node ${anchor.type.toLowerCase()}${selection?.kind === 'anchor' && selection.id === anchor.id ? ' selected' : ''}`,
+          id: element.id,
+          position: previous?.position ?? positionCache.current.get(element.id) ?? layoutPosition(index, visibleElements.length),
+          type: 'elementNode',
+          data: { element },
+          className: `world-node${selection?.kind === 'element' && selection.id === element.id ? ' selected' : ''}`,
           style: { width: 48, height: 48 },
         }
       })
     })
-  }, [selection, setFlowNodes, visibleAnchors])
+  }, [selection, setFlowNodes, visibleElements])
 
   const selectRelation = useCallback((relationId: string) => {
     setSelection({ kind: 'relation', id: relationId })
@@ -255,21 +254,21 @@ function App() {
 
   const edges: RelationshipBundleEdge[] = useMemo(() => {
     const bundles = new Map<string, RelationViewModel[]>()
-    visibleRelations.filter(edge => visibleAnchorIds.has(edge.sourceId) && visibleAnchorIds.has(edge.targetId)).forEach(relation => {
-      const key = [relation.sourceId, relation.targetId].sort().map(encodeURIComponent).join('|')
+    visibleRelations.filter(relation => visibleElementIds.has(relation.sourceElementId) && visibleElementIds.has(relation.targetElementId)).forEach(relation => {
+      const key = [relation.scopeId, ...[relation.sourceElementId, relation.targetElementId].sort()].map(encodeURIComponent).join('|')
       const bundle = bundles.get(key)
       if (bundle)
         bundle.push(relation)
       else
         bundles.set(key, [relation])
     })
-    const nodeNames = Object.fromEntries(world.nodes.map(anchor => [anchor.id, anchor.name]))
+    const nodeNames = Object.fromEntries(world.elements.map(element => [element.id, element.name]))
     const selectedRelationId = selection?.kind === 'relation' ? selection.id : null
     return [...bundles.entries()].map(([key, relations]) => {
-      const [source, target] = [relations[0].sourceId, relations[0].targetId].sort()
-      const hasForwardRelation = relations.some(relation => relation.sourceId === source && relation.targetId === target)
-      const hasReverseRelation = relations.some(relation => relation.sourceId === target && relation.targetId === source)
-      const markerColor = relations.some(relation => relation.scope !== 'World') ? '#bd9550' : '#74857f'
+      const [source, target] = [relations[0].sourceElementId, relations[0].targetElementId].sort()
+      const hasForwardRelation = relations.some(relation => relation.sourceElementId === source && relation.targetElementId === target)
+      const hasReverseRelation = relations.some(relation => relation.sourceElementId === target && relation.targetElementId === source)
+      const markerColor = '#bd9550'
       return {
         id: `relationship-bundle:${key}`,
         source,
@@ -281,17 +280,23 @@ function App() {
         data: { relations, nodeNames, selectedRelationId, tooltipsEnabled: !tooltipsSuppressed, onSelect: selectRelation },
       }
     })
-  }, [selectRelation, selection, tooltipsSuppressed, visibleAnchorIds, visibleRelations, world.nodes])
+  }, [selectRelation, selection, tooltipsSuppressed, visibleElementIds, visibleRelations, world.elements])
 
-  const selectedAnchor = selection?.kind === 'anchor' ? world.nodes.find(anchor => anchor.id === selection.id) ?? null : null
-  const selectedRelation = selection?.kind === 'relation' ? world.edges.find(edge => edge.id === selection.id) ?? null : null
+  const selectedElement = selection?.kind === 'element' ? world.elements.find(element => element.id === selection.id) ?? null : null
+  const selectedAspect = selection?.kind === 'aspect' ? world.aspects.find(aspect => aspect.id === selection.id) ?? null : null
+  const selectedRelation = selection?.kind === 'relation' ? world.relations.find(relation => relation.id === selection.id) ?? null : null
+  const selectedScope = selection?.kind === 'scope' ? world.scopes.find(candidate => candidate.id === selection.id) ?? null : null
 
   useEffect(() => {
-    if (selection?.kind === 'anchor' && !world.nodes.some(anchor => anchor.id === selection.id))
+    if (selection?.kind === 'element' && !world.elements.some(element => element.id === selection.id))
       setSelection(null)
-    if (selection?.kind === 'relation' && !world.edges.some(relation => relation.id === selection.id))
+    if (selection?.kind === 'aspect' && !world.aspects.some(aspect => aspect.id === selection.id))
       setSelection(null)
-  }, [selection, world.edges, world.nodes])
+    if (selection?.kind === 'relation' && !world.relations.some(relation => relation.id === selection.id))
+      setSelection(null)
+    if (selection?.kind === 'scope' && !world.scopes.some(candidate => candidate.id === selection.id))
+      setSelection(null)
+  }, [selection, world.aspects, world.elements, world.relations, world.scopes])
 
   async function perform(operation: () => Promise<unknown>) {
     setWorking(true)
@@ -408,9 +413,8 @@ function App() {
           <label className="scope-select">
             <GitBranch size={15} />
             <select value={scope} onChange={event => setScope(event.target.value)}>
-              <option value="all">全部世界</option>
-              <option value="world">事实世界</option>
-              {world.nodes.filter(anchor => anchor.type === 'Character' && anchor.hasSubWorld).map(anchor => <option key={anchor.id} value={anchor.id}>{anchor.name} · 认知世界</option>)}
+              <option value="all">全部 Scope</option>
+              {world.scopes.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.type}</option>)}
             </select>
             <ChevronDown size={14} />
           </label>
@@ -434,46 +438,53 @@ function App() {
 
       <section className={`workspace${showInspector ? '' : ' inspector-hidden'}`}>
         <aside className="sidebar">
-          <div className="sidebar-heading"><span>世界要素</span><span className="count">{world.nodes.length}</span></div>
+          <div className="sidebar-heading"><span>世界断言图</span><span className="count">{world.elements.length + world.scopes.length + world.aspects.length + world.relations.length}</span></div>
           <label className="search-box"><Search size={16} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索名称或描述" /></label>
           <div className="sidebar-actions">
-            <button onClick={() => setDialog('anchor')}><CirclePlus size={16} />添加要素</button>
-            <button onClick={() => setDialog('relation')} disabled={world.nodes.length < 2}><GitBranch size={16} />添加关系</button>
+            <button onClick={() => setDialog('element')}><CirclePlus size={16} />Element</button>
+            <button onClick={() => setDialog('scope')} disabled={!world.elements.length}><Layers3 size={16} />Scope</button>
+            <button onClick={() => setDialog('aspect')} disabled={!world.elements.length || !world.scopes.length}><Sparkles size={16} />Aspect</button>
+            <button onClick={() => setDialog('relation')} disabled={!world.elements.length || !world.scopes.length}><GitBranch size={16} />Relation</button>
           </div>
           <div className="anchor-list">
-            {world.nodes.map(anchor => (
-              <button key={anchor.id} className={selection?.kind === 'anchor' && selection.id === anchor.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'anchor', id: anchor.id }); setShowInspector(true) }}>
-                <span className={`anchor-icon ${anchor.type.toLowerCase()}`}>{anchor.type === 'Character' ? <UserRound size={15} /> : <Package size={15} />}</span>
-                <span><strong>{anchor.name}</strong><small>{anchor.type === 'Character' ? '角色' : '物品'}{anchor.hasSubWorld ? ' · 有认知世界' : ''}</small></span>
+            {world.elements.map(element => (
+              <button key={element.id} className={selection?.kind === 'element' && selection.id === element.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'element', id: element.id }); setShowInspector(true) }}>
+                <span className="anchor-icon item"><Network size={15} /></span>
+                <span><strong>{element.name}</strong><small>Element · {element.type}</small></span>
               </button>
             ))}
-            {!world.nodes.length && <div className="empty-list">世界尚无要素。<br />从一次添加开始。</div>}
+            {world.scopes.map(candidate => <button key={candidate.id} className={selection?.kind === 'scope' && selection.id === candidate.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'scope', id: candidate.id }); setShowInspector(true) }}><span className="anchor-icon relation"><Layers3 size={15} /></span><span><strong>{candidate.name}</strong><small>Scope · {candidate.type}</small></span></button>)}
+            {world.aspects.map(aspect => <button key={aspect.id} className={selection?.kind === 'aspect' && selection.id === aspect.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'aspect', id: aspect.id }); setShowInspector(true) }}><span className="anchor-icon item"><Sparkles size={15} /></span><span><strong>{aspect.name}</strong><small>Aspect · {aspect.type}</small></span></button>)}
+            {world.relations.map(relation => <button key={relation.id} className={selection?.kind === 'relation' && selection.id === relation.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'relation', id: relation.id }); setShowInspector(true) }}><span className="anchor-icon relation"><GitBranch size={15} /></span><span><strong>{relation.name}</strong><small>Relation · {relation.type}</small></span></button>)}
+            {!world.elements.length && <div className="empty-list">世界尚无 Element。<br />从一次添加开始。</div>}
           </div>
         </aside>
 
         <section className={`canvas${tooltipsSuppressed ? ' tooltips-suppressed' : ''}`}>
           {loading ? <LoadingState /> : (
-            <ReactFlow nodes={flowNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={moveNodes} onNodeDragStart={handleNodeDragStart} onNodeDrag={handleNodeDrag} onNodeDragStop={handleNodeDragStop} fitView fitViewOptions={{ padding: 0.28 }} minZoom={0.25} maxZoom={1.8} nodesDraggable onPaneClick={() => setSelection(null)} onNodeClick={(_, node) => { stopInertia(node.id); setSelection({ kind: 'anchor', id: node.id }); setShowInspector(true) }}>
+            <ReactFlow nodes={flowNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={moveNodes} onNodeDragStart={handleNodeDragStart} onNodeDrag={handleNodeDrag} onNodeDragStop={handleNodeDragStop} fitView fitViewOptions={{ padding: 0.28 }} minZoom={0.25} maxZoom={1.8} nodesDraggable onPaneClick={() => setSelection(null)} onNodeClick={(_, node) => { stopInertia(node.id); setSelection({ kind: 'element', id: node.id }); setShowInspector(true) }}>
               <Background variant={BackgroundVariant.Dots} color="#34413e" gap={24} size={1.15} />
               <Controls showInteractive={false} />
-              <MiniMap nodeColor={node => node.className?.toString().includes('character') ? '#b77d55' : '#4c8d82'} maskColor="rgba(10, 14, 15, .76)" pannable zoomable />
+              <MiniMap nodeColor="#4c8d82" maskColor="rgba(10, 14, 15, .76)" pannable zoomable />
             </ReactFlow>
           )}
-          {!loading && world.nodes.length === 0 && <EmptyCanvas onAdd={() => setDialog('anchor')} />}
-          <div className="legend"><span><i className="character-dot" />角色</span><span><i className="item-dot" />物品</span><span><i className="subworld-line" />认知关系</span></div>
+          {!loading && world.elements.length === 0 && <EmptyCanvas onAdd={() => setDialog('element')} />}
+          <div className="legend"><span><i className="item-dot" />Element</span><span><i className="subworld-line" />Scope 内 Relation</span></div>
           {!showInspector && <button className="open-inspector" onClick={() => setShowInspector(true)}><PanelRightClose size={16} />打开检查器</button>}
         </section>
 
         {showInspector && (
           <aside className="inspector">
             <div className="inspector-top"><span>检查器</span><button aria-label="关闭检查器" onClick={() => setShowInspector(false)}><X size={17} /></button></div>
-            {selectedAnchor ? <AnchorInspector anchor={selectedAnchor} world={world} working={working} perform={perform} onRemoved={() => setSelection(null)} /> : selectedRelation ? <RelationInspector relation={selectedRelation} world={world} working={working} perform={perform} onRemoved={() => setSelection(null)} /> : <InspectorEmpty />}
+            {selectedElement ? <ElementInspector element={selectedElement} world={world} working={working} perform={perform} onRemoved={() => setSelection(null)} /> : selectedScope ? <ScopeInspector scope={selectedScope} world={world} working={working} perform={perform} onRemoved={() => setSelection(null)} /> : selectedAspect ? <AspectInspector aspect={selectedAspect} world={world} working={working} perform={perform} onRemoved={() => setSelection(null)} /> : selectedRelation ? <RelationInspector relation={selectedRelation} world={world} working={working} perform={perform} onRemoved={() => setSelection(null)} /> : <InspectorEmpty />}
           </aside>
         )}
       </section>
 
       {error && <div className="error-toast" role="alert"><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError(null)}><X size={16} /></button></div>}
-      {dialog === 'anchor' && <AnchorDialog stateId={world.stateId} working={working} close={() => setDialog(null)} submit={perform} />}
+      {dialog === 'element' && <ElementDialog stateId={world.stateId} working={working} close={() => setDialog(null)} submit={perform} />}
+      {dialog === 'scope' && <ScopeDialog world={world} working={working} close={() => setDialog(null)} submit={perform} />}
+      {dialog === 'aspect' && <AspectDialog world={world} working={working} close={() => setDialog(null)} submit={perform} />}
       {dialog === 'relation' && <RelationDialog world={world} working={working} close={() => setDialog(null)} submit={perform} />}
       <GuidancePanel open={showGuidance} world={world} onClose={() => setShowGuidance(false)} onWorldChanged={() => refresh(true)} onError={setError} />
       {showSettings && <SettingsDialog close={closeSettings} onError={setError} />}
@@ -627,72 +638,117 @@ function LoadingState() {
 }
 
 function EmptyCanvas({ onAdd }: { onAdd: () => void }) {
-  return <div className="empty-canvas"><div className="empty-orbit"><Network size={28} /></div><h2>这个世界仍是一张白纸</h2><p>添加角色或物品，然后用关系将叙事线索连接起来。</p><button onClick={onAdd}><CirclePlus size={17} />添加第一个要素</button></div>
+  return <div className="empty-canvas"><div className="empty-orbit"><Network size={28} /></div><h2>这个世界仍是一张白纸</h2><p>先添加 Element，再用 Scope、Aspect 与 Relation 表达断言。</p><button onClick={onAdd}><CirclePlus size={17} />添加第一个 Element</button></div>
 }
 
 function InspectorEmpty() {
-  return <div className="inspector-empty"><PanelRightClose size={28} /><h3>选择一个世界要素</h3><p>点击画布中的节点或关系，在此查看和修改它的属性。</p></div>
+  return <div className="inspector-empty"><PanelRightClose size={28} /><h3>选择一个世界实体</h3><p>从侧栏或画布选择 Element、Scope、Aspect 或 Relation。</p></div>
 }
 
-function AnchorInspector({ anchor, world, working, perform, onRemoved }: { anchor: AnchorViewModel; world: WorldGraphViewModel; working: boolean; perform: (operation: () => Promise<unknown>) => Promise<boolean>; onRemoved: () => void }) {
-  const [name, setName] = useState(anchor.name)
-  const [description, setDescription] = useState(anchor.description)
-  const [type, setType] = useState<AnchorType>(anchor.type)
-  useEffect(() => { setName(anchor.name); setDescription(anchor.description); setType(anchor.type) }, [anchor])
-  const changed = name !== anchor.name || description !== anchor.description || type !== anchor.type
+function ElementInspector({ element, world, working, perform, onRemoved }: { element: ElementViewModel; world: WorldGraphViewModel; working: boolean; perform: (operation: () => Promise<unknown>) => Promise<boolean>; onRemoved: () => void }) {
+  const [name, setName] = useState(element.name)
+  const [description, setDescription] = useState(element.description)
+  const [type, setType] = useState(element.type)
+  useEffect(() => { setName(element.name); setDescription(element.description); setType(element.type) }, [element])
+  const changed = name !== element.name || description !== element.description || type !== element.type
 
   async function save(event: FormEvent) {
     event.preventDefault()
     const changes: { name?: string; description?: string; type?: string } = {}
-    if (name !== anchor.name) changes.name = name
-    if (description !== anchor.description) changes.description = description
-    if (type !== anchor.type) changes.type = type
-    await perform(() => worldApi.updateAnchor(anchor.id, world.stateId, changes))
+    if (name !== element.name) changes.name = name
+    if (description !== element.description) changes.description = description
+    if (type !== element.type) changes.type = type
+    await perform(() => worldApi.updateElement(element.id, world.stateId, changes))
   }
 
   async function remove() {
-    const impact = world.edges.filter(edge => edge.sourceId === anchor.id || edge.targetId === anchor.id).length
-    const detail = impact ? `，并级联删除 ${impact} 条相连关系` : ''
-    if (!window.confirm(`确定删除“${anchor.name}”${detail}吗？此操作可通过撤销恢复。`))
+    const impact = world.scopes.filter(scope => scope.ownerElementId === element.id).length + world.aspects.filter(aspect => aspect.elementId === element.id).length + world.relations.filter(relation => relation.sourceElementId === element.id || relation.targetElementId === element.id).length
+    if (!window.confirm(`确定删除 Element“${element.name}”吗？这将级联删除 ${impact} 个直接依赖实体，并可通过撤销恢复。`))
       return
-    if (await perform(() => worldApi.removeAnchor(anchor.id, world.stateId)))
+    if (await perform(() => worldApi.removeElement(element.id, world.stateId)))
       onRemoved()
-  }
-
-  async function toggleSubWorld() {
-    const action = anchor.hasSubWorld ? () => worldApi.removeSubWorld(world.stateId, anchor.id) : () => worldApi.createSubWorld(world.stateId, anchor.id)
-    await perform(action)
   }
 
   return (
     <form className="property-form" onSubmit={save}>
-      <div className={`entity-chip ${anchor.type.toLowerCase()}`}>{anchor.type === 'Character' ? <UserRound size={15} /> : <Package size={15} />}{anchor.type === 'Character' ? '角色' : '物品'}</div>
+      <div className="entity-chip item"><Network size={15} />Element</div>
       <label>名称<input required value={name} onChange={event => setName(event.target.value)} /></label>
-      <label>描述<textarea rows={7} value={description} onChange={event => setDescription(event.target.value)} placeholder="记录这个要素在世界中的意义…" /></label>
-      <label>类型<select value={type} onChange={event => setType(event.target.value as AnchorType)}><option value="Character">角色</option><option value="Item" disabled={anchor.hasSubWorld}>物品</option></select></label>
-      {anchor.hasSubWorld && <p className="field-hint">删除该角色的认知世界后，才可以将其改为物品。</p>}
-      {anchor.type === 'Character' && <button className="secondary-action" type="button" disabled={working} onClick={() => void toggleSubWorld()}><GitBranch size={16} />{anchor.hasSubWorld ? '删除认知世界' : '创建认知世界'}</button>}
+      <label>描述<textarea rows={7} value={description} onChange={event => setDescription(event.target.value)} /></label>
+      <label>ElementType<input required value={type} onChange={event => setType(event.target.value)} placeholder="namespace:name" /></label>
       <div className="form-spacer" />
       <button className="primary-action" disabled={!changed || working}><Check size={16} />应用修改</button>
-      <button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除要素</button>
-      <small className="entity-id">ID · {anchor.id}</small>
+      <button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除 Element</button>
+      <small className="entity-id">ID · {element.id}</small>
     </form>
   )
+}
+
+function ScopeInspector({ scope, world, working, perform, onRemoved }: { scope: ScopeViewModel; world: WorldGraphViewModel; working: boolean; perform: (operation: () => Promise<unknown>) => Promise<boolean>; onRemoved: () => void }) {
+  const [name, setName] = useState(scope.name)
+  const [description, setDescription] = useState(scope.description)
+  const [quantity, setQuantity] = useState(scope.quantity)
+  const [type, setType] = useState(scope.type)
+  useEffect(() => { setName(scope.name); setDescription(scope.description); setQuantity(scope.quantity); setType(scope.type) }, [scope])
+  const changed = name !== scope.name || description !== scope.description || quantity !== scope.quantity || type !== scope.type
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    const changes: { name?: string; description?: string; quantity?: number; type?: string } = {}
+    if (name !== scope.name) changes.name = name
+    if (description !== scope.description) changes.description = description
+    if (quantity !== scope.quantity) changes.quantity = quantity
+    if (type !== scope.type) changes.type = type
+    await perform(() => worldApi.updateScope(scope.id, world.stateId, changes))
+  }
+  async function remove() {
+    const impact = world.aspects.filter(aspect => aspect.scopeId === scope.id).length + world.relations.filter(relation => relation.scopeId === scope.id).length
+    if (!window.confirm(`确定删除 Scope“${scope.name}”及其中 ${impact} 项断言吗？`))
+      return
+    if (await perform(() => worldApi.removeScope(scope.id, world.stateId)))
+      onRemoved()
+  }
+  return <form className="property-form" onSubmit={save}><div className="entity-chip relation"><Layers3 size={15} />Scope</div><label>名称<input required value={name} onChange={event => setName(event.target.value)} /></label><label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} /></label><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><label>ScopeType<input required value={type} onChange={event => setType(event.target.value)} placeholder="namespace:name" /></label><p className="field-hint">Owner：{world.elements.find(element => element.id === scope.ownerElementId)?.name ?? scope.ownerElementId}。Owner 是结构字段，需要更改时请删除后重建。</p><div className="form-spacer" /><button className="primary-action" disabled={!changed || working || !Number.isFinite(quantity)}><Check size={16} />应用修改</button><button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除 Scope</button><small className="entity-id">ID · {scope.id}</small></form>
+}
+
+function AspectInspector({ aspect, world, working, perform, onRemoved }: { aspect: AspectViewModel; world: WorldGraphViewModel; working: boolean; perform: (operation: () => Promise<unknown>) => Promise<boolean>; onRemoved: () => void }) {
+  const [name, setName] = useState(aspect.name)
+  const [description, setDescription] = useState(aspect.description)
+  const [quantity, setQuantity] = useState(aspect.quantity)
+  const [type, setType] = useState(aspect.type)
+  useEffect(() => { setName(aspect.name); setDescription(aspect.description); setQuantity(aspect.quantity); setType(aspect.type) }, [aspect])
+  const changed = name !== aspect.name || description !== aspect.description || quantity !== aspect.quantity || type !== aspect.type
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    const changes: { name?: string; description?: string; quantity?: number; type?: string } = {}
+    if (name !== aspect.name) changes.name = name
+    if (description !== aspect.description) changes.description = description
+    if (quantity !== aspect.quantity) changes.quantity = quantity
+    if (type !== aspect.type) changes.type = type
+    await perform(() => worldApi.updateAspect(aspect.id, world.stateId, changes))
+  }
+  async function remove() {
+    if (window.confirm(`确定删除 Aspect“${aspect.name}”吗？`) && await perform(() => worldApi.removeAspect(aspect.id, world.stateId)))
+      onRemoved()
+  }
+  return <form className="property-form" onSubmit={save}><div className="entity-chip item"><Sparkles size={15} />Aspect</div><label>名称<input required value={name} onChange={event => setName(event.target.value)} /></label><label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} /></label><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><label>AspectType<input required value={type} onChange={event => setType(event.target.value)} placeholder="namespace:name" /></label><p className="field-hint">Element：{world.elements.find(element => element.id === aspect.elementId)?.name ?? aspect.elementId}<br />Scope：{world.scopes.find(scope => scope.id === aspect.scopeId)?.name ?? aspect.scopeId}<br />引用是结构字段，需要更改时请删除后重建。</p><div className="form-spacer" /><button className="primary-action" disabled={!changed || working || !Number.isFinite(quantity)}><Check size={16} />应用修改</button><button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除 Aspect</button><small className="entity-id">ID · {aspect.id}</small></form>
 }
 
 function RelationInspector({ relation, world, working, perform, onRemoved }: { relation: RelationViewModel; world: WorldGraphViewModel; working: boolean; perform: (operation: () => Promise<unknown>) => Promise<boolean>; onRemoved: () => void }) {
   const [name, setName] = useState(relation.name)
   const [description, setDescription] = useState(relation.description)
-  useEffect(() => { setName(relation.name); setDescription(relation.description) }, [relation])
-  const source = world.nodes.find(node => node.id === relation.sourceId)
-  const target = world.nodes.find(node => node.id === relation.targetId)
-  const domain = world.nodes.find(node => node.id === relation.domainCharacterId)
+  const [quantity, setQuantity] = useState(relation.quantity)
+  const [type, setType] = useState(relation.type)
+  useEffect(() => { setName(relation.name); setDescription(relation.description); setQuantity(relation.quantity); setType(relation.type) }, [relation])
+  const source = world.elements.find(element => element.id === relation.sourceElementId)
+  const target = world.elements.find(element => element.id === relation.targetElementId)
+  const relationScope = world.scopes.find(scope => scope.id === relation.scopeId)
 
   async function save(event: FormEvent) {
     event.preventDefault()
-    const changes: { name?: string; description?: string } = {}
+    const changes: { name?: string; description?: string; quantity?: number; type?: string } = {}
     if (name !== relation.name) changes.name = name
     if (description !== relation.description) changes.description = description
+    if (quantity !== relation.quantity) changes.quantity = quantity
+    if (type !== relation.type) changes.type = type
     await perform(() => worldApi.updateRelation(relation.id, world.stateId, changes))
   }
 
@@ -705,43 +761,76 @@ function RelationInspector({ relation, world, working, perform, onRemoved }: { r
 
   return (
     <form className="property-form" onSubmit={save}>
-      <div className="entity-chip relation"><GitBranch size={15} />{relation.scope === 'World' ? '事实关系' : `${domain?.name ?? '角色'}的认知关系`}</div>
+      <div className="entity-chip relation"><GitBranch size={15} />Relation</div>
       <label>名称<input required value={name} onChange={event => setName(event.target.value)} /></label>
-      <label>描述<textarea rows={7} value={description} onChange={event => setDescription(event.target.value)} /></label>
+      <label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} /></label>
+      <label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label>
+      <label>RelationType<input required value={type} onChange={event => setType(event.target.value)} placeholder="namespace:name" /></label>
       <div className="relation-route"><span>{source?.name ?? '未知'}</span><GitBranch size={15} /><span>{target?.name ?? '未知'}</span></div>
-      <p className="field-hint">关系端点和所属世界属于结构信息。需要更改时，请删除后重新创建。</p>
+      <p className="field-hint">Scope：{relationScope?.name ?? relation.scopeId}。端点和 Scope 属于结构信息，需要更改时请删除后重建。</p>
       <div className="form-spacer" />
-      <button className="primary-action" disabled={(name === relation.name && description === relation.description) || working}><Check size={16} />应用修改</button>
+      <button className="primary-action" disabled={(name === relation.name && description === relation.description && quantity === relation.quantity && type === relation.type) || working || !Number.isFinite(quantity)}><Check size={16} />应用修改</button>
       <button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除关系</button>
       <small className="entity-id">ID · {relation.id}</small>
     </form>
   )
 }
 
-function AnchorDialog({ stateId, working, close, submit }: { stateId: string; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
+function ElementDialog({ stateId, working, close, submit }: { stateId: string; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [type, setType] = useState<AnchorType>('Character')
+  const [type, setType] = useState('core:none')
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (await submit(() => worldApi.addAnchor(stateId, name, description, type)))
+    if (await submit(() => worldApi.addElement(stateId, name, description, type)))
       close()
   }
-  return <Modal title="添加世界要素" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} placeholder="例如：旅行者" /></label><label>类型<select value={type} onChange={event => setType(event.target.value as AnchorType)}><option value="Character">角色</option><option value="Item">物品</option></select></label><label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} placeholder="简要描述它在世界中的意义…" /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working}><CirclePlus size={16} />添加要素</button></div></form></Modal>
+  return <Modal title="添加 Element" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} /></label><label>ElementType<input required value={type} onChange={event => setType(event.target.value)} placeholder="namespace:name" /></label><label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working}><CirclePlus size={16} />添加 Element</button></div></form></Modal>
+}
+
+function ScopeDialog({ world, working, close, submit }: { world: WorldGraphViewModel; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [quantity, setQuantity] = useState(1)
+  const [type, setType] = useState('core:none')
+  const [ownerElementId, setOwnerElementId] = useState(world.elements[0]?.id ?? '')
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (await submit(() => worldApi.addScope(world.stateId, name, description, quantity, type, ownerElementId)))
+      close()
+  }
+  return <Modal title="添加 Scope" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} /></label><label>Owner Element<select required value={ownerElementId} onChange={event => setOwnerElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><div className="form-columns"><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><label>ScopeType<input required value={type} onChange={event => setType(event.target.value)} /></label></div><label>描述<textarea rows={4} value={description} onChange={event => setDescription(event.target.value)} /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !ownerElementId || !Number.isFinite(quantity)}><Layers3 size={16} />添加 Scope</button></div></form></Modal>
+}
+
+function AspectDialog({ world, working, close, submit }: { world: WorldGraphViewModel; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [quantity, setQuantity] = useState(1)
+  const [type, setType] = useState('core:none')
+  const [elementId, setElementId] = useState(world.elements[0]?.id ?? '')
+  const [scopeId, setScopeId] = useState(world.scopes[0]?.id ?? '')
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (await submit(() => worldApi.addAspect(world.stateId, name, description, quantity, type, elementId, scopeId)))
+      close()
+  }
+  return <Modal title="添加 Aspect" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} /></label><div className="form-columns"><label>Element<select required value={elementId} onChange={event => setElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><label>Scope<select required value={scopeId} onChange={event => setScopeId(event.target.value)}>{world.scopes.map(scope => <option key={scope.id} value={scope.id}>{scope.name}</option>)}</select></label></div><div className="form-columns"><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><label>AspectType<input required value={type} onChange={event => setType(event.target.value)} /></label></div><label>描述<textarea rows={4} value={description} onChange={event => setDescription(event.target.value)} /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !elementId || !scopeId || !Number.isFinite(quantity)}><Sparkles size={16} />添加 Aspect</button></div></form></Modal>
 }
 
 function RelationDialog({ world, working, close, submit }: { world: WorldGraphViewModel; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [sourceId, setSourceId] = useState(world.nodes[0]?.id ?? '')
-  const [targetId, setTargetId] = useState(world.nodes[1]?.id ?? world.nodes[0]?.id ?? '')
-  const [domainId, setDomainId] = useState('')
+  const [quantity, setQuantity] = useState(1)
+  const [type, setType] = useState('core:none')
+  const [sourceElementId, setSourceElementId] = useState(world.elements[0]?.id ?? '')
+  const [targetElementId, setTargetElementId] = useState(world.elements[1]?.id ?? world.elements[0]?.id ?? '')
+  const [scopeId, setScopeId] = useState(world.scopes[0]?.id ?? '')
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (await submit(() => worldApi.addRelation(world.stateId, name, description, sourceId, targetId, domainId || null)))
+    if (await submit(() => worldApi.addRelation(world.stateId, name, description, quantity, type, sourceElementId, targetElementId, scopeId)))
       close()
   }
-  return <Modal title="添加世界关系" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>关系名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} placeholder="例如：守护" /></label><div className="form-columns"><label>起点<select value={sourceId} onChange={event => setSourceId(event.target.value)}>{world.nodes.map(anchor => <option key={anchor.id} value={anchor.id}>{anchor.name}</option>)}</select></label><label>终点<select value={targetId} onChange={event => setTargetId(event.target.value)}>{world.nodes.map(anchor => <option key={anchor.id} value={anchor.id}>{anchor.name}</option>)}</select></label></div><label>所属世界<select value={domainId} onChange={event => setDomainId(event.target.value)}><option value="">事实世界</option>{world.nodes.filter(anchor => anchor.type === 'Character' && anchor.hasSubWorld).map(anchor => <option key={anchor.id} value={anchor.id}>{anchor.name}的认知世界</option>)}</select></label><label>描述<textarea rows={4} value={description} onChange={event => setDescription(event.target.value)} placeholder="描述关系成立的方式或缘由…" /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !sourceId || !targetId}><GitBranch size={16} />添加关系</button></div></form></Modal>
+  return <Modal title="添加 Relation" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} /></label><div className="form-columns"><label>Source Element<select value={sourceElementId} onChange={event => setSourceElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><label>Target Element<select value={targetElementId} onChange={event => setTargetElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label></div><label>Scope<select value={scopeId} onChange={event => setScopeId(event.target.value)}>{world.scopes.map(scope => <option key={scope.id} value={scope.id}>{scope.name}</option>)}</select></label><div className="form-columns"><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><label>RelationType<input required value={type} onChange={event => setType(event.target.value)} /></label></div><label>描述<textarea rows={4} value={description} onChange={event => setDescription(event.target.value)} /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !sourceElementId || !targetElementId || !scopeId || !Number.isFinite(quantity)}><GitBranch size={16} />添加 Relation</button></div></form></Modal>
 }
 
 function Modal({ title, close, children }: { title: string; close: () => void; children: ReactNode }) {

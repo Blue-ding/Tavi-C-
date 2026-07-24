@@ -4,40 +4,48 @@ using Tavi.Host.ViewModels;
 
 namespace Tavi.Host.Mapping;
 
+/// <summary>将 Application World 快照和操作转换为不泄露运行时引用的 Host 契约。</summary>
 internal static class WorldViewModelMapper
 {
     internal static WorldGraphViewModel ToGraph(IWorldService service)
     {
         WorldStagingSnapshot staging = service.CreateStagingSnapshot();
         WorldSnapshot snapshot = staging.ProjectedWorld;
-        HashSet<Guid> subWorldCharacters = snapshot.SubWorlds.Select(subWorld => subWorld.DomainId).ToHashSet();
-        AnchorViewModel[] nodes = snapshot.Anchors.Values.OrderBy(anchor => anchor.Name, StringComparer.OrdinalIgnoreCase).Select(anchor => new AnchorViewModel(anchor.Id, anchor.Name, anchor.Description, anchor.Type.ToString(), subWorldCharacters.Contains(anchor.Id))).ToArray();
-        var edges = new List<RelationViewModel>(snapshot.Relations.Count + snapshot.SubWorlds.Sum(subWorld => subWorld.Relations.Count));
-        edges.AddRange(snapshot.Relations.Values.Select(relation => ToRelation(relation, null)));
-        foreach (SubWorldSnapshot subWorld in snapshot.SubWorlds)
-            edges.AddRange(subWorld.Relations.Values.Select(relation => ToRelation(relation, subWorld.DomainId)));
-        SubWorldViewModel[] subWorlds = snapshot.SubWorlds.Select(subWorld => new SubWorldViewModel(subWorld.Id, subWorld.DomainId)).ToArray();
+        ElementViewModel[] elements = snapshot.Elements.Values.OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.Id).Select(value => new ElementViewModel(value.Id, value.Name, value.Description, value.Type.Value)).ToArray();
+        AspectViewModel[] aspects = snapshot.Aspects.Values.OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.Id).Select(value => new AspectViewModel(value.Id, value.Name, value.Description, value.Quantity, value.Type.Value, value.ElementId, value.ScopeId)).ToArray();
+        RelationViewModel[] relations = snapshot.Relations.Values.OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.Id).Select(value => new RelationViewModel(value.Id, value.Name, value.Description, value.Quantity, value.Type.Value, value.SourceElementId, value.TargetElementId, value.ScopeId)).ToArray();
+        ScopeViewModel[] scopes = snapshot.Scopes.Values.OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.Id).Select(value => new ScopeViewModel(value.Id, value.Name, value.Description, value.Quantity, value.Type.Value, value.OwnerElementId)).ToArray();
         WorldStagedChangeViewModel[] changes = staging.Changes.Select(change => new WorldStagedChangeViewModel(change.Id, change.Source.ToString(), change.Status.ToString(), string.Join("；", change.ChangeSet.Operations.Select(Describe)), change.Issue, change.ConflictingChangeIds)).ToArray();
-        return new WorldGraphViewModel(staging.WorldStateId, staging.Revision, service.IsDirty, service.CanUndo, service.CanRedo, service.Health.ToString(), nodes, edges.OrderBy(edge => edge.Name, StringComparer.OrdinalIgnoreCase).ToArray(), subWorlds, changes);
+        return new WorldGraphViewModel(staging.WorldStateId, staging.Revision, service.IsDirty, service.CanUndo, service.CanRedo, service.Health.ToString(), elements, aspects, relations, scopes, changes);
     }
 
     internal static WorldCommitViewModel ToCommit(WorldCommitResult result, Guid? entityId = null) => new(result.CommitId, result.PreviousStateId, result.StateId, result.Changed, entityId);
 
-    private static RelationViewModel ToRelation(Relation relation, Guid? domainCharacterId) => new(relation.Id, relation.Name, relation.Description, relation.SourceId, relation.TargetId, domainCharacterId.HasValue ? "SubWorld" : "World", domainCharacterId);
-
     private static string Describe(WorldOperation operation) => operation switch
     {
-        AddAnchorOperation value => $"新增 Anchor：{value.Name}",
-        RemoveAnchorOperation value => $"删除 Anchor：{value.AnchorId}",
-        UpdateAnchorNameOperation value => $"修改 Anchor 名称：{value.AnchorId} → {value.Name}",
-        UpdateAnchorDescriptionOperation value => $"修改 Anchor 描述：{value.AnchorId}",
-        UpdateAnchorTypeOperation value => $"修改 Anchor 类型：{value.AnchorId} → {value.Type}",
+        AddElementOperation value => $"新增 Element：{value.Name}",
+        RemoveElementOperation value => $"删除 Element：{value.ElementId}",
+        UpdateElementNameOperation value => $"修改 Element 名称：{value.ElementId} → {value.Name}",
+        UpdateElementDescriptionOperation value => $"修改 Element 说明：{value.ElementId}",
+        UpdateElementTypeOperation value => $"修改 Element 类型：{value.ElementId} → {value.Type}",
+        AddAspectOperation value => $"新增 Aspect：{value.Name}",
+        RemoveAspectOperation value => $"删除 Aspect：{value.AspectId}",
+        UpdateAspectNameOperation value => $"修改 Aspect 名称：{value.AspectId} → {value.Name}",
+        UpdateAspectDescriptionOperation value => $"修改 Aspect 说明：{value.AspectId}",
+        UpdateAspectQuantityOperation value => $"修改 Aspect Quantity：{value.AspectId} → {value.Quantity}",
+        UpdateAspectTypeOperation value => $"修改 Aspect 类型：{value.AspectId} → {value.Type}",
         AddRelationOperation value => $"新增 Relation：{value.Name}",
         RemoveRelationOperation value => $"删除 Relation：{value.RelationId}",
         UpdateRelationNameOperation value => $"修改 Relation 名称：{value.RelationId} → {value.Name}",
-        UpdateRelationDescriptionOperation value => $"修改 Relation 描述：{value.RelationId}",
-        CreateSubWorldOperation value => $"创建子世界：{value.CharacterId}",
-        RemoveSubWorldOperation value => $"删除子世界：{value.CharacterId}",
+        UpdateRelationDescriptionOperation value => $"修改 Relation 说明：{value.RelationId}",
+        UpdateRelationQuantityOperation value => $"修改 Relation Quantity：{value.RelationId} → {value.Quantity}",
+        UpdateRelationTypeOperation value => $"修改 Relation 类型：{value.RelationId} → {value.Type}",
+        AddScopeOperation value => $"新增 Scope：{value.Name}",
+        RemoveScopeOperation value => $"删除 Scope：{value.ScopeId}",
+        UpdateScopeNameOperation value => $"修改 Scope 名称：{value.ScopeId} → {value.Name}",
+        UpdateScopeDescriptionOperation value => $"修改 Scope 说明：{value.ScopeId}",
+        UpdateScopeQuantityOperation value => $"修改 Scope Quantity：{value.ScopeId} → {value.Quantity}",
+        UpdateScopeTypeOperation value => $"修改 Scope 类型：{value.ScopeId} → {value.Type}",
         _ => operation.GetType().Name
     };
 }
