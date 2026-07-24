@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { ArrowRight, Bot, Check, CircleStop, GitBranch, LoaderCircle, Plus, Send, Sparkles, UserRound, X } from 'lucide-react'
+import { ArrowRight, Bot, Check, CircleStop, GitBranch, LoaderCircle, RefreshCw, Send, Sparkles, UserRound, X } from 'lucide-react'
 import { ApiError, guidanceApi } from './api'
 import type { GuidanceAvailabilityViewModel, GuidanceEventViewModel, GuidanceSnapshotViewModel, ProposalAnchorReferenceViewModel, ProposalChangeViewModel, ProposeAddRelationViewModel, WorldGraphViewModel } from './types'
 
@@ -206,7 +206,11 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
     <aside className="guidance-panel" aria-label="Guidance">
       <header className="guidance-header">
         <div><span className="guidance-mark"><Sparkles size={16} /></span><span><strong>Guidance</strong><small>{availability?.available ? availability.provider : '叙事构筑助手'}</small></span></div>
-        <button aria-label="关闭 Guidance" onClick={onClose}><X size={18} /></button>
+        <div className="guidance-header-actions">
+          {snapshot && <button aria-label="刷新 Guidance 对话" title="刷新 Guidance 对话" disabled={working || generating} onClick={() => void refreshSession()}><RefreshCw size={16} /></button>}
+          {generating && <button className="danger" aria-label="停止生成" title="停止生成" disabled={working} onClick={() => void cancel()}><CircleStop size={16} /></button>}
+          <button aria-label="关闭 Guidance" title="关闭 Guidance" onClick={onClose}><X size={18} /></button>
+        </div>
       </header>
 
       {!availability && <div className="guidance-center"><LoaderCircle className="spin" size={24} />正在确认 Guidance 状态…</div>}
@@ -244,12 +248,10 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
             )}
           </div>
 
-          <footer className="guidance-footer">
-            {generating && <button className="guidance-cancel" disabled={working} onClick={() => void cancel()}><CircleStop size={15} />停止生成</button>}
-            {!generating && !terminal && !ready && <><form onSubmit={continueConversation}><textarea rows={2} value={input} onChange={event => setInput(event.target.value)} placeholder="准备下一轮消息…" /><button aria-label="发送" disabled={working || !!snapshot.retryMessage || !input.trim()}><Send size={16} /></button></form><button className="guidance-new" disabled={working} onClick={() => void refreshSession()}><Plus size={16} />刷新 Guidance 对话</button></>}
-            {ready && <><form onSubmit={continueConversation}><textarea rows={2} value={input} onChange={event => setInput(event.target.value)} placeholder="也可以补充要求，让 Guidance 继续考虑…" /><button aria-label="发送" disabled={working || !input.trim()}><Send size={16} /></button></form>{conflict ? <button className="guidance-new" disabled={working} onClick={() => void refreshSession()}><Sparkles size={16} />刷新 Guidance 对话</button> : <button className="guidance-commit" disabled={working || selectedChanges.size === 0} onClick={() => void commit()}>{working ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}提交 {selectedChanges.size} 项变化</button>}</>}
-            {terminal && <button className="guidance-new" onClick={() => void refreshSession()}><Plus size={16} />刷新 Guidance Session</button>}
-          </footer>
+          {!generating && !terminal && <footer className="guidance-footer">
+            {!ready && <form onSubmit={continueConversation}><textarea rows={2} value={input} onChange={event => setInput(event.target.value)} placeholder="准备下一轮消息…" /><button aria-label="发送" disabled={working || !!snapshot.retryMessage || !input.trim()}><Send size={16} /></button></form>}
+            {ready && <><form onSubmit={continueConversation}><textarea rows={2} value={input} onChange={event => setInput(event.target.value)} placeholder="也可以补充要求，让 Guidance 继续考虑…" /><button aria-label="发送" disabled={working || !input.trim()}><Send size={16} /></button></form>{!conflict && <button className="guidance-commit" disabled={working || selectedChanges.size === 0} onClick={() => void commit()}>{working ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}提交 {selectedChanges.size} 项变化</button>}</>}
+          </footer>}
         </>
       )}
     </aside>

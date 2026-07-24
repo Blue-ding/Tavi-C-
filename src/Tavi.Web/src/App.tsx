@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow, useNodesState, type Edge, type Node, type NodeChange, type NodePositionChange } from '@xyflow/react'
-import { Box, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
+import { Archive, Box, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
 import { ApiError, settingsApi, worldApi } from './api'
 import { GuidancePanel } from './GuidancePanel'
 import type { AnchorType, AnchorViewModel, FeaturePolicy, LanguageModelSettingsViewModel, OpenAIConfigurationInput, OpenAIClientType, RelationViewModel, Selection, WorldGraphViewModel } from './types'
@@ -27,6 +27,7 @@ function App() {
   const [showInspector, setShowInspector] = useState(true)
   const [showGuidance, setShowGuidance] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showStaging, setShowStaging] = useState(false)
   const [flowNodes, setFlowNodes, applyNodeChanges] = useNodesState<Node>([])
   const refreshSequence = useRef(0)
   const lastRefreshAt = useRef(0)
@@ -191,6 +192,9 @@ function App() {
           </label>
           <div className="toolbar-divider" />
           <button className={`guidance-toggle${showGuidance ? ' active' : ''}`} onClick={() => setShowGuidance(current => !current)}><Sparkles size={16} />Guidance</button>
+          <button className="staging-toggle" disabled={!world.stagedChanges.length} onClick={() => setShowStaging(true)} title={world.stagedChanges.length ? `查看 ${world.stagedChanges.length} 项暂存修改` : '暂存区为空'}>
+            <Archive size={16} />暂存区{world.stagedChanges.length > 0 && <span>{world.stagedChanges.length}</span>}
+          </button>
           <IconButton label="设置" onClick={() => setShowSettings(true)}><Settings size={17} /></IconButton>
           <div className="toolbar-divider" />
           <IconButton label="撤销" disabled={!world.canUndo || working} onClick={() => void perform(() => worldApi.undo(world.revision))}><Undo2 size={17} /></IconButton>
@@ -220,15 +224,6 @@ function App() {
             ))}
             {!world.nodes.length && <div className="empty-list">世界尚无要素。<br />从一次添加开始。</div>}
           </div>
-          <div className="sidebar-heading"><span>暂存修改</span><span className="count">{world.stagedChanges.length}</span></div>
-          <div className="anchor-list">
-            {world.stagedChanges.map(change => <button key={change.id} title={change.issue ?? change.operation} onClick={() => void perform(() => worldApi.deleteStaged(change.id))}><span className={`anchor-icon ${change.status === 'Valid' ? 'item' : 'character'}`}>{change.status === 'Valid' ? <Check size={14} /> : <X size={14} />}</span><span><strong>{change.operation}</strong><small>{change.source} · {change.status}{change.issue ? ` · ${change.issue}` : ''}</small></span></button>)}
-            {!world.stagedChanges.length && <div className="empty-list">暂存区为空。</div>}
-          </div>
-          <div className="sidebar-actions">
-            <button disabled={working || !world.stagedChanges.some(change => change.status === 'Valid')} onClick={() => void perform(() => worldApi.commitStaged(world.revision, world.stagedChanges.filter(change => change.status === 'Valid').map(change => change.id)))}><Check size={16} />提交有效项</button>
-            <button disabled={working || !world.stagedChanges.some(change => change.status === 'Invalid')} onClick={() => void perform(worldApi.deleteInvalidStaged)}><Trash2 size={16} />清理无效项</button>
-          </div>
         </aside>
 
         <section className="canvas">
@@ -257,6 +252,7 @@ function App() {
       {dialog === 'relation' && <RelationDialog world={world} working={working} close={() => setDialog(null)} submit={perform} />}
       <GuidancePanel open={showGuidance} world={world} onClose={() => setShowGuidance(false)} onWorldChanged={() => refresh(true)} onError={setError} />
       {showSettings && <SettingsDialog close={closeSettings} onError={setError} />}
+      {showStaging && <StagingDialog world={world} working={working} close={() => setShowStaging(false)} perform={perform} />}
     </main>
   )
 }
@@ -267,6 +263,40 @@ function NodeLabel({ anchor }: { anchor: AnchorViewModel }) {
 
 function IconButton({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: ReactNode }) {
   return <button className="icon-button" aria-label={label} title={label} disabled={disabled} onClick={onClick}>{children}</button>
+}
+
+function StagingDialog({ world, working, close, perform }: { world: WorldGraphViewModel; working: boolean; close: () => void; perform: (operation: () => Promise<unknown>) => Promise<boolean> }) {
+  const validChanges = world.stagedChanges.filter(change => change.status === 'Valid')
+  const invalidChanges = world.stagedChanges.filter(change => change.status === 'Invalid')
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close() }}>
+      <section className="modal staging-modal" role="dialog" aria-modal="true" aria-labelledby="staging-title">
+        <header>
+          <div><span className="modal-kicker">STAGING AREA</span><h2 id="staging-title">暂存修改 <span className="count">{world.stagedChanges.length}</span></h2></div>
+          <button aria-label="关闭暂存区" onClick={close}><X size={18} /></button>
+        </header>
+        <div className="staging-list">
+          {world.stagedChanges.map(change => (
+            <article className={`staging-item ${change.status.toLowerCase()}`} key={change.id}>
+              <span className="staging-status">{change.status === 'Valid' ? <Check size={15} /> : <X size={15} />}</span>
+              <div><strong>{change.operation}</strong><small>{change.source === 'Guidance' ? 'Guidance' : '玩家'} · {stagingStatusLabel(change.status)}</small>{change.issue && <p>{change.issue}</p>}</div>
+              <button aria-label={`删除暂存项 ${change.operation}`} title="删除此项" disabled={working} onClick={() => void perform(() => worldApi.deleteStaged(change.id))}><Trash2 size={15} /></button>
+            </article>
+          ))}
+          {!world.stagedChanges.length && <div className="empty-list">暂存区为空。</div>}
+        </div>
+        <footer className="staging-actions">
+          <button className="secondary-action" disabled={working || !invalidChanges.length} onClick={() => void perform(worldApi.deleteInvalidStaged)}><Trash2 size={15} />清理无效项</button>
+          <button className="primary-action" disabled={working || !validChanges.length} onClick={() => void perform(() => worldApi.commitStaged(world.revision, validChanges.map(change => change.id)))}>{working ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}提交 {validChanges.length} 项有效修改</button>
+        </footer>
+      </section>
+    </div>
+  )
+}
+
+function stagingStatusLabel(status: WorldGraphViewModel['stagedChanges'][number]['status']) {
+  return { Valid: '有效', Conflict: '冲突', Invalid: '无效' }[status]
 }
 
 function SettingsDialog({ close, onError }: { close: () => void; onError: (message: string | null) => void }) {
