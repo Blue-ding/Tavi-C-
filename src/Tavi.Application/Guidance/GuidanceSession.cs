@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace Tavi.Application.Guidance;
 
 /// <summary>维护绑定到单一 WorldSession 的长期 Guidance 对话、可恢复操作和消息重试状态。</summary>
-public sealed class GuidanceSession : IGuidanceService
+internal sealed class GuidanceSession : IGuidanceService
 {
     private const string SystemInstruction = """
         你是 Tavi 的 Guidance。你的目标是从玩家给出的微小叙事势能出发，协助构筑可供审阅的 World 暂存修改。

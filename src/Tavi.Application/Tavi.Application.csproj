@@ -8,7 +8,4 @@
     <ProjectReference Include="..\Tavi.Domain\Tavi.Domain.csproj" />
     <PackageReference Include="System.Memory.Data" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Evolution\" />
-  </ItemGroup>
 </Project>
