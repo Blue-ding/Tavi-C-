@@ -22,7 +22,7 @@ public sealed class WorldSession : IAsyncDisposable
     private CancellationTokenSource? _debounceSource;
     private readonly List<Task> _autoSaveTasks = [];
     private RuntimeWorld? _current;
-    private long _savedRevision;
+    private Guid _savedStateId;
     private int _reportedDirty;
     private bool _disposed;
     private Task? _disposeTask;
@@ -62,15 +62,13 @@ public sealed class WorldSession : IAsyncDisposable
     /// </summary>
     public WorldSessionHealth Health { get; private set; } = WorldSessionHealth.Healthy;
 
-    /// <summary>
-    /// 获取当前 World revision。
-    /// </summary>
-    public long Revision => ExecuteQuery(world => world.Revision);
+    /// <summary>获取当前 World 状态标识；每次实际提交都会生成新值，该值不表达提交顺序。</summary>
+    public Guid StateId => ExecuteQuery(world => world.StateId);
 
     /// <summary>
     /// 获取会话是否包含尚未保存的修改。
     /// </summary>
-    public bool IsDirty => ExecuteQuery(world => world.Revision != Volatile.Read(ref _savedRevision));
+    public bool IsDirty => ExecuteQuery(world => world.StateId != _savedStateId);
 
     /// <summary>
     /// 获取当前是否存在可撤销的已提交操作组。
@@ -110,7 +108,7 @@ public sealed class WorldSession : IAsyncDisposable
             _undoHistory.Clear();
             _redoHistory.Clear();
             Health = WorldSessionHealth.Healthy;
-            Volatile.Write(ref _savedRevision, snapshot is null ? -1 : _current.Revision);
+            _savedStateId = snapshot is null ? Guid.Empty : _current.StateId;
         }
         NotifyDirtyChanged();
         if (snapshot is null)
@@ -118,12 +116,12 @@ public sealed class WorldSession : IAsyncDisposable
     }
 
     /// <summary>
-    /// 以 expectedRevision 为乐观并发条件原子提交操作组。中间操作不产生事件，失败且回滚成功时 World 和 revision 保持不变。
+    /// 以 expectedStateId 为乐观并发条件原子提交操作组。中间操作不产生事件，失败且回滚成功时 World 和 StateId 保持不变。
     /// </summary>
-    public WorldCommitResult Apply(WorldChangeSet changeSet, long expectedRevision)
+    public WorldCommitResult Apply(WorldChangeSet changeSet, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(changeSet);
-        WorldCommitResult result = ApplyCore(changeSet, expectedRevision, HistoryAction.Record);
+        WorldCommitResult result = ApplyCore(changeSet, expectedStateId, HistoryAction.Record);
         PublishCommit(result, WorldSessionOperation.Apply);
         return result;
     }
@@ -141,7 +139,7 @@ public sealed class WorldSession : IAsyncDisposable
     public WorldStagingSnapshot CreateStagingSnapshot() => ExecuteLocked(() =>
     {
         RuntimeWorld world = RequireCurrent();
-        return _staging.CreateSnapshot(world.CreateSnapshot(), world.Revision);
+        return _staging.CreateSnapshot(world.CreateSnapshot(), world.StateId);
     });
 
     /// <summary>删除指定暂存日志项；不存在时返回 false。</summary>
@@ -151,7 +149,7 @@ public sealed class WorldSession : IAsyncDisposable
     public int DeleteInvalidStaged() => ExecuteLocked(() => _staging.DeleteInvalid(RequireCurrent().CreateSnapshot()));
 
     /// <summary>原子提交选中的有效暂存项并在成功后消费它们。</summary>
-    public WorldStagingCommitResult CommitStaged(IEnumerable<Guid> selectedChangeIds, long expectedRevision)
+    public WorldStagingCommitResult CommitStaged(IEnumerable<Guid> selectedChangeIds, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(selectedChangeIds);
         WorldCommitResult commit;
@@ -161,7 +159,7 @@ public sealed class WorldSession : IAsyncDisposable
             EnsureUsableLocked();
             RuntimeWorld world = RequireCurrent();
             (WorldChangeSet changeSet, selected) = _staging.PrepareCommit(selectedChangeIds, world.CreateSnapshot());
-            commit = ApplyCoreLocked(changeSet, expectedRevision, HistoryAction.Record);
+            commit = ApplyCoreLocked(changeSet, expectedStateId, HistoryAction.Record);
             _staging.Consume(selected);
         }
         PublishCommit(commit, WorldSessionOperation.Apply);
@@ -169,21 +167,21 @@ public sealed class WorldSession : IAsyncDisposable
     }
 
     /// <summary>
-    /// 原子应用最近一次提交的反向操作。撤销本身是新提交，因此 revision 继续递增。
+    /// 原子应用最近一次提交的反向操作。撤销本身是新提交，因此会生成新的 StateId。
     /// </summary>
-    public WorldCommitResult Undo(long expectedRevision)
+    public WorldCommitResult Undo(Guid expectedStateId)
     {
-        WorldCommitResult result = ApplyCore(null, expectedRevision, HistoryAction.Undo);
+        WorldCommitResult result = ApplyCore(null, expectedStateId, HistoryAction.Undo);
         PublishCommit(result, WorldSessionOperation.Undo);
         return result;
     }
 
     /// <summary>
-    /// 原子重新应用最近一次撤销的正向操作。重做本身是新提交，因此 revision 继续递增。
+    /// 原子重新应用最近一次撤销的正向操作。重做本身是新提交，因此会生成新的 StateId。
     /// </summary>
-    public WorldCommitResult Redo(long expectedRevision)
+    public WorldCommitResult Redo(Guid expectedStateId)
     {
-        WorldCommitResult result = ApplyCore(null, expectedRevision, HistoryAction.Redo);
+        WorldCommitResult result = ApplyCore(null, expectedStateId, HistoryAction.Redo);
         PublishCommit(result, WorldSessionOperation.Redo);
         return result;
     }
@@ -243,18 +241,18 @@ public sealed class WorldSession : IAsyncDisposable
         return ExecuteLocked(() => query(RequireCurrent()));
     }
 
-    private WorldCommitResult ApplyCore(WorldChangeSet? requestedChangeSet, long expectedRevision, HistoryAction historyAction)
+    private WorldCommitResult ApplyCore(WorldChangeSet? requestedChangeSet, Guid expectedStateId, HistoryAction historyAction)
     {
         lock (_worldSync)
-            return ApplyCoreLocked(requestedChangeSet, expectedRevision, historyAction);
+            return ApplyCoreLocked(requestedChangeSet, expectedStateId, historyAction);
     }
 
-    private WorldCommitResult ApplyCoreLocked(WorldChangeSet? requestedChangeSet, long expectedRevision, HistoryAction historyAction)
+    private WorldCommitResult ApplyCoreLocked(WorldChangeSet? requestedChangeSet, Guid expectedStateId, HistoryAction historyAction)
     {
         EnsureUsableLocked();
         RuntimeWorld world = RequireCurrent();
-        if (world.Revision != expectedRevision)
-            throw new WorldRevisionConflictException(expectedRevision, world.Revision);
+        if (world.StateId != expectedStateId)
+            throw new WorldStateConflictException(expectedStateId, world.StateId);
         AppliedWorldChangeSet? historyEntry = historyAction switch
         {
             HistoryAction.Undo => _undoHistory.TryPeek(out AppliedWorldChangeSet? undo) ? undo : throw new InvalidOperationException("没有可撤销的世界操作。"),
@@ -279,7 +277,7 @@ public sealed class WorldSession : IAsyncDisposable
             throw;
         }
         if (!applied.Changed)
-            return WorldCommitResult.Unchanged(world.Revision);
+            return WorldCommitResult.Unchanged(world.StateId);
         switch (historyAction)
         {
             case HistoryAction.Record:
@@ -295,7 +293,7 @@ public sealed class WorldSession : IAsyncDisposable
                 _undoHistory.Push(historyEntry!);
                 break;
         }
-        return new WorldCommitResult(Guid.NewGuid(), applied.PreviousRevision, applied.Revision, applied.ChangeSet);
+        return new WorldCommitResult(Guid.NewGuid(), applied.PreviousStateId, applied.StateId, applied.ChangeSet);
     }
 
     private void PublishCommit(WorldCommitResult result, WorldSessionOperation operation)
@@ -303,7 +301,7 @@ public sealed class WorldSession : IAsyncDisposable
         if (!result.Changed)
             return;
         ScheduleAutoSave();
-        Changed?.Invoke(this, new WorldSessionChangedEventArgs(result.CommitId, result.Revision, operation, result.ChangeSet!));
+        Changed?.Invoke(this, new WorldSessionChangedEventArgs(result.CommitId, result.StateId, operation, result.ChangeSet!));
         NotifyDirtyChanged();
     }
 
@@ -312,8 +310,8 @@ public sealed class WorldSession : IAsyncDisposable
         await _saveGate.WaitAsync(cancellationToken);
         try
         {
-            (WorldSnapshot Snapshot, long Revision) state = ExecuteQuery(world => (world.CreateSnapshot(), world.Revision));
-            if (!force && state.Revision == Volatile.Read(ref _savedRevision))
+            (WorldSnapshot Snapshot, Guid StateId, bool IsSaved) state = ExecuteQuery(world => (world.CreateSnapshot(), world.StateId, world.StateId == _savedStateId));
+            if (!force && state.IsSaved)
                 return;
             RaiseStateChanged(WorldSessionStateChange.SaveStarted);
             try
@@ -330,7 +328,8 @@ public sealed class WorldSession : IAsyncDisposable
                 RaiseStateChanged(WorldSessionStateChange.SaveFailed, exception);
                 throw;
             }
-            Volatile.Write(ref _savedRevision, state.Revision);
+            lock (_worldSync)
+                _savedStateId = state.StateId;
             LastAutoSaveException = null;
             NotifyDirtyChanged();
             RaiseStateChanged(WorldSessionStateChange.SaveCompleted);

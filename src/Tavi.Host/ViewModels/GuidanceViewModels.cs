@@ -73,10 +73,10 @@ public sealed record ProposeAddRelationViewModel : ProposalChangeViewModel
 
 /// <summary>表示供前端审阅的完整世界提案。</summary>
 /// <param name="Id">提案标识。</param>
-/// <param name="BaseWorldRevision">提案基于的世界 revision。</param>
+/// <param name="BaseWorldStateId">提案基于的 World 状态标识。</param>
 /// <param name="Summary">面向玩家的提案摘要。</param>
 /// <param name="Changes">按构筑顺序排列的修改。</param>
-public sealed record WorldProposalViewModel(Guid Id, long BaseWorldRevision, string Summary, IReadOnlyList<ProposalChangeViewModel> Changes);
+public sealed record WorldProposalViewModel(Guid Id, Guid BaseWorldStateId, string Summary, IReadOnlyList<ProposalChangeViewModel> Changes);
 
 /// <summary>表示经过脱敏的 Guidance 失败信息。</summary>
 /// <param name="Code">稳定错误码。</param>
@@ -87,12 +87,12 @@ public sealed record GuidanceFailureViewModel(string Code, string Message, bool 
 /// <summary>表示可安全交给前端读取的 Guidance 会话快照。</summary>
 /// <param name="SessionId">会话标识。</param>
 /// <param name="State">当前会话状态。</param>
-/// <param name="BaseWorldRevision">Guidance 开始时的世界 revision。</param>
+/// <param name="BaseWorldStateId">Guidance 开始时的 World 状态标识。</param>
 /// <param name="Messages">按发生顺序排列的对话消息。</param>
 /// <param name="Proposal">当前可审阅提案；尚未形成时为空。</param>
 /// <param name="Failure">最近一次可恢复失败；未失败时为空。</param>
 /// <param name="RetryMessage">失败后保留的可编辑玩家消息；没有可重试消息时为空。</param>
-public sealed record GuidanceSnapshotViewModel(Guid SessionId, string State, long BaseWorldRevision, IReadOnlyList<GuidanceMessageViewModel> Messages, WorldProposalViewModel? Proposal, GuidanceFailureViewModel? Failure, string? RetryMessage);
+public sealed record GuidanceSnapshotViewModel(Guid SessionId, string State, Guid BaseWorldStateId, IReadOnlyList<GuidanceMessageViewModel> Messages, WorldProposalViewModel? Proposal, GuidanceFailureViewModel? Failure, string? RetryMessage);
 
 /// <summary>表示已被 Host 接管的一次 Guidance 异步操作。</summary>
 /// <param name="OperationId">操作标识。</param>
@@ -114,13 +114,13 @@ public sealed record GuidanceIssueViewModel(string Code, string Message, string?
 
 /// <summary>表示 Guidance 提案提交结果。</summary>
 /// <param name="Status">业务提交状态。</param>
-/// <param name="WorldRevision">成功提交后的世界 revision。</param>
+/// <param name="WorldStateId">成功提交后的 World 状态标识。</param>
 /// <param name="CreatedAnchors">临时 Anchor 到真实 Anchor 的映射。</param>
 /// <param name="Issues">阻止提交或需要处理的问题。</param>
-/// <param name="ExpectedWorldRevision">发生冲突时提案期望的 revision。</param>
-/// <param name="ActualWorldRevision">发生冲突时世界实际的 revision。</param>
+/// <param name="ExpectedWorldStateId">发生冲突时提案期望的 World 状态标识。</param>
+/// <param name="ActualWorldStateId">发生冲突时 World 的实际状态标识。</param>
 /// <param name="Snapshot">提交后的 Guidance 会话快照。</param>
-public sealed record GuidanceCommitViewModel(string Status, long? WorldRevision, IReadOnlyList<CreatedAnchorViewModel> CreatedAnchors, IReadOnlyList<GuidanceIssueViewModel> Issues, long? ExpectedWorldRevision, long? ActualWorldRevision, GuidanceSnapshotViewModel Snapshot);
+public sealed record GuidanceCommitViewModel(string Status, Guid? WorldStateId, IReadOnlyList<CreatedAnchorViewModel> CreatedAnchors, IReadOnlyList<GuidanceIssueViewModel> Issues, Guid? ExpectedWorldStateId, Guid? ActualWorldStateId, GuidanceSnapshotViewModel Snapshot);
 
 /// <summary>表示推送给 Guidance 前端订阅者的实时事件。</summary>
 /// <param name="Type">稳定事件类型。</param>

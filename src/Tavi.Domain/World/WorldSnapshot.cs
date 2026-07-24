@@ -7,7 +7,7 @@ namespace Tavi.Domain.World
     public sealed record WorldSnapshot
     {
         /// <summary>
-        /// 获取或设置世界标识。
+        /// 获取或设置世界状态标识；World 每次完成实际写入后都会生成新值，因此该标识可作为不透明的并发基准，但不表达先后顺序。
         /// </summary>
         public Guid Id { get; set; } = Guid.NewGuid();
 

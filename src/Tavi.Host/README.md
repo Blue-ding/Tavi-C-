@@ -7,12 +7,12 @@
 - Endpoint 只能通过 `WorldRuntime` 访问 `WorldSession`。
 - ViewModel 是稳定的 HTTP/SSE 契约，不直接暴露运行时 `World`。
 - Domain 和 Application 决定操作是否合法，Host 只完成协议解析与结果映射。
-- 当前世界会话由 Host 单例持有，避免丢失 revision、撤销历史和自动保存状态。
+- 当前世界会话由 Host 单例持有，避免丢失状态标识、撤销历史和自动保存状态。
 
 ## 修改约定
 
-- 每一个修改请求都携带 `expectedRevision`。
-- revision 冲突统一返回 HTTP 409，前端随后重新读取完整世界快照。
+- 每一个提交请求都携带 `expectedStateId`；状态标识只判断提案是否仍基于当前完整状态，不表达提交顺序。
+- 状态冲突统一返回 HTTP 409，前端随后重新读取完整世界快照。
 - 多属性更新被组合成一个 `WorldChangeSet`，因此只产生一次提交和一次撤销记录。
 - Relation 的端点和所属范围不可直接更新；结构变化通过删除后重建完成。
 

@@ -54,8 +54,8 @@ public sealed record WorldStagingSnapshot
     /// <summary>获取暂存区 revision；每次追加、删除或消费暂存项后递增。</summary>
     public required long Revision { get; init; }
 
-    /// <summary>获取生成临时投影时真实 World 的 revision。</summary>
-    public required long WorldRevision { get; init; }
+    /// <summary>获取生成临时投影时真实 World 的状态标识。</summary>
+    public required Guid WorldStateId { get; init; }
 
     /// <summary>获取按追加顺序排列的暂存项。</summary>
     public IReadOnlyList<WorldStagedChange> Changes { get; init; } = [];
@@ -141,10 +141,10 @@ internal sealed class WorldStagingArea
         return removed;
     }
 
-    internal WorldStagingSnapshot CreateSnapshot(WorldSnapshot worldSnapshot, long worldRevision)
+    internal WorldStagingSnapshot CreateSnapshot(WorldSnapshot worldSnapshot, Guid worldStateId)
     {
         Evaluation evaluation = Evaluate(worldSnapshot);
-        return new WorldStagingSnapshot { Revision = _revision, WorldRevision = worldRevision, Changes = evaluation.Changes, ProjectedWorld = evaluation.ProjectedWorld };
+        return new WorldStagingSnapshot { Revision = _revision, WorldStateId = worldStateId, Changes = evaluation.Changes, ProjectedWorld = evaluation.ProjectedWorld };
     }
 
     internal (WorldChangeSet ChangeSet, Guid[] ChangeIds) PrepareCommit(IEnumerable<Guid> selectedChangeIds, WorldSnapshot worldSnapshot)

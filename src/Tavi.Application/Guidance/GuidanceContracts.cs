@@ -75,8 +75,8 @@ public sealed record GuidanceSnapshot
     /// <summary>获取 Guidance 会话当前状态。</summary>
     public required GuidanceState State { get; init; }
 
-    /// <summary>获取 Guidance 开始时的 World revision。</summary>
-    public required long BaseWorldRevision { get; init; }
+    /// <summary>获取 Guidance 开始时的 World 状态标识。</summary>
+    public required Guid BaseWorldStateId { get; init; }
 
     /// <summary>获取按发生顺序保存的玩家输入和 Guidance 回复。</summary>
     public IReadOnlyList<GuidanceMessage> Messages { get; init; } = [];
@@ -184,7 +184,7 @@ public enum GuidanceCommitStatus
     /// <summary>玩家的修改选择不满足提案依赖或领域约束。</summary>
     InvalidSelection,
 
-    /// <summary>真实 World 已经偏离提案基于的 revision。</summary>
+    /// <summary>真实 World 已经偏离提案基于的状态。</summary>
     WorldConflict,
 
     /// <summary>会话当前没有可提交的提案。</summary>
@@ -210,8 +210,8 @@ public sealed record GuidanceCommitResult
     /// <summary>获取提交状态。</summary>
     public required GuidanceCommitStatus Status { get; init; }
 
-    /// <summary>获取成功提交后的 World revision；未提交时为 null。</summary>
-    public long? WorldRevision { get; init; }
+    /// <summary>获取成功提交后的 World 状态标识；未提交时为 null。</summary>
+    public Guid? WorldStateId { get; init; }
 
     /// <summary>获取临时 Anchor 标识到真实 World 标识的映射。</summary>
     public IReadOnlyDictionary<ProposalAnchorId, Guid> CreatedAnchorIds { get; init; } = new Dictionary<ProposalAnchorId, Guid>();
@@ -219,11 +219,11 @@ public sealed record GuidanceCommitResult
     /// <summary>获取阻止提交或需要玩家处理的问题。</summary>
     public IReadOnlyList<GuidanceIssue> Issues { get; init; } = [];
 
-    /// <summary>获取提案期望的 World revision；没有 revision 冲突时为 null。</summary>
-    public long? ExpectedWorldRevision { get; init; }
+    /// <summary>获取提案期望的 World 状态标识；没有状态冲突时为 null。</summary>
+    public Guid? ExpectedWorldStateId { get; init; }
 
-    /// <summary>获取提交时实际的 World revision；没有 revision 冲突时为 null。</summary>
-    public long? ActualWorldRevision { get; init; }
+    /// <summary>获取提交时实际的 World 状态标识；没有状态冲突时为 null。</summary>
+    public Guid? ActualWorldStateId { get; init; }
 }
 
 /// <summary>定义从叙事势能生成、继续、审阅并提交 World 提案的 Application 服务。</summary>
@@ -232,7 +232,7 @@ public interface IGuidanceService
     /// <summary>获取唯一且长期稳定的 Guidance Session 标识。</summary>
     Guid Id { get; }
 
-    /// <summary>开始一次绑定当前 World revision 的 Guidance 会话，并立即返回可观察操作。</summary>
+    /// <summary>开始一次绑定当前 World 状态的 Guidance 会话，并立即返回可观察操作。</summary>
     GuidanceOperation Start(NarrativePotential potential, CancellationToken cancellationToken = default);
 
     /// <summary>向可继续的 Guidance 会话追加玩家文本，并立即返回可观察操作。</summary>

@@ -31,9 +31,10 @@ namespace Tavi.Domain.World
         }
 
         /// <summary>
-        /// 获取当前运行时世界版本；每个实际生效的原子操作组提交后递增一次。
+        /// 获取当前世界状态标识；每个实际生效的原子操作组提交后都会替换为新的非空标识。
+        /// 该标识只表示一份完整状态，不表达时间顺序，也不要求调用方保存历史。
         /// </summary>
-        public long Revision { get; private set; }
+        public Guid StateId => _data.Id;
 
         /// <summary>
         /// 创建当前世界图的独立领域快照。
@@ -157,13 +158,13 @@ namespace Tavi.Domain.World
         }
 
         /// <summary>
-        /// 在当前 World 上原地执行操作组。调用方必须持有 WorldSession 写边界；失败时内部回滚，中间状态不改变 revision，也不触发外部事件。
+        /// 在当前 World 上原地执行操作组。调用方必须持有 WorldSession 写边界；失败时内部回滚，中间状态不改变 StateId，也不触发外部事件。
         /// </summary>
         internal WorldApplyResult Apply(WorldChangeSet changeSet)
         {
             ArgumentNullException.ThrowIfNull(changeSet);
             if (changeSet.IsEmpty)
-                return WorldApplyResult.Unchanged(Revision);
+                return WorldApplyResult.Unchanged(StateId);
             var transaction = new WorldTransaction();
             try
             {
@@ -184,10 +185,10 @@ namespace Tavi.Domain.World
             }
 
             if (!transaction.HasChanges)
-                return WorldApplyResult.Unchanged(Revision);
-            long previousRevision = Revision;
-            Revision++;
-            return new WorldApplyResult(previousRevision, Revision, transaction.CreateAppliedChangeSet());
+                return WorldApplyResult.Unchanged(StateId);
+            Guid previousStateId = StateId;
+            _data.Id = Guid.NewGuid();
+            return new WorldApplyResult(previousStateId, StateId, transaction.CreateAppliedChangeSet());
         }
 
         private void ApplyOperation(WorldOperation operation, WorldTransaction transaction)
@@ -778,7 +779,7 @@ namespace Tavi.Domain.World
         );
 
         /// <summary>
-        /// 事务日志只保存精确的内部恢复动作；它不经过领域校验，不触发事件，也不改变 revision。
+        /// 事务日志只保存精确的内部恢复动作；它不经过领域校验，不触发事件，也不改变 StateId。
         /// </summary>
         private sealed class WorldTransaction
         {
@@ -829,9 +830,9 @@ namespace Tavi.Domain.World
         }
     }
 
-    internal sealed record WorldApplyResult(long PreviousRevision, long Revision, AppliedWorldChangeSet? ChangeSet)
+    internal sealed record WorldApplyResult(Guid PreviousStateId, Guid StateId, AppliedWorldChangeSet? ChangeSet)
     {
         internal bool Changed => ChangeSet is not null;
-        internal static WorldApplyResult Unchanged(long revision) => new(revision, revision, null);
+        internal static WorldApplyResult Unchanged(Guid stateId) => new(stateId, stateId, null);
     }
 }

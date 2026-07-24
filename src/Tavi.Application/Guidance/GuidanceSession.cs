@@ -103,20 +103,20 @@ public sealed class GuidanceSession : IGuidanceService
         }
         try
         {
-            WorldStagingCommitResult result = _world.CommitStaged(ids, _world.Revision);
+            WorldStagingCommitResult result = _world.CommitStaged(ids, _world.StateId);
             lock (_sync)
             {
                 string committed = string.Join(", ", result.ConsumedChangeIds);
-                _conversation = _conversation.Append(ModelMessage.System($"玩家已提交暂存项：{committed}。当前 WorldRevision={result.Commit.Revision}。"));
+                _conversation = _conversation.Append(ModelMessage.System($"玩家已提交暂存项：{committed}。当前 WorldStateId={result.Commit.StateId}。"));
                 _latestProposal = null;
                 _failure = null;
                 _state = GuidanceState.Idle;
             }
-            return new GuidanceCommitResult { Status = GuidanceCommitStatus.Committed, WorldRevision = result.Commit.Revision };
+            return new GuidanceCommitResult { Status = GuidanceCommitStatus.Committed, WorldStateId = result.Commit.StateId };
         }
-        catch (WorldRevisionConflictException exception)
+        catch (WorldStateConflictException exception)
         {
-            return new GuidanceCommitResult { Status = GuidanceCommitStatus.WorldConflict, ExpectedWorldRevision = exception.ExpectedRevision, ActualWorldRevision = exception.ActualRevision, Issues = [new GuidanceIssue { Code = "world_revision_conflict", Message = exception.Message }] };
+            return new GuidanceCommitResult { Status = GuidanceCommitStatus.WorldConflict, ExpectedWorldStateId = exception.ExpectedStateId, ActualWorldStateId = exception.ActualStateId, Issues = [new GuidanceIssue { Code = "world_state_conflict", Message = exception.Message }] };
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or WorldException)
         {
@@ -198,7 +198,7 @@ public sealed class GuidanceSession : IGuidanceService
 
     private async Task GenerateAsync(LanguageModelConversation conversation, GuidanceMessage playerMessage, GuidanceOperation operation, CancellationTokenSource linkedSource, WorldStagingSnapshot workspace)
     {
-        var draft = new GuidanceDraft(workspace.WorldRevision, Guid.NewGuid());
+        var draft = new GuidanceDraft(workspace.WorldStateId, Guid.NewGuid());
         Guid modelOperationId = Guid.Empty;
         try
         {
@@ -273,7 +273,7 @@ public sealed class GuidanceSession : IGuidanceService
     {
         SessionId = Id,
         State = _state,
-        BaseWorldRevision = _world.Revision,
+        BaseWorldStateId = _world.StateId,
         Messages = Array.AsReadOnly(_messages.ToArray()),
         Proposal = _latestProposal,
         Failure = _failure,
@@ -284,7 +284,7 @@ public sealed class GuidanceSession : IGuidanceService
     {
         string changes = string.Join(Environment.NewLine, snapshot.Changes.Select(change => $"- {change.Id}: {change.Status}, {string.Join("; ", change.ChangeSet.Operations)}"));
         string world = JsonSerializer.Serialize(snapshot.ProjectedWorld);
-        return $"当前权威状态：WorldRevision={snapshot.WorldRevision}，WorkspaceRevision={snapshot.Revision}。临时 World={world}。暂存项：{Environment.NewLine}{changes}";
+        return $"当前权威状态：WorldStateId={snapshot.WorldStateId}，WorkspaceRevision={snapshot.Revision}。临时 World={world}。暂存项：{Environment.NewLine}{changes}";
     }
 
     private void ClearActive(CancellationTokenSource source)

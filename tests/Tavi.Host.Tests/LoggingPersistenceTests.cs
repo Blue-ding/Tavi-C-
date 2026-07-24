@@ -30,7 +30,7 @@ public sealed class LoggingPersistenceTests
                 WorldGraphViewModel initial = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
                 var configuration = new UpdateOpenAIConfigurationRequest("https://example.test/v1", "test-model", "must-not-leak", "Chat", false, null);
                 await RequireJsonAsync<OpenAIConfigurationViewModel>(await client.PutAsJsonAsync("/api/v1/settings/openai", configuration));
-                HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.Revision, "Place", "", "Location"));
+                HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.StateId, "Place", "", "Location"));
                 Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
                 using JsonDocument problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
                 traceId = problem.RootElement.GetProperty("error").GetProperty("traceId").GetString();
@@ -41,6 +41,7 @@ public sealed class LoggingPersistenceTests
             foreach (string line in persistedLines)
                 using (JsonDocument.Parse(line)) { }
             string persistedLog = string.Join(Environment.NewLine, persistedLines);
+            Assert.Contains("Tavi Host", persistedLog, StringComparison.Ordinal);
             Assert.Contains("TAVI.HOST.REQUEST.INVALID_ARGUMENT", persistedLog, StringComparison.Ordinal);
             Assert.Contains(Assert.IsType<string>(traceId), persistedLog, StringComparison.Ordinal);
             Assert.DoesNotContain("must-not-leak", persistedLog, StringComparison.Ordinal);
@@ -61,7 +62,7 @@ public sealed class LoggingPersistenceTests
             using var factory = new LoggingHostFactory(rootDirectory, "\0");
             using HttpClient client = factory.CreateClient();
             WorldGraphViewModel world = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
-            Assert.NotEqual(Guid.Empty, world.WorldId);
+            Assert.NotEqual(Guid.Empty, world.StateId);
         }
         finally
         {

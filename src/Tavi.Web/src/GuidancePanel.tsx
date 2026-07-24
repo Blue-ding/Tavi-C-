@@ -200,7 +200,7 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
   const generating = snapshot?.state === 'Generating'
   const ready = snapshot?.state === 'Idle' && !!snapshot.proposal
   const terminal = snapshot?.state === 'Faulted'
-  const conflict = snapshot?.proposal && snapshot.proposal.baseWorldRevision !== world.revision
+  const conflict = snapshot?.proposal && snapshot.proposal.baseWorldStateId !== world.stateId
 
   return (
     <aside className="guidance-panel" aria-label="Guidance">
@@ -227,7 +227,7 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
 
       {availability?.available && snapshot && (
         <>
-          <div className="guidance-status"><span className={`guidance-state ${snapshot.state.toLowerCase()}`}>{stateLabel(snapshot.state)}</span><span>基于 rev {snapshot.baseWorldRevision}</span></div>
+          <div className="guidance-status"><span className={`guidance-state ${snapshot.state.toLowerCase()}`}>{stateLabel(snapshot.state)}</span><span title={snapshot.baseWorldStateId}>基于 state {snapshot.baseWorldStateId.slice(0, 8)}</span></div>
           <div className="guidance-scroll">
             <section className="guidance-conversation">
               {snapshot.messages.map((message, index) => <article key={`${index}-${message.role}`} className={`guidance-message ${message.role.toLowerCase()}`}><span>{message.role === 'Player' ? <UserRound size={14} /> : <Sparkles size={14} />}</span><p>{message.text}</p></article>)}
@@ -240,7 +240,7 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
             {snapshot.proposal && (
               <section className="proposal-review">
                 <header><div><span>WORLD PROPOSAL</span><h3>{snapshot.proposal.summary || '世界变化提案'}</h3></div><small>{selectedChanges.size}/{snapshot.proposal.changes.length}</small></header>
-                {conflict && <div className="proposal-conflict">世界已从 rev {snapshot.proposal.baseWorldRevision} 前进到 rev {world.revision}。请重新开始 Guidance，以当前世界生成新提案。</div>}
+                {conflict && <div className="proposal-conflict">World 已不再是该提案所基于的状态。请重新开始 Guidance，以当前 World 生成新提案。</div>}
                 <div className="proposal-changes">
                   {snapshot.proposal.changes.map(change => <ProposalChange key={change.id} change={change} selected={selectedChanges.has(change.id)} world={world} proposedAnchors={proposedAnchors} onToggle={() => toggleChange(change)} />)}
                 </div>

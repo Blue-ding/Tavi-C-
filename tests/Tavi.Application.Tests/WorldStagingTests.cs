@@ -52,7 +52,7 @@ public sealed class WorldStagingTests
         session.Stage(new AddAnchorOperation(second, "Key", "", AnchorType.Item));
         Guid relation = session.Stage(new AddRelationOperation(Guid.NewGuid(), "寻找", "", first, second));
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => session.CommitStaged([relation], session.Revision));
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => session.CommitStaged([relation], session.StateId));
 
         Assert.Contains("依赖", exception.Message, StringComparison.Ordinal);
     }

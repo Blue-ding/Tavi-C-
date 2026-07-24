@@ -79,9 +79,9 @@ public sealed record WorldProposal
     public required Guid Id { get; init; }
 
     /// <summary>
-    /// 获取提案基于的 World revision；提交时必须以此进行乐观并发检查。
+    /// 获取提案基于的 World 状态标识；提交时必须以此进行乐观并发检查。
     /// </summary>
-    public required long BaseWorldRevision { get; init; }
+    public required Guid BaseWorldStateId { get; init; }
 
     /// <summary>
     /// 获取面向玩家的提案摘要。

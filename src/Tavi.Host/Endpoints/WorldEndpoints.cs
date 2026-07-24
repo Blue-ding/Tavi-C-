@@ -64,7 +64,7 @@ internal static class WorldEndpoints
         }, cancellationToken);
     }
 
-    private static Task<WorldStagingResultViewModel> RemoveAnchorAsync(Guid anchorId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveAnchorOperation(anchorId)), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveAnchorAsync(Guid anchorId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveAnchorOperation(anchorId)), cancellationToken);
 
     private static Task<WorldStagingResultViewModel> AddRelationAsync(AddRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
     {
@@ -90,7 +90,7 @@ internal static class WorldEndpoints
         }, cancellationToken);
     }
 
-    private static Task<WorldStagingResultViewModel> RemoveRelationAsync(Guid relationId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveRelationOperation(relationId)), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveRelationAsync(Guid relationId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveRelationOperation(relationId)), cancellationToken);
 
     private static Task<WorldStagingResultViewModel> CreateSubWorldAsync(CreateSubWorldRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
     {
@@ -101,13 +101,13 @@ internal static class WorldEndpoints
         }, cancellationToken);
     }
 
-    private static Task<WorldStagingResultViewModel> RemoveSubWorldAsync(Guid characterId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveSubWorldOperation(characterId)), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveSubWorldAsync(Guid characterId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveSubWorldOperation(characterId)), cancellationToken);
 
     private static Task<WorldCommitViewModel> CommitStagedAsync(CommitStagedRequest request, WorldRuntime runtime, GuidanceRuntime guidance, CancellationToken cancellationToken)
     {
         if (guidance.IsGenerating)
             throw new InvalidOperationException("Guidance 正在生成；请先停止生成，再提交真实 World。");
-        return runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.CommitStaged(request.ChangeIds, request.ExpectedRevision).Commit), cancellationToken);
+        return runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.CommitStaged(request.ChangeIds, request.ExpectedStateId).Commit), cancellationToken);
     }
 
     private static Task<WorldStagingResultViewModel> DeleteStagedAsync(Guid changeId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
@@ -123,16 +123,16 @@ internal static class WorldEndpoints
         return new WorldStagingResultViewModel([], WorldViewModelMapper.ToGraph(session));
     }, cancellationToken);
 
-    private static Task<WorldCommitViewModel> UndoAsync(RevisionRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Undo(request.ExpectedRevision)), cancellationToken);
+    private static Task<WorldCommitViewModel> UndoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Undo(request.ExpectedStateId)), cancellationToken);
 
-    private static Task<WorldCommitViewModel> RedoAsync(RevisionRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Redo(request.ExpectedRevision)), cancellationToken);
+    private static Task<WorldCommitViewModel> RedoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Redo(request.ExpectedStateId)), cancellationToken);
 
     private static Task<SaveWorldViewModel> SaveAsync(WorldRuntime runtime, CancellationToken cancellationToken)
     {
         return runtime.ExecuteAsync(async session =>
         {
             await session.SaveAsync(cancellationToken);
-            return new SaveWorldViewModel(session.Revision, session.IsDirty);
+            return new SaveWorldViewModel(session.StateId, session.IsDirty);
         }, cancellationToken);
     }
 

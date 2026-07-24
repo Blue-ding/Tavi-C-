@@ -10,17 +10,17 @@ internal sealed class GuidanceDraft
     private readonly List<ProposalChange> _changes = [];
     private string _summary = string.Empty;
 
-    internal GuidanceDraft(long baseWorldRevision, Guid proposalId)
+    internal GuidanceDraft(Guid baseWorldStateId, Guid proposalId)
     {
-        if (baseWorldRevision < 0)
-            throw new ArgumentOutOfRangeException(nameof(baseWorldRevision));
+        if (baseWorldStateId == Guid.Empty)
+            throw new ArgumentException("提案基于的 World 状态标识不能为空。", nameof(baseWorldStateId));
         if (proposalId == Guid.Empty)
             throw new ArgumentException("提案标识不能为空。", nameof(proposalId));
-        BaseWorldRevision = baseWorldRevision;
+        BaseWorldStateId = baseWorldStateId;
         ProposalId = proposalId;
     }
 
-    internal long BaseWorldRevision { get; }
+    internal Guid BaseWorldStateId { get; }
     internal Guid ProposalId { get; }
 
     internal void SetSummary(string summary)
@@ -60,7 +60,7 @@ internal sealed class GuidanceDraft
     internal WorldProposal CreateProposal()
     {
         lock (_sync)
-            return new WorldProposal { Id = ProposalId, BaseWorldRevision = BaseWorldRevision, Summary = _summary, Changes = Array.AsReadOnly(_changes.ToArray()) };
+            return new WorldProposal { Id = ProposalId, BaseWorldStateId = BaseWorldStateId, Summary = _summary, Changes = Array.AsReadOnly(_changes.ToArray()) };
     }
 
     private void EnsureKnownReference(ProposalAnchorReference reference)

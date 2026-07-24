@@ -84,9 +84,9 @@ internal static class WorldGuidanceTool
         });
     }
 
-    private static string SerializeMutation(string operation, long revision, object result)
+    private static string SerializeMutation(string operation, Guid stateId, object result)
     {
-        return JsonSerializer.Serialize(new MutationOutput(operation, revision, result), JsonOptions);
+        return JsonSerializer.Serialize(new MutationOutput(operation, stateId, result), JsonOptions);
     }
 
     private static AnchorOutput ToAnchorOutput(Anchor anchor)
@@ -148,7 +148,7 @@ internal static class WorldGuidanceTool
 
     private static WorldCommitResult ApplySingle(WorldSession session, WorldOperation operation)
     {
-        return session.Apply(WorldOperations.Single(operation), session.Revision);
+        return session.Apply(WorldOperations.Single(operation), session.StateId);
     }
 
     private static ScopedRelation GetScopedRelation(WorldSession session, Guid relationId, Guid? domainId)
@@ -405,7 +405,7 @@ internal static class WorldGuidanceTool
             {
                 AddAnchorOperation operation = WorldOperations.AddAnchor(arguments.Name, arguments.Description, arguments.Type);
                 WorldCommitResult commit = ApplySingle(session, operation);
-                return SerializeMutation(name, commit.Revision, ToAnchorOutput(session.Queries.GetAnchor(operation.AnchorId)));
+                return SerializeMutation(name, commit.StateId, ToAnchorOutput(session.Queries.GetAnchor(operation.AnchorId)));
             }));
         }
     }
@@ -428,7 +428,7 @@ internal static class WorldGuidanceTool
             {
                 Anchor anchor = session.Queries.RequireSingleAnchor(arguments.Name);
                 WorldCommitResult commit = ApplySingle(session, new RemoveAnchorOperation(anchor.Id));
-                return SerializeMutation(name, commit.Revision, new RemovedOutput("Anchor", anchor.Name));
+                return SerializeMutation(name, commit.StateId, new RemovedOutput("Anchor", anchor.Name));
             }));
         }
     }
@@ -454,7 +454,7 @@ internal static class WorldGuidanceTool
             {
                 Anchor anchor = session.Queries.RequireSingleAnchor(arguments.CurrentName);
                 WorldCommitResult commit = ApplySingle(session, new UpdateAnchorNameOperation(anchor.Id, arguments.NewName));
-                return SerializeMutation(name, commit.Revision, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
+                return SerializeMutation(name, commit.StateId, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
             }));
         }
     }
@@ -480,7 +480,7 @@ internal static class WorldGuidanceTool
             {
                 Anchor anchor = session.Queries.RequireSingleAnchor(arguments.Name);
                 WorldCommitResult commit = ApplySingle(session, new UpdateAnchorDescriptionOperation(anchor.Id, arguments.Description));
-                return SerializeMutation(name, commit.Revision, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
+                return SerializeMutation(name, commit.StateId, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
             }));
         }
     }
@@ -506,7 +506,7 @@ internal static class WorldGuidanceTool
             {
                 Anchor anchor = session.Queries.RequireSingleAnchor(arguments.Name);
                 WorldCommitResult commit = ApplySingle(session, new UpdateAnchorTypeOperation(anchor.Id, arguments.Type));
-                return SerializeMutation(name, commit.Revision, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
+                return SerializeMutation(name, commit.StateId, ToAnchorOutput(session.Queries.GetAnchor(anchor.Id)));
             }));
         }
     }
@@ -547,7 +547,7 @@ internal static class WorldGuidanceTool
                 Guid? domainId = ResolveDomainId(session, arguments.Scope, arguments.CharacterName);
                 AddRelationOperation operation = WorldOperations.AddRelation(arguments.Name, arguments.Description, source.Id, target.Id, domainId);
                 WorldCommitResult commit = ApplySingle(session, operation);
-                return SerializeMutation(name, commit.Revision, ToRelationOutput(GetScopedRelation(session, operation.RelationId, domainId)));
+                return SerializeMutation(name, commit.StateId, ToRelationOutput(GetScopedRelation(session, operation.RelationId, domainId)));
             }));
         }
     }
@@ -582,7 +582,7 @@ internal static class WorldGuidanceTool
             {
                 ScopedRelation selected = session.Queries.RequireSingleRelation(arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
                 WorldCommitResult commit = ApplySingle(session, new RemoveRelationOperation(selected.Relation.Id));
-                return SerializeMutation(name, commit.Revision, new RemovedOutput("Relation", selected.Relation.Name));
+                return SerializeMutation(name, commit.StateId, new RemovedOutput("Relation", selected.Relation.Name));
             }));
         }
     }
@@ -606,7 +606,7 @@ internal static class WorldGuidanceTool
                 ScopedRelation selected = session.Queries.RequireSingleRelation(arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
                 WorldCommitResult commit = ApplySingle(session, new UpdateRelationNameOperation(selected.Relation.Id, arguments.NewName));
                 Guid? domainId = selected.Domain?.Id;
-                return SerializeMutation(name, commit.Revision, ToRelationOutput(GetScopedRelation(session, selected.Relation.Id, domainId)));
+                return SerializeMutation(name, commit.StateId, ToRelationOutput(GetScopedRelation(session, selected.Relation.Id, domainId)));
             }));
         }
     }
@@ -630,7 +630,7 @@ internal static class WorldGuidanceTool
                 ScopedRelation selected = session.Queries.RequireSingleRelation(arguments.Name, arguments.SourceAnchorName, arguments.TargetAnchorName, RequireWriteScope(arguments.Scope), arguments.CharacterName);
                 WorldCommitResult commit = ApplySingle(session, new UpdateRelationDescriptionOperation(selected.Relation.Id, arguments.Description));
                 Guid? domainId = selected.Domain?.Id;
-                return SerializeMutation(name, commit.Revision, ToRelationOutput(GetScopedRelation(session, selected.Relation.Id, domainId)));
+                return SerializeMutation(name, commit.StateId, ToRelationOutput(GetScopedRelation(session, selected.Relation.Id, domainId)));
             }));
         }
     }
@@ -653,7 +653,7 @@ internal static class WorldGuidanceTool
             {
                 Anchor character = RequireCharacter(session, arguments.CharacterName);
                 WorldCommitResult commit = ApplySingle(session, WorldOperations.CreateSubWorld(character.Id));
-                return SerializeMutation(name, commit.Revision, new SubWorldOutput(character.Name));
+                return SerializeMutation(name, commit.StateId, new SubWorldOutput(character.Name));
             }));
         }
     }
@@ -670,7 +670,7 @@ internal static class WorldGuidanceTool
             {
                 Anchor character = RequireCharacter(session, arguments.CharacterName);
                 WorldCommitResult commit = ApplySingle(session, new RemoveSubWorldOperation(character.Id));
-                return SerializeMutation(name, commit.Revision, new RemovedOutput("SubWorld", character.Name));
+                return SerializeMutation(name, commit.StateId, new RemovedOutput("SubWorld", character.Name));
             }));
         }
     }
@@ -688,7 +688,7 @@ internal static class WorldGuidanceTool
     private sealed record RelationOutput(string Name, string Description, AnchorOutput Source, AnchorOutput Target, object Scope);
     private sealed record QueryResult<T>(int Total, int Returned, bool Truncated, IReadOnlyList<T> Items);
     private sealed record ComparisonOutput(QueryResult<RelationOutput> World, QueryResult<RelationOutput> SubWorld);
-    private sealed record MutationOutput(string Operation, long Revision, object Result);
+    private sealed record MutationOutput(string Operation, Guid StateId, object Result);
     private sealed record RemovedOutput(string Type, string Name);
     private sealed record SubWorldOutput(string CharacterName);
 }

@@ -25,8 +25,7 @@ export interface SubWorldViewModel {
 }
 
 export interface WorldGraphViewModel {
-  worldId: string
-  revision: number
+  stateId: string
   stagingRevision: number
   isDirty: boolean
   canUndo: boolean
@@ -49,8 +48,8 @@ export interface WorldStagedChangeViewModel {
 
 export interface WorldCommitViewModel {
   commitId: string
-  previousRevision: number
-  revision: number
+  previousStateId: string
+  stateId: string
   changed: boolean
   entityId: string | null
 }
@@ -147,7 +146,7 @@ export type ProposalChangeViewModel = ProposeAddAnchorViewModel | ProposeAddRela
 
 export interface WorldProposalViewModel {
   id: string
-  baseWorldRevision: number
+  baseWorldStateId: string
   summary: string
   changes: ProposalChangeViewModel[]
 }
@@ -155,7 +154,7 @@ export interface WorldProposalViewModel {
 export interface GuidanceSnapshotViewModel {
   sessionId: string
   state: GuidanceState
-  baseWorldRevision: number
+  baseWorldStateId: string
   messages: GuidanceMessageViewModel[]
   proposal: WorldProposalViewModel | null
   failure: { code: string; message: string; isTransient: boolean } | null
@@ -171,11 +170,11 @@ export interface GuidanceOperationViewModel {
 
 export interface GuidanceCommitViewModel {
   status: 'Committed' | 'InvalidSelection' | 'WorldConflict' | 'SessionNotReady'
-  worldRevision: number | null
+  worldStateId: string | null
   createdAnchors: { proposalAnchorId: string; worldAnchorId: string }[]
   issues: { code: string; message: string; changeId: string | null }[]
-  expectedWorldRevision: number | null
-  actualWorldRevision: number | null
+  expectedWorldStateId: string | null
+  actualWorldStateId: string | null
   snapshot: GuidanceSnapshotViewModel
 }
 

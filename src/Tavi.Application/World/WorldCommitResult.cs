@@ -5,21 +5,17 @@ namespace Tavi.Application.World;
 /// <summary>定义遵循 <c>TAVI.&lt;AREA&gt;.&lt;SUBJECT&gt;.&lt;REASON&gt;</c> 约定的 WorldSession 稳定错误码。</summary>
 public static class WorldSessionErrorCodes
 {
-    /// <summary>提交时的期望 revision 与当前 World revision 不一致。</summary>
-    public const string RevisionConflict = "TAVI.WORLD.REVISION.CONFLICT";
+    /// <summary>提交所基于的状态标识与当前 World 状态标识不一致。</summary>
+    public const string StateConflict = "TAVI.WORLD.STATE.CONFLICT";
 }
 
-/// <summary>
-/// 表示 WorldSession 的一次原子提交结果。
-/// </summary>
-public sealed record WorldCommitResult(Guid CommitId, long PreviousRevision, long Revision, AppliedWorldChangeSet? ChangeSet)
+/// <summary>表示 WorldSession 的一次原子提交结果；状态标识只用于识别提交前后的完整状态，不表达顺序。</summary>
+public sealed record WorldCommitResult(Guid CommitId, Guid PreviousStateId, Guid StateId, AppliedWorldChangeSet? ChangeSet)
 {
-    /// <summary>
-    /// 获取操作组是否产生了实际修改。
-    /// </summary>
+    /// <summary>获取操作组是否产生了实际修改。</summary>
     public bool Changed => ChangeSet is not null;
 
-    internal static WorldCommitResult Unchanged(long revision) => new(Guid.Empty, revision, revision, null);
+    internal static WorldCommitResult Unchanged(Guid stateId) => new(Guid.Empty, stateId, stateId, null);
 }
 
 /// <summary>
@@ -32,36 +28,30 @@ public enum WorldSessionOperation
     Redo
 }
 
-/// <summary>
-/// 表示提交时的 expectedRevision 与当前 World revision 不一致。
-/// </summary>
-public sealed class WorldRevisionConflictException : TaviException
+/// <summary>表示提交所基于的状态标识与当前 World 状态标识不一致。</summary>
+public sealed class WorldStateConflictException : TaviException
 {
-    internal WorldRevisionConflictException(long expectedRevision, long actualRevision)
+    internal WorldStateConflictException(Guid expectedStateId, Guid actualStateId)
         : base(
-            WorldSessionErrorCodes.RevisionConflict,
+            WorldSessionErrorCodes.StateConflict,
             TaviErrorCategory.Conflict,
-            $"World revision 冲突：期望 {expectedRevision}，实际 {actualRevision}。",
+            $"World 状态冲突：期望 {expectedStateId}，实际 {actualStateId}。",
             "Commit",
             details: new Dictionary<string, string>
             {
-                [nameof(ExpectedRevision)] = expectedRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                [nameof(ActualRevision)] = actualRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                [nameof(ExpectedStateId)] = expectedStateId.ToString(),
+                [nameof(ActualStateId)] = actualStateId.ToString()
             })
     {
-        ExpectedRevision = expectedRevision;
-        ActualRevision = actualRevision;
+        ExpectedStateId = expectedStateId;
+        ActualStateId = actualStateId;
     }
 
-    /// <summary>
-    /// 获取调用方提交时使用的 revision。
-    /// </summary>
-    public long ExpectedRevision { get; }
+    /// <summary>获取调用方提交时使用的 World 状态标识。</summary>
+    public Guid ExpectedStateId { get; }
 
-    /// <summary>
-    /// 获取提交时 World 的实际 revision。
-    /// </summary>
-    public long ActualRevision { get; }
+    /// <summary>获取提交时 World 的实际状态标识。</summary>
+    public Guid ActualStateId { get; }
 }
 
 /// <summary>

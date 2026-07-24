@@ -97,13 +97,13 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     private void OnWorldChanged(object? sender, WorldSessionChangedEventArgs eventArgs)
     {
         WorldSession session = RequireSession();
-        _events.Publish(new WorldEventViewModel("world.changed", eventArgs.Revision, session.IsDirty, eventArgs.CommitId, eventArgs.Operation.ToString(), null));
+        _events.Publish(new WorldEventViewModel("world.changed", eventArgs.StateId, session.IsDirty, eventArgs.CommitId, eventArgs.Operation.ToString(), null));
     }
 
     private void OnWorldStateChanged(object? sender, WorldSessionStateChangedEventArgs eventArgs)
     {
-        long revision = _session?.Revision ?? 0;
-        _events.Publish(new WorldEventViewModel($"world.{ToKebabCase(eventArgs.Change.ToString())}", revision, eventArgs.IsDirty, null, null, eventArgs.Exception?.Message));
+        Guid stateId = _session?.StateId ?? Guid.Empty;
+        _events.Publish(new WorldEventViewModel($"world.{ToKebabCase(eventArgs.Change.ToString())}", stateId, eventArgs.IsDirty, null, null, eventArgs.Exception?.Message));
     }
 
     private WorldSession RequireSession() => _session ?? throw new InvalidOperationException("世界运行时尚未初始化。");

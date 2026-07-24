@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting;
 using Serilog;
@@ -89,6 +90,7 @@ public static class TaviHost
 
     public static async Task RunAsync(string[] args)
     {
+        Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         WebApplication? app = null;
         try
         {

@@ -1,3 +1,4 @@
+using System.Text;
 using Tavi.Application.LanguageModel;
 using Tavi.Application.Logging;
 using Tavi.Application.World;
@@ -10,6 +11,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
+        Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         using var cancellationSource = new CancellationTokenSource();
         Console.CancelKeyPress += (_, eventArgs) =>
         {
@@ -40,7 +42,7 @@ internal static class Program
                 logger,
                 cancellationSource.Token);
             await session.InitializeAsync(cancellationSource.Token);
-            Console.WriteLine($"Tavi CLI：已加载世界 {session.Queries.CreateSnapshot().Id}。");
+            Console.WriteLine($"Tavi CLI：已加载 World 状态 {session.StateId}。");
             Console.WriteLine(languageModels is null
                 ? $"语言模型未配置；添加 {openAIConfigurationStore.Path} 后启用。"
                 : $"语言模型已就绪：{languageModels.Capabilities.Provider}。");

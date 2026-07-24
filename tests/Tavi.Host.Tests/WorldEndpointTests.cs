@@ -19,29 +19,30 @@ public sealed class WorldEndpointTests
         using HttpClient client = factory.CreateClient();
         WorldGraphViewModel initial = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
         Assert.Empty(initial.Nodes);
-        HttpResponseMessage addResponse = await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.Revision, "Alice", "旅行者", "Character"));
+        HttpResponseMessage addResponse = await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.StateId, "Alice", "旅行者", "Character"));
         WorldStagingResultViewModel staged = await RequireJsonAsync<WorldStagingResultViewModel>(addResponse);
-        WorldCommitViewModel commit = await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(initial.Revision, staged.AffectedChangeIds)));
+        WorldCommitViewModel commit = await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(initial.StateId, staged.AffectedChangeIds)));
         WorldGraphViewModel updated = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
         Assert.True(commit.Changed);
-        Assert.Equal(commit.Revision, updated.Revision);
+        Assert.NotEqual(commit.PreviousStateId, commit.StateId);
+        Assert.Equal(commit.StateId, updated.StateId);
         Assert.Collection(updated.Nodes, anchor => Assert.Equal("Alice", anchor.Name));
     }
 
-    /// <summary>验证过期 revision 被转换为稳定的 HTTP 409 错误。</summary>
+    /// <summary>验证过期 World 状态标识被转换为稳定的 HTTP 409 错误。</summary>
     [Fact]
-    public async Task RevisionConflictUsesStableProblemResponse()
+    public async Task StateConflictUsesStableProblemResponse()
     {
         using var factory = new TaviHostFactory();
         using HttpClient client = factory.CreateClient();
         WorldGraphViewModel initial = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
-        WorldStagingResultViewModel first = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.Revision, "Alice", "", "Character")));
-        await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(initial.Revision, first.AffectedChangeIds)));
-        WorldStagingResultViewModel second = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.Revision, "Key", "", "Item")));
-        HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(initial.Revision, second.AffectedChangeIds));
+        WorldStagingResultViewModel first = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.StateId, "Alice", "", "Character")));
+        await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(initial.StateId, first.AffectedChangeIds)));
+        WorldStagingResultViewModel second = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.StateId, "Key", "", "Item")));
+        HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(initial.StateId, second.AffectedChangeIds));
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         string content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("TAVI.WORLD.REVISION.CONFLICT", content, StringComparison.Ordinal);
+        Assert.Contains("TAVI.WORLD.STATE.CONFLICT", content, StringComparison.Ordinal);
     }
 
     /// <summary>验证非 Tavi 参数异常同样由全局异常边界处理。</summary>
@@ -51,7 +52,7 @@ public sealed class WorldEndpointTests
         using var factory = new TaviHostFactory();
         using HttpClient client = factory.CreateClient();
         WorldGraphViewModel initial = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
-        HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.Revision, "Place", "", "Location"));
+        HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(initial.StateId, "Place", "", "Location"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         string content = await response.Content.ReadAsStringAsync();
         Assert.Contains("TAVI.HOST.REQUEST.INVALID_ARGUMENT", content, StringComparison.Ordinal);
@@ -64,18 +65,18 @@ public sealed class WorldEndpointTests
         using var factory = new TaviHostFactory();
         using HttpClient client = factory.CreateClient();
         WorldGraphViewModel graph = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
-        WorldStagingResultViewModel characterStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(graph.Revision, "Alice", "", "Character")));
+        WorldStagingResultViewModel characterStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(graph.StateId, "Alice", "", "Character")));
         Guid characterId = characterStage.World.Nodes.Single().Id;
-        WorldStagingResultViewModel itemStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(graph.Revision, "Key", "", "Item")));
+        WorldStagingResultViewModel itemStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/anchors", new AddAnchorRequest(graph.StateId, "Key", "", "Item")));
         Guid itemId = itemStage.World.Nodes.Single(node => node.Name == "Key").Id;
-        WorldStagingResultViewModel subWorldStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/subworlds", new CreateSubWorldRequest(graph.Revision, characterId)));
-        var relationRequest = new AddRelationRequest(graph.Revision, "寻找", "", characterId, itemId, characterId);
+        WorldStagingResultViewModel subWorldStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/subworlds", new CreateSubWorldRequest(graph.StateId, characterId)));
+        var relationRequest = new AddRelationRequest(graph.StateId, "寻找", "", characterId, itemId, characterId);
         WorldStagingResultViewModel relationStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/relations", relationRequest));
         Guid[] allChanges = relationStage.World.StagedChanges.Where(change => change.Status == "Valid").Select(change => change.Id).ToArray();
-        WorldCommitViewModel relation = await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(graph.Revision, allChanges)));
+        WorldCommitViewModel relation = await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(graph.StateId, allChanges)));
         WorldGraphViewModel withRelation = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
         Assert.Collection(withRelation.Edges, edge => Assert.Equal(characterId, edge.DomainCharacterId));
-        await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/undo", new RevisionRequest(relation.Revision)));
+        await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/undo", new WorldStateRequest(relation.StateId)));
         WorldGraphViewModel undone = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
         Assert.Empty(undone.Edges);
         Assert.True(undone.CanRedo);

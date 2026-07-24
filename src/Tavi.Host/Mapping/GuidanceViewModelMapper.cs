@@ -9,7 +9,7 @@ internal static class GuidanceViewModelMapper
     {
         GuidanceMessageViewModel[] messages = snapshot.Messages.Select(message => new GuidanceMessageViewModel(message.Role.ToString(), message.Text)).ToArray();
         GuidanceFailureViewModel? failure = snapshot.Failure is null ? null : new GuidanceFailureViewModel(snapshot.Failure.ErrorCode, snapshot.Failure.Message, snapshot.Failure.IsTransient);
-        return new GuidanceSnapshotViewModel(snapshot.SessionId, snapshot.State.ToString(), snapshot.BaseWorldRevision, messages, snapshot.Proposal is null ? null : ToProposal(snapshot.Proposal), failure, snapshot.RetryMessage);
+        return new GuidanceSnapshotViewModel(snapshot.SessionId, snapshot.State.ToString(), snapshot.BaseWorldStateId, messages, snapshot.Proposal is null ? null : ToProposal(snapshot.Proposal), failure, snapshot.RetryMessage);
     }
 
     internal static GuidanceOperationViewModel ToOperation(GuidanceOperation operation, GuidanceSnapshot snapshot) => new(operation.Id, operation.SessionId, operation.State.ToString(), ToSnapshot(snapshot));
@@ -18,10 +18,10 @@ internal static class GuidanceViewModelMapper
     {
         CreatedAnchorViewModel[] anchors = result.CreatedAnchorIds.Select(pair => new CreatedAnchorViewModel(pair.Key.Value, pair.Value)).ToArray();
         GuidanceIssueViewModel[] issues = result.Issues.Select(issue => new GuidanceIssueViewModel(issue.Code, issue.Message, issue.ChangeId)).ToArray();
-        return new GuidanceCommitViewModel(result.Status.ToString(), result.WorldRevision, anchors, issues, result.ExpectedWorldRevision, result.ActualWorldRevision, ToSnapshot(snapshot));
+        return new GuidanceCommitViewModel(result.Status.ToString(), result.WorldStateId, anchors, issues, result.ExpectedWorldStateId, result.ActualWorldStateId, ToSnapshot(snapshot));
     }
 
-    private static WorldProposalViewModel ToProposal(WorldProposal proposal) => new(proposal.Id, proposal.BaseWorldRevision, proposal.Summary, proposal.Changes.Select(ToChange).ToArray());
+    private static WorldProposalViewModel ToProposal(WorldProposal proposal) => new(proposal.Id, proposal.BaseWorldStateId, proposal.Summary, proposal.Changes.Select(ToChange).ToArray());
 
     private static ProposalChangeViewModel ToChange(ProposalChange change)
     {

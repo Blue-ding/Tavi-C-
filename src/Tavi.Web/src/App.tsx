@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, Handle, MiniMap, Position, ReactFlow, getBezierPath, useNodesState, type Edge, type EdgeProps, type Node, type NodeChange, type NodePositionChange, type NodeProps } from '@xyflow/react'
+import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, Handle, MarkerType, MiniMap, Position, ReactFlow, getStraightPath, useNodesState, type Edge, type EdgeProps, type Node, type NodeChange, type NodePositionChange, type NodeProps } from '@xyflow/react'
 import { Archive, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
 import { ApiError, settingsApi, worldApi } from './api'
 import { GuidancePanel } from './GuidancePanel'
@@ -8,7 +8,7 @@ import type { AnchorType, AnchorViewModel, FeaturePolicy, LanguageModelSettingsV
 type ScopeFilter = 'all' | 'world' | string
 type Dialog = 'anchor' | 'relation' | null
 
-const emptyWorld: WorldGraphViewModel = { worldId: '', revision: 0, stagingRevision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', nodes: [], edges: [], subWorlds: [], stagedChanges: [] }
+const emptyWorld: WorldGraphViewModel = { stateId: '', stagingRevision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', nodes: [], edges: [], subWorlds: [], stagedChanges: [] }
 
 interface RelationshipBundleData extends Record<string, unknown> {
   relations: RelationViewModel[]
@@ -32,12 +32,20 @@ function layoutPosition(index: number, total: number) {
   return { x: (index % columns) * 250, y: Math.floor(index / columns) * 170 }
 }
 
-function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected }: EdgeProps<RelationshipBundleEdge>) {
+function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, markerStart, markerEnd, data, selected }: EdgeProps<RelationshipBundleEdge>) {
   const [hovered, setHovered] = useState(false)
   const closeTimer = useRef<number | null>(null)
-  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: .18 })
   const relations = data?.relations ?? []
   const containsSubWorldRelation = relations.some(relation => relation.scope !== 'World')
+  const distance = Math.hypot(targetX - sourceX, targetY - sourceY)
+  const direction = distance > 0 ? { x: (targetX - sourceX) / distance, y: (targetY - sourceY) / distance } : { x: 0, y: 0 }
+  const endpointInset = Math.min(17, distance / 3)
+  const [path, labelX, labelY] = getStraightPath({
+    sourceX: sourceX + direction.x * endpointInset,
+    sourceY: sourceY + direction.y * endpointInset,
+    targetX: targetX - direction.x * endpointInset,
+    targetY: targetY - direction.y * endpointInset,
+  })
 
   const openTooltip = () => {
     if (!data?.tooltipsEnabled)
@@ -78,6 +86,8 @@ function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, sourcePosi
           path={path}
           interactionWidth={30}
           className={`${containsSubWorldRelation ? 'subworld' : 'world'}${selected ? ' selected' : ''}`}
+          markerStart={markerStart}
+          markerEnd={markerEnd}
         />
       </g>
       <EdgeLabelRenderer>
@@ -115,14 +125,14 @@ function AnchorNode({ data, selected }: NodeProps<AnchorFlowNode>) {
   const { anchor } = data
   return (
     <div className={`anchor-node-core ${anchor.type.toLowerCase()}${selected ? ' selected' : ''}`}>
-      <Handle className="anchor-handle" type="target" position={Position.Left} />
+      <Handle className="anchor-handle anchor-handle-center" type="target" position={Position.Left} />
       <span className="anchor-node-dot" />
       <div className="anchor-node-tooltip">
         <header><strong>{anchor.name}</strong><span>{anchor.type === 'Character' ? '角色' : '物品'}</span></header>
         <p>{anchor.description || '暂无描述'}</p>
         {anchor.hasSubWorld && <small><GitBranch size={11} />拥有认知世界</small>}
       </div>
-      <Handle className="anchor-handle" type="source" position={Position.Right} />
+      <Handle className="anchor-handle anchor-handle-center" type="source" position={Position.Right} />
     </div>
   )
 }
@@ -159,9 +169,7 @@ function App() {
       if (sequence !== refreshSequence.current)
         return
       setWorld(current => {
-        if (nextWorld.revision < current.revision)
-          return current
-        if (current.worldId === nextWorld.worldId && nextWorld.revision === current.revision && !current.isDirty && nextWorld.isDirty)
+        if (current.stateId === nextWorld.stateId && !current.isDirty && nextWorld.isDirty)
           return { ...nextWorld, isDirty: false }
         return nextWorld
       })
@@ -192,7 +200,7 @@ function App() {
       const state = parseWorldEvent(event.data)
       if (!state)
         return
-      setWorld(current => state.revision < current.revision ? current : { ...current, revision: state.revision, isDirty: state.isDirty })
+      setWorld(current => state.stateId === current.stateId ? { ...current, isDirty: state.isDirty } : current)
       if (state.error)
         setError(state.error)
     }
@@ -255,14 +263,22 @@ function App() {
     })
     const nodeNames = Object.fromEntries(world.nodes.map(anchor => [anchor.id, anchor.name]))
     const selectedRelationId = selection?.kind === 'relation' ? selection.id : null
-    return [...bundles.entries()].map(([key, relations]) => ({
-      id: `relationship-bundle:${key}`,
-      source: relations[0].sourceId,
-      target: relations[0].targetId,
-      type: 'relationshipBundle',
-      selected: relations.some(relation => relation.id === selectedRelationId),
-      data: { relations, nodeNames, selectedRelationId, tooltipsEnabled: !tooltipsSuppressed, onSelect: selectRelation },
-    }))
+    return [...bundles.entries()].map(([key, relations]) => {
+      const [source, target] = [relations[0].sourceId, relations[0].targetId].sort()
+      const hasForwardRelation = relations.some(relation => relation.sourceId === source && relation.targetId === target)
+      const hasReverseRelation = relations.some(relation => relation.sourceId === target && relation.targetId === source)
+      const markerColor = relations.some(relation => relation.scope !== 'World') ? '#bd9550' : '#74857f'
+      return {
+        id: `relationship-bundle:${key}`,
+        source,
+        target,
+        type: 'relationshipBundle',
+        selected: relations.some(relation => relation.id === selectedRelationId),
+        markerStart: hasReverseRelation ? { type: MarkerType.ArrowClosed, color: markerColor, width: 14, height: 14 } : undefined,
+        markerEnd: hasForwardRelation ? { type: MarkerType.ArrowClosed, color: markerColor, width: 14, height: 14 } : undefined,
+        data: { relations, nodeNames, selectedRelationId, tooltipsEnabled: !tooltipsSuppressed, onSelect: selectRelation },
+      }
+    })
   }, [selectRelation, selection, tooltipsSuppressed, visibleAnchorIds, visibleRelations, world.nodes])
 
   const selectedAnchor = selection?.kind === 'anchor' ? world.nodes.find(anchor => anchor.id === selection.id) ?? null : null
@@ -403,13 +419,13 @@ function App() {
           </button>
           <IconButton label="设置" onClick={() => setShowSettings(true)}><Settings size={17} /></IconButton>
           <div className="toolbar-divider" />
-          <IconButton label="撤销" disabled={!world.canUndo || working} onClick={() => void perform(() => worldApi.undo(world.revision))}><Undo2 size={17} /></IconButton>
-          <IconButton label="重做" disabled={!world.canRedo || working} onClick={() => void perform(() => worldApi.redo(world.revision))}><Redo2 size={17} /></IconButton>
+          <IconButton label="撤销" disabled={!world.canUndo || working} onClick={() => void perform(() => worldApi.undo(world.stateId))}><Undo2 size={17} /></IconButton>
+          <IconButton label="重做" disabled={!world.canRedo || working} onClick={() => void perform(() => worldApi.redo(world.stateId))}><Redo2 size={17} /></IconButton>
           <button className="save-button" disabled={working} onClick={() => void perform(worldApi.save)}>
             {working ? <LoaderCircle className="spin" size={15} /> : world.isDirty ? <CloudOff size={15} /> : <Cloud size={15} />}
             {statusLabel}
           </button>
-          <span className="revision">rev {world.revision}</span>
+          <span className="revision" title={world.stateId}>state {world.stateId.slice(0, 8)}</span>
         </div>
       </header>
 
@@ -454,7 +470,7 @@ function App() {
       </section>
 
       {error && <div className="error-toast" role="alert"><span>{error}</span><button aria-label="关闭错误提示" onClick={() => setError(null)}><X size={16} /></button></div>}
-      {dialog === 'anchor' && <AnchorDialog revision={world.revision} working={working} close={() => setDialog(null)} submit={perform} />}
+      {dialog === 'anchor' && <AnchorDialog stateId={world.stateId} working={working} close={() => setDialog(null)} submit={perform} />}
       {dialog === 'relation' && <RelationDialog world={world} working={working} close={() => setDialog(null)} submit={perform} />}
       <GuidancePanel open={showGuidance} world={world} onClose={() => setShowGuidance(false)} onWorldChanged={() => refresh(true)} onError={setError} />
       {showSettings && <SettingsDialog close={closeSettings} onError={setError} />}
@@ -490,7 +506,7 @@ function StagingDialog({ world, working, close, perform }: { world: WorldGraphVi
         </div>
         <footer className="staging-actions">
           <button className="secondary-action" disabled={working || !invalidChanges.length} onClick={() => void perform(worldApi.deleteInvalidStaged)}><Trash2 size={15} />清理无效项</button>
-          <button className="primary-action" disabled={working || !validChanges.length} onClick={() => void perform(() => worldApi.commitStaged(world.revision, validChanges.map(change => change.id)))}>{working ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}提交 {validChanges.length} 项有效修改</button>
+          <button className="primary-action" disabled={working || !validChanges.length} onClick={() => void perform(() => worldApi.commitStaged(world.stateId, validChanges.map(change => change.id)))}>{working ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}提交 {validChanges.length} 项有效修改</button>
         </footer>
       </section>
     </div>
@@ -627,7 +643,7 @@ function AnchorInspector({ anchor, world, working, perform, onRemoved }: { ancho
     if (name !== anchor.name) changes.name = name
     if (description !== anchor.description) changes.description = description
     if (type !== anchor.type) changes.type = type
-    await perform(() => worldApi.updateAnchor(anchor.id, world.revision, changes))
+    await perform(() => worldApi.updateAnchor(anchor.id, world.stateId, changes))
   }
 
   async function remove() {
@@ -635,12 +651,12 @@ function AnchorInspector({ anchor, world, working, perform, onRemoved }: { ancho
     const detail = impact ? `，并级联删除 ${impact} 条相连关系` : ''
     if (!window.confirm(`确定删除“${anchor.name}”${detail}吗？此操作可通过撤销恢复。`))
       return
-    if (await perform(() => worldApi.removeAnchor(anchor.id, world.revision)))
+    if (await perform(() => worldApi.removeAnchor(anchor.id, world.stateId)))
       onRemoved()
   }
 
   async function toggleSubWorld() {
-    const action = anchor.hasSubWorld ? () => worldApi.removeSubWorld(world.revision, anchor.id) : () => worldApi.createSubWorld(world.revision, anchor.id)
+    const action = anchor.hasSubWorld ? () => worldApi.removeSubWorld(world.stateId, anchor.id) : () => worldApi.createSubWorld(world.stateId, anchor.id)
     await perform(action)
   }
 
@@ -673,13 +689,13 @@ function RelationInspector({ relation, world, working, perform, onRemoved }: { r
     const changes: { name?: string; description?: string } = {}
     if (name !== relation.name) changes.name = name
     if (description !== relation.description) changes.description = description
-    await perform(() => worldApi.updateRelation(relation.id, world.revision, changes))
+    await perform(() => worldApi.updateRelation(relation.id, world.stateId, changes))
   }
 
   async function remove() {
     if (!window.confirm(`确定删除关系“${relation.name}”吗？此操作可通过撤销恢复。`))
       return
-    if (await perform(() => worldApi.removeRelation(relation.id, world.revision)))
+    if (await perform(() => worldApi.removeRelation(relation.id, world.stateId)))
       onRemoved()
   }
 
@@ -698,13 +714,13 @@ function RelationInspector({ relation, world, working, perform, onRemoved }: { r
   )
 }
 
-function AnchorDialog({ revision, working, close, submit }: { revision: number; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
+function AnchorDialog({ stateId, working, close, submit }: { stateId: string; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [type, setType] = useState<AnchorType>('Character')
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (await submit(() => worldApi.addAnchor(revision, name, description, type)))
+    if (await submit(() => worldApi.addAnchor(stateId, name, description, type)))
       close()
   }
   return <Modal title="添加世界要素" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} placeholder="例如：旅行者" /></label><label>类型<select value={type} onChange={event => setType(event.target.value as AnchorType)}><option value="Character">角色</option><option value="Item">物品</option></select></label><label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} placeholder="简要描述它在世界中的意义…" /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working}><CirclePlus size={16} />添加要素</button></div></form></Modal>
@@ -718,7 +734,7 @@ function RelationDialog({ world, working, close, submit }: { world: WorldGraphVi
   const [domainId, setDomainId] = useState('')
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (await submit(() => worldApi.addRelation(world.revision, name, description, sourceId, targetId, domainId || null)))
+    if (await submit(() => worldApi.addRelation(world.stateId, name, description, sourceId, targetId, domainId || null)))
       close()
   }
   return <Modal title="添加世界关系" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>关系名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} placeholder="例如：守护" /></label><div className="form-columns"><label>起点<select value={sourceId} onChange={event => setSourceId(event.target.value)}>{world.nodes.map(anchor => <option key={anchor.id} value={anchor.id}>{anchor.name}</option>)}</select></label><label>终点<select value={targetId} onChange={event => setTargetId(event.target.value)}>{world.nodes.map(anchor => <option key={anchor.id} value={anchor.id}>{anchor.name}</option>)}</select></label></div><label>所属世界<select value={domainId} onChange={event => setDomainId(event.target.value)}><option value="">事实世界</option>{world.nodes.filter(anchor => anchor.type === 'Character' && anchor.hasSubWorld).map(anchor => <option key={anchor.id} value={anchor.id}>{anchor.name}的认知世界</option>)}</select></label><label>描述<textarea rows={4} value={description} onChange={event => setDescription(event.target.value)} placeholder="描述关系成立的方式或缘由…" /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !sourceId || !targetId}><GitBranch size={16} />添加关系</button></div></form></Modal>
@@ -734,12 +750,12 @@ function toMessage(error: unknown) {
 
 function parseWorldEvent(value: string) {
   try {
-    const event = JSON.parse(value) as { revision?: number; isDirty?: boolean; error?: string | null; Revision?: number; IsDirty?: boolean; Error?: string | null }
-    const revision = event.revision ?? event.Revision
+    const event = JSON.parse(value) as { stateId?: string; isDirty?: boolean; error?: string | null; StateId?: string; IsDirty?: boolean; Error?: string | null }
+    const stateId = event.stateId ?? event.StateId
     const isDirty = event.isDirty ?? event.IsDirty
-    if (revision === undefined || isDirty === undefined)
+    if (stateId === undefined || isDirty === undefined)
       return null
-    return { revision, isDirty, error: event.error ?? event.Error ?? null }
+    return { stateId, isDirty, error: event.error ?? event.Error ?? null }
   } catch {
     return null
   }

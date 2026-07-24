@@ -10,10 +10,10 @@ public sealed class WorldSessionChangedEventArgs : EventArgs
     /// <summary>
     /// 创建世界会话变化事件参数；ChangeSet 是已确定的正向与反向操作记录。
     /// </summary>
-    public WorldSessionChangedEventArgs(Guid commitId, long revision, WorldSessionOperation operation, AppliedWorldChangeSet changeSet)
+    public WorldSessionChangedEventArgs(Guid commitId, Guid stateId, WorldSessionOperation operation, AppliedWorldChangeSet changeSet)
     {
         CommitId = commitId;
-        Revision = revision;
+        StateId = stateId;
         Operation = operation;
         ChangeSet = changeSet ?? throw new ArgumentNullException(nameof(changeSet));
     }
@@ -24,9 +24,9 @@ public sealed class WorldSessionChangedEventArgs : EventArgs
     public Guid CommitId { get; }
 
     /// <summary>
-    /// 获取提交后的 World revision。
+    /// 获取提交后的 World 状态标识。
     /// </summary>
-    public long Revision { get; }
+    public Guid StateId { get; }
 
     /// <summary>
     /// 获取本次提交来源。
