@@ -44,13 +44,19 @@ export const worldApi = {
   undo: (revision: number) => request(`${worldUrl}/undo`, { method: 'POST', body: JSON.stringify({ expectedRevision: revision }) }),
   redo: (revision: number) => request(`${worldUrl}/redo`, { method: 'POST', body: JSON.stringify({ expectedRevision: revision }) }),
   save: () => request(`${worldUrl}/save`, { method: 'POST', body: '{}' }),
+  commitStaged: (revision: number, changeIds: string[]) => request(`${worldUrl}/staging/commit`, { method: 'POST', body: JSON.stringify({ expectedRevision: revision, changeIds }) }),
+  deleteStaged: (changeId: string) => request(`${worldUrl}/staging/${changeId}`, { method: 'DELETE' }),
+  deleteInvalidStaged: () => request(`${worldUrl}/staging/invalid`, { method: 'DELETE' }),
 }
 
 export const guidanceApi = {
   availability: () => request<GuidanceAvailabilityViewModel>(`${guidanceUrl}/`),
+  current: () => request<GuidanceSnapshotViewModel>(`${guidanceUrl}/session`),
   start: (potential: string) => request<GuidanceOperationViewModel>(`${guidanceUrl}/sessions`, { method: 'POST', body: JSON.stringify({ potential }) }),
   get: (sessionId: string) => request<GuidanceSnapshotViewModel>(`${guidanceUrl}/sessions/${sessionId}`),
   continue: (sessionId: string, message: string) => request<GuidanceOperationViewModel>(`${guidanceUrl}/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify({ message }) }),
+  retry: (sessionId: string, message: string) => request<GuidanceOperationViewModel>(`${guidanceUrl}/sessions/${sessionId}/retry`, { method: 'POST', body: JSON.stringify({ message }) }),
+  refresh: (sessionId: string) => request<GuidanceSnapshotViewModel>(`${guidanceUrl}/sessions/${sessionId}/refresh`, { method: 'POST', body: '{}' }),
   commit: (sessionId: string, acceptedChangeIds: string[]) => request<GuidanceCommitViewModel>(`${guidanceUrl}/sessions/${sessionId}/commit`, { method: 'POST', body: JSON.stringify({ acceptedChangeIds }) }),
   cancel: (sessionId: string) => request<GuidanceSnapshotViewModel>(`${guidanceUrl}/sessions/${sessionId}/cancel`, { method: 'POST', body: '{}' }),
   forget: (sessionId: string) => request<void>(`${guidanceUrl}/sessions/${sessionId}`, { method: 'DELETE' }),

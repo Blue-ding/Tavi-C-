@@ -1,165 +1,306 @@
+using Tavi.Application.LanguageModel;
+using Tavi.Application.Logging;
+using Tavi.Application.World;
 using Tavi.Domain.World;
+using System.Text.Json;
 
 namespace Tavi.Application.Guidance;
 
-/// <summary>
-/// 指定 GuidanceSession 生命周期状态。
-/// </summary>
-public enum GuidanceSessionState
+/// <summary>维护绑定到单一 WorldSession 的长期 Guidance 对话、可恢复操作和消息重试状态。</summary>
+public sealed class GuidanceSession : IGuidanceService
 {
-    Draft,
-    Completed,
-    Cancelled
-}
-
-/// <summary>
-/// 维护一次 Guidance 构筑过程中的临时 Anchor 缓存和提案修改。该会话不直接持有或修改真实 World。
-/// </summary>
-public sealed class GuidanceSession
-{
+    private const string SystemInstruction = """
+        你是 Tavi 的 Guidance。你的目标是从玩家给出的微小叙事势能出发，协助构筑可供审阅的 World 暂存修改。
+        你可以使用只读工具了解当前 World，但绝不能直接修改真实 World。
+        使用 propose_anchor 时临时 Anchor 和修改标识由系统生成；只有收到工具返回的 proposalAnchorId 后，才能使用该标识创建引用它的 Relation。
+        当信息足够时，使用 propose_anchor、propose_relation 和 set_guidance_summary 构造本轮新增内容。完成工具调用后，用自然语言简要回应玩家。
+        当信息不足时可以直接向玩家提出一个聚焦问题，此时不必创建提案。
+        """;
+    private const string LogCategory = "GuidanceSession";
     private readonly object _sync = new();
-    private readonly Dictionary<ProposalAnchorId, ProposeAddAnchor> _anchors = new();
-    private readonly List<ProposalChange> _changes = [];
-    private string _summary = string.Empty;
+    private readonly WorldSession _world;
+    private readonly ILanguageModelService _languageModels;
+    private readonly ILogger _logger;
+    private readonly List<GuidanceMessage> _messages = [];
+    private LanguageModelConversation _conversation = new();
+    private GuidanceState _state = GuidanceState.Idle;
+    private GuidanceException? _failure;
+    private GuidanceMessage? _retryMessage;
+    private CancellationTokenSource? _activeCancellation;
+    private WorldProposal? _latestProposal;
 
-    /// <summary>
-    /// 创建基于指定 World revision 的 GuidanceSession。
-    /// </summary>
-    public GuidanceSession(long baseWorldRevision) : this(baseWorldRevision, Guid.NewGuid())
+    /// <summary>创建绑定到指定 World 和语言模型执行器的长期 Guidance Session。</summary>
+    public GuidanceSession(WorldSession world, ILanguageModelService languageModels, ILogger? logger = null)
     {
+        _world = world ?? throw new ArgumentNullException(nameof(world));
+        _languageModels = languageModels ?? throw new ArgumentNullException(nameof(languageModels));
+        _logger = logger ?? NullLogger.Instance;
+        Id = Guid.NewGuid();
     }
 
-    internal GuidanceSession(long baseWorldRevision, Guid id)
-    {
-        if (baseWorldRevision < 0)
-            throw new ArgumentOutOfRangeException(nameof(baseWorldRevision));
-        if (id == Guid.Empty)
-            throw new ArgumentException("GuidanceSession 标识不能为空。", nameof(id));
-        Id = id;
-        BaseWorldRevision = baseWorldRevision;
-    }
-
-    /// <summary>
-    /// 获取 GuidanceSession 标识。
-    /// </summary>
+    /// <summary>获取长期稳定的 Session 标识。</summary>
     public Guid Id { get; }
 
-    /// <summary>
-    /// 获取本次构筑开始时的 World revision。
-    /// </summary>
-    public long BaseWorldRevision { get; }
-
-    /// <summary>
-    /// 获取当前生命周期状态。
-    /// </summary>
-    public GuidanceSessionState State { get; private set; } = GuidanceSessionState.Draft;
-
-    /// <summary>
-    /// 更新面向玩家的提案摘要。
-    /// </summary>
-    public void SetSummary(string summary)
+    /// <inheritdoc />
+    public GuidanceOperation Start(NarrativePotential potential, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(potential);
         lock (_sync)
         {
-            EnsureDraft();
-            _summary = summary ?? throw new ArgumentNullException(nameof(summary));
+            if (_messages.Count != 0)
+                throw InvalidState("Start", "Guidance 已经开始；请继续对话或先刷新 Session。");
+        }
+        return BeginGeneration(new GuidanceMessage(potential.Text), true, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public GuidanceOperation Continue(Guid sessionId, GuidanceMessage message, CancellationToken cancellationToken = default)
+    {
+        RequireSession(sessionId);
+        ArgumentNullException.ThrowIfNull(message);
+        return BeginGeneration(message, false, cancellationToken);
+    }
+
+    /// <summary>使用上次失败消息的当前编辑文本重试生成；成功前不会丢弃原消息。</summary>
+    public GuidanceOperation Retry(Guid sessionId, GuidanceMessage editedMessage, CancellationToken cancellationToken = default)
+    {
+        RequireSession(sessionId);
+        ArgumentNullException.ThrowIfNull(editedMessage);
+        lock (_sync)
+        {
+            if (_retryMessage is null)
+                throw InvalidState("Retry", "当前没有可重试的玩家消息。");
+        }
+        return BeginGeneration(editedMessage, false, cancellationToken, true);
+    }
+
+    /// <inheritdoc />
+    public GuidanceSnapshot GetSnapshot(Guid sessionId)
+    {
+        RequireSession(sessionId);
+        lock (_sync)
+            return CreateSnapshot();
+    }
+
+    /// <inheritdoc />
+    public GuidanceCommitResult Commit(Guid sessionId, IReadOnlyCollection<string> acceptedChangeIds)
+    {
+        RequireSession(sessionId);
+        ArgumentNullException.ThrowIfNull(acceptedChangeIds);
+        lock (_sync)
+        {
+            if (_state == GuidanceState.Generating)
+                return NotReady("Guidance 正在生成，不能提交 World。");
+        }
+        Guid[] ids;
+        try
+        {
+            ids = acceptedChangeIds.Select(Guid.Parse).ToArray();
+        }
+        catch (FormatException)
+        {
+            return InvalidSelection("暂存项标识格式无效。");
+        }
+        try
+        {
+            WorldStagingCommitResult result = _world.CommitStaged(ids, _world.Revision);
+            lock (_sync)
+            {
+                string committed = string.Join(", ", result.ConsumedChangeIds);
+                _conversation = _conversation.Append(ModelMessage.System($"玩家已提交暂存项：{committed}。当前 WorldRevision={result.Commit.Revision}。"));
+                _latestProposal = null;
+                _failure = null;
+                _state = GuidanceState.Idle;
+            }
+            return new GuidanceCommitResult { Status = GuidanceCommitStatus.Committed, WorldRevision = result.Commit.Revision };
+        }
+        catch (WorldRevisionConflictException exception)
+        {
+            return new GuidanceCommitResult { Status = GuidanceCommitStatus.WorldConflict, ExpectedWorldRevision = exception.ExpectedRevision, ActualWorldRevision = exception.ActualRevision, Issues = [new GuidanceIssue { Code = "world_revision_conflict", Message = exception.Message }] };
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or WorldException)
+        {
+            return InvalidSelection(exception.Message);
         }
     }
 
-    /// <summary>
-    /// 添加临时 Anchor，并返回可供后续 Relation 引用的强类型临时标识。
-    /// </summary>
-    public ProposalAnchorId ProposeAnchor(string changeId, string rationale, string name, string description, AnchorType type)
+    /// <inheritdoc />
+    public void Cancel(Guid sessionId)
     {
-        EnsureChangeId(changeId);
-        var change = new ProposeAddAnchor(changeId, rationale ?? string.Empty, ProposalAnchorId.New(), name, description, type);
+        RequireSession(sessionId);
         lock (_sync)
         {
-            EnsureDraft();
-            EnsureUniqueChangeId(changeId);
-            _anchors.Add(change.AnchorId, change);
-            _changes.Add(change);
-            return change.AnchorId;
+            if (_state != GuidanceState.Generating)
+                return;
+            _activeCancellation?.Cancel();
         }
     }
 
-    /// <summary>
-    /// 添加 Relation 提案；所有临时 Anchor 引用必须属于当前 GuidanceSession。
-    /// </summary>
-    public void ProposeRelation(string changeId, string rationale, string name, string description, ProposalAnchorReference source, ProposalAnchorReference target, ProposedRelationScope scope)
+    /// <summary>在没有活动生成时遗忘全部 Guidance 对话、失败和运行缓存；World 暂存区不受影响。</summary>
+    public void Refresh(Guid sessionId)
     {
-        EnsureChangeId(changeId);
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(target);
-        ArgumentNullException.ThrowIfNull(scope);
+        RequireSession(sessionId);
         lock (_sync)
         {
-            EnsureDraft();
-            EnsureUniqueChangeId(changeId);
-            EnsureKnownReference(source);
-            EnsureKnownReference(target);
-            if (scope is ProposedRelationScope.SubWorld subWorld)
-                EnsureKnownReference(subWorld.Character);
-            _changes.Add(new ProposeAddRelation(changeId, rationale ?? string.Empty, name, description, source, target, scope));
+            if (_state == GuidanceState.Generating || _activeCancellation is not null)
+                throw InvalidState("Refresh", "Guidance 正在工作；请先主动打断生成。");
+            _messages.Clear();
+            _conversation = new LanguageModelConversation();
+            _failure = null;
+            _retryMessage = null;
+            _latestProposal = null;
+            _state = GuidanceState.Idle;
         }
     }
 
-    /// <summary>
-    /// 创建与后续会话修改完全分离的 WorldProposal 快照。
-    /// </summary>
-    public WorldProposal CreateProposal()
+    /// <inheritdoc />
+    public bool Forget(Guid sessionId)
     {
+        RequireSession(sessionId);
+        Refresh(sessionId);
+        return true;
+    }
+
+    private GuidanceOperation BeginGeneration(GuidanceMessage message, bool initial, CancellationToken cancellationToken, bool retry = false)
+    {
+        CancellationTokenSource linkedSource;
+        LanguageModelConversation conversation;
+        WorldStagingSnapshot workspace;
         lock (_sync)
         {
-            return new WorldProposal { Id = Id, BaseWorldRevision = BaseWorldRevision, Summary = _summary, Changes = Array.AsReadOnly(_changes.ToArray()) };
+            if (_state == GuidanceState.Generating || _activeCancellation is not null)
+                throw InvalidState(retry ? "Retry" : initial ? "Start" : "Continue", "Guidance 正在处理另一项操作。");
+            if (!retry && _retryMessage is not null)
+                throw InvalidState("Continue", "上一条失败消息尚未处理；请先编辑重试或刷新 Guidance。");
+            linkedSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _activeCancellation = linkedSource;
+            _state = GuidanceState.Generating;
+            _failure = null;
+            if (!retry)
+                _messages.Add(message);
+            else
+            {
+                int index = _messages.FindLastIndex(item => ReferenceEquals(item, _retryMessage) || item == _retryMessage);
+                if (index >= 0)
+                    _messages[index] = message;
+            }
+            workspace = _world.CreateStagingSnapshot();
+            string state = CreateWorkspaceContext(workspace);
+            bool firstMessage = initial || _conversation.Messages.Count == 0;
+            conversation = firstMessage ? new LanguageModelConversation { Messages = [ModelMessage.System(SystemInstruction), ModelMessage.System(state), ModelMessage.User(message.Text)] }
+                : _conversation.Append(ModelMessage.System(state), ModelMessage.User(message.Text));
+        }
+        var operation = new GuidanceOperation(Guid.NewGuid(), Id);
+        operation.SetState(GuidanceOperationState.Running);
+        _ = GenerateAsync(conversation, message, operation, linkedSource, workspace);
+        return operation;
+    }
+
+    private async Task GenerateAsync(LanguageModelConversation conversation, GuidanceMessage playerMessage, GuidanceOperation operation, CancellationTokenSource linkedSource, WorldStagingSnapshot workspace)
+    {
+        var draft = new GuidanceDraft(workspace.WorldRevision, Guid.NewGuid());
+        Guid modelOperationId = Guid.Empty;
+        try
+        {
+            IReadOnlyList<ITool> tools = WorldGuidanceTool.CreateQueryTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld)).ToArray();
+            LanguageModelOperation modelOperation = _languageModels.Start(new LanguageModelRunRequest { Conversation = conversation, Tools = tools, ToolCallMode = ToolCallMode.Auto }, linkedSource.Token);
+            modelOperationId = modelOperation.Id;
+            modelOperation.TextReceived += (_, text) => operation.ReportText(text);
+            LanguageModelRunResult result = await modelOperation.Completion;
+            WorldProposal proposal = draft.CreateProposal();
+            WorldProposal published = proposal;
+            if (proposal.Changes.Count > 0)
+            {
+                ProposalCompilationResult compilation = WorldProposalCompiler.Compile(proposal, proposal.Changes.Select(change => change.Id), _world);
+                IReadOnlyList<Guid> stagedIds = _world.Stage(compilation.ChangeSet.Operations, WorldStagedChangeSource.Guidance);
+                ProposalChange[] changes = proposal.Changes.Select((change, index) => change switch
+                {
+                    ProposeAddAnchor anchor => (ProposalChange)(anchor with { Id = stagedIds[index].ToString() }),
+                    ProposeAddRelation relation => relation with { Id = stagedIds[index].ToString() },
+                    _ => throw new InvalidOperationException($"不支持的提案类型 {change.GetType().Name}。")
+                }).ToArray();
+                published = proposal with { Changes = Array.AsReadOnly(changes) };
+            }
+            lock (_sync)
+            {
+                _conversation = result.Conversation;
+                if (!string.IsNullOrWhiteSpace(result.Output))
+                    _messages.Add(new GuidanceMessage(result.Output, GuidanceMessageRole.Guidance));
+                _latestProposal = published.Changes.Count > 0 ? published : null;
+                _retryMessage = null;
+                _failure = null;
+                _state = GuidanceState.Idle;
+                ClearActive(linkedSource);
+                GuidanceSnapshot snapshot = CreateSnapshot();
+                operation.SetState(GuidanceOperationState.Completed);
+                operation.Complete(snapshot);
+            }
+        }
+        catch (OperationCanceledException exception)
+        {
+            lock (_sync)
+            {
+                _retryMessage = playerMessage;
+                _state = GuidanceState.Idle;
+                ClearActive(linkedSource);
+                operation.SetState(GuidanceOperationState.Cancelled);
+                operation.Cancel(exception.CancellationToken);
+            }
+        }
+        catch (Exception exception)
+        {
+            GuidanceException failure = exception as GuidanceException ?? CreateGenerationFailure(exception);
+            lock (_sync)
+            {
+                _failure = failure;
+                _retryMessage = playerMessage;
+                _state = GuidanceState.Idle;
+                ClearActive(linkedSource);
+                operation.SetState(GuidanceOperationState.Failed);
+                operation.Fail(failure);
+            }
+            _logger.Log(LogLevel.Error, LogCategory, failure.Message, failure, new Dictionary<string, object?> { ["SessionId"] = Id });
+        }
+        finally
+        {
+            if (modelOperationId != Guid.Empty)
+                _languageModels.ForgetOperation(modelOperationId);
+            linkedSource.Dispose();
         }
     }
 
-    /// <summary>
-    /// 将会话标记为已完成；完成后不能继续修改提案。
-    /// </summary>
-    public void Complete()
+    private GuidanceSnapshot CreateSnapshot() => new()
     {
-        lock (_sync)
-        {
-            EnsureDraft();
-            State = GuidanceSessionState.Completed;
-        }
+        SessionId = Id,
+        State = _state,
+        BaseWorldRevision = _world.Revision,
+        Messages = Array.AsReadOnly(_messages.ToArray()),
+        Proposal = _latestProposal,
+        Failure = _failure,
+        RetryMessage = _retryMessage?.Text
+    };
+
+    private static string CreateWorkspaceContext(WorldStagingSnapshot snapshot)
+    {
+        string changes = string.Join(Environment.NewLine, snapshot.Changes.Select(change => $"- {change.Id}: {change.Status}, {string.Join("; ", change.ChangeSet.Operations)}"));
+        string world = JsonSerializer.Serialize(snapshot.ProjectedWorld);
+        return $"当前权威状态：WorldRevision={snapshot.WorldRevision}，WorkspaceRevision={snapshot.Revision}。临时 World={world}。暂存项：{Environment.NewLine}{changes}";
     }
 
-    /// <summary>
-    /// 取消会话；取消后不能继续修改提案。
-    /// </summary>
-    public void Cancel()
+    private void ClearActive(CancellationTokenSource source)
     {
-        lock (_sync)
-        {
-            EnsureDraft();
-            State = GuidanceSessionState.Cancelled;
-        }
+        if (ReferenceEquals(_activeCancellation, source))
+            _activeCancellation = null;
     }
 
-    private void EnsureKnownReference(ProposalAnchorReference reference)
+    private void RequireSession(Guid sessionId)
     {
-        if (reference is ProposalAnchorReference.Proposed proposed && !_anchors.ContainsKey(proposed.AnchorId))
-            throw new ArgumentException($"临时 Anchor {proposed.AnchorId.Value} 不属于当前 GuidanceSession。", nameof(reference));
+        if (sessionId != Id)
+            throw new GuidanceException(GuidanceErrorCodes.SessionNotFound, "RequireSession", $"不存在 Guidance 会话 {sessionId}。", sessionId);
     }
 
-    private void EnsureUniqueChangeId(string changeId)
-    {
-        if (_changes.Any(change => string.Equals(change.Id, changeId, StringComparison.Ordinal)))
-            throw new ArgumentException($"提案修改标识“{changeId}”重复。", nameof(changeId));
-    }
-
-    private void EnsureDraft()
-    {
-        if (State != GuidanceSessionState.Draft)
-            throw new InvalidOperationException($"GuidanceSession 当前状态为 {State}，不能继续修改。");
-    }
-
-    private static void EnsureChangeId(string changeId)
-    {
-        if (string.IsNullOrWhiteSpace(changeId))
-            throw new ArgumentException("提案修改标识不能为空。", nameof(changeId));
-    }
+    private GuidanceException InvalidState(string operation, string message) => new(GuidanceErrorCodes.InvalidSessionState, operation, message, Id);
+    private GuidanceException CreateGenerationFailure(Exception exception) => new(GuidanceErrorCodes.GenerationFailed, "Generate", "Guidance 无法完成本次生成；玩家消息已保留，可编辑后重试。", Id, exception is LanguageModelException model && model.IsTransient, innerException: exception);
+    private static GuidanceCommitResult NotReady(string message) => new() { Status = GuidanceCommitStatus.SessionNotReady, Issues = [new GuidanceIssue { Code = "session_not_ready", Message = message }] };
+    private static GuidanceCommitResult InvalidSelection(string message) => new() { Status = GuidanceCommitStatus.InvalidSelection, Issues = [new GuidanceIssue { Code = "invalid_selection", Message = message }] };
 }

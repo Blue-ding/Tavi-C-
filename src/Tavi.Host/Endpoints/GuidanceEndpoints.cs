@@ -12,9 +12,12 @@ internal static class GuidanceEndpoints
     {
         RouteGroupBuilder guidance = endpoints.MapGroup("/api/v1/guidance");
         guidance.MapGet("/", (GuidanceRuntime runtime) => runtime.Availability);
+        guidance.MapGet("/session", (GuidanceRuntime runtime) => runtime.GetCurrentSnapshot());
         guidance.MapPost("/sessions", (StartGuidanceRequest request, GuidanceRuntime runtime) => Results.Accepted(value: runtime.Start(request.Potential)));
         guidance.MapGet("/sessions/{sessionId:guid}", (Guid sessionId, GuidanceRuntime runtime) => runtime.GetSnapshot(sessionId));
         guidance.MapPost("/sessions/{sessionId:guid}/messages", (Guid sessionId, ContinueGuidanceRequest request, GuidanceRuntime runtime) => Results.Accepted(value: runtime.Continue(sessionId, request.Message)));
+        guidance.MapPost("/sessions/{sessionId:guid}/retry", (Guid sessionId, RetryGuidanceRequest request, GuidanceRuntime runtime) => Results.Accepted(value: runtime.Retry(sessionId, request.Message)));
+        guidance.MapPost("/sessions/{sessionId:guid}/refresh", (Guid sessionId, GuidanceRuntime runtime) => runtime.Refresh(sessionId));
         guidance.MapPost("/sessions/{sessionId:guid}/commit", (Guid sessionId, CommitGuidanceRequest request, GuidanceRuntime runtime) => runtime.Commit(sessionId, request.AcceptedChangeIds));
         guidance.MapPost("/sessions/{sessionId:guid}/cancel", (Guid sessionId, GuidanceRuntime runtime) => runtime.Cancel(sessionId));
         guidance.MapDelete("/sessions/{sessionId:guid}", ForgetAsync);

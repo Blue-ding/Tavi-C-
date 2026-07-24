@@ -10,7 +10,26 @@ namespace Tavi.Host.ViewModels;
 /// <param name="Nodes">全部 Anchor 节点。</param>
 /// <param name="Edges">全部事实世界和子世界 Relation。</param>
 /// <param name="SubWorlds">全部 Character 子世界。</param>
-public sealed record WorldGraphViewModel(Guid WorldId, long Revision, bool IsDirty, bool CanUndo, bool CanRedo, string Health, IReadOnlyList<AnchorViewModel> Nodes, IReadOnlyList<RelationViewModel> Edges, IReadOnlyList<SubWorldViewModel> SubWorlds);
+public sealed record WorldGraphViewModel(Guid WorldId, long Revision, long StagingRevision, bool IsDirty, bool CanUndo, bool CanRedo, string Health, IReadOnlyList<AnchorViewModel> Nodes, IReadOnlyList<RelationViewModel> Edges, IReadOnlyList<SubWorldViewModel> SubWorlds, IReadOnlyList<WorldStagedChangeViewModel> StagedChanges);
+
+/// <summary>表示一项不可变的 World 暂存日志记录。</summary>
+/// <param name="Id">暂存项标识。</param>
+/// <param name="Source">Player 或 Guidance。</param>
+/// <param name="Status">Valid、Conflict 或 Invalid。</param>
+/// <param name="Operation">便于玩家识别的操作说明。</param>
+/// <param name="Issue">阻止提交的状态说明。</param>
+/// <param name="ConflictingChangeIds">与本项冲突的暂存项标识。</param>
+public sealed record WorldStagedChangeViewModel(Guid Id, string Source, string Status, string Operation, string? Issue, IReadOnlyList<Guid> ConflictingChangeIds);
+
+/// <summary>表示追加或清理暂存区后的权威结果。</summary>
+/// <param name="AffectedChangeIds">本次影响的暂存项标识。</param>
+/// <param name="World">操作后的临时 World 和暂存区。</param>
+public sealed record WorldStagingResultViewModel(IReadOnlyList<Guid> AffectedChangeIds, WorldGraphViewModel World);
+
+/// <summary>表示选择暂存项提交的请求。</summary>
+/// <param name="ExpectedRevision">调用方观察到的真实 World revision。</param>
+/// <param name="ChangeIds">需要原子提交的暂存项标识。</param>
+public sealed record CommitStagedRequest(long ExpectedRevision, IReadOnlyList<Guid> ChangeIds);
 
 /// <summary>表示世界图中的一个 Anchor 节点。</summary>
 /// <param name="Id">Anchor 标识。</param>

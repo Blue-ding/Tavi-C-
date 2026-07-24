@@ -24,14 +24,14 @@ public sealed class GuidanceEndpointTests
         HttpResponseMessage startResponse = await client.PostAsJsonAsync("/api/v1/guidance/sessions", new StartGuidanceRequest("雨夜里传来不存在的钟声。"));
         Assert.Equal(HttpStatusCode.Accepted, startResponse.StatusCode);
         GuidanceOperationViewModel operation = await RequireJsonAsync<GuidanceOperationViewModel>(startResponse);
-        GuidanceSnapshotViewModel snapshot = await WaitForStateAsync(client, operation.SessionId, "ReadyForReview");
+        GuidanceSnapshotViewModel snapshot = await WaitForProposalAsync(client, operation.SessionId);
         Assert.Equal(["Player", "Guidance"], snapshot.Messages.Select(message => message.Role));
         Assert.NotNull(snapshot.Proposal);
         Assert.IsType<ProposeAddAnchorViewModel>(Assert.Single(snapshot.Proposal.Changes));
         var commitRequest = new CommitGuidanceRequest(snapshot.Proposal.Changes.Select(change => change.Id).ToArray());
         GuidanceCommitViewModel commit = await RequireJsonAsync<GuidanceCommitViewModel>(await client.PostAsJsonAsync($"/api/v1/guidance/sessions/{operation.SessionId}/commit", commitRequest));
         Assert.Equal("Committed", commit.Status);
-        Assert.Equal("Completed", commit.Snapshot.State);
+        Assert.Equal("Idle", commit.Snapshot.State);
         WorldGraphViewModel world = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
         Assert.Collection(world.Nodes, anchor => Assert.Equal("雨夜钟", anchor.Name));
     }
@@ -51,16 +51,16 @@ public sealed class GuidanceEndpointTests
         Assert.Contains(LanguageModelErrorCodes.InvalidConfiguration, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
-    private static async Task<GuidanceSnapshotViewModel> WaitForStateAsync(HttpClient client, Guid sessionId, string state)
+    private static async Task<GuidanceSnapshotViewModel> WaitForProposalAsync(HttpClient client, Guid sessionId)
     {
         for (int attempt = 0; attempt < 40; attempt++)
         {
             GuidanceSnapshotViewModel snapshot = await RequireJsonAsync<GuidanceSnapshotViewModel>(await client.GetAsync($"/api/v1/guidance/sessions/{sessionId}"));
-            if (snapshot.State == state)
+            if (snapshot.State == "Idle" && snapshot.Proposal is not null)
                 return snapshot;
             await Task.Delay(25);
         }
-        throw new TimeoutException($"Guidance 会话未进入 {state} 状态。");
+        throw new TimeoutException("Guidance 会话未生成可审阅提案。");
     }
 
     private static async Task<T> RequireJsonAsync<T>(HttpResponseMessage response)
@@ -113,7 +113,7 @@ public sealed class GuidanceEndpointTests
             try
             {
                 ITool tool = request.Tools.Single(candidate => candidate.name == "propose_anchor");
-                await tool.Execute(BinaryData.FromString("""{"ChangeId":"bell","Rationale":"承载雨夜谜团","Name":"雨夜钟","Description":"只在无人看见时响起","Type":"Item"}"""), cancellationToken);
+                await tool.Execute(BinaryData.FromString("""{"Rationale":"承载雨夜谜团","Name":"雨夜钟","Description":"只在无人看见时响起","Type":"Item"}"""), cancellationToken);
                 const string output = "我整理了一项可以审阅的世界变化。";
                 operation.ReportText(output);
                 operation.SetStatus(LanguageModelRunStatus.Completed);

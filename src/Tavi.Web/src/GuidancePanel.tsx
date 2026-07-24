@@ -19,6 +19,7 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')
   const [selectedChanges, setSelectedChanges] = useState<Set<string>>(new Set())
+  const [retryText, setRetryText] = useState('')
   const [working, setWorking] = useState(false)
   const conversationEnd = useRef<HTMLDivElement | null>(null)
 
@@ -26,10 +27,14 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
     void guidanceApi.availability().then(async status => {
       setAvailability(status)
       const sessionId = window.localStorage.getItem(sessionStorageKey)
-      if (!status.available || !sessionId)
+      if (!status.available)
         return
       try {
-        setSnapshot(await guidanceApi.get(sessionId))
+        const current = sessionId ? await guidanceApi.get(sessionId) : await guidanceApi.current()
+        if (current.messages.length > 0 || current.proposal || current.failure || current.state !== 'Idle') {
+          window.localStorage.setItem(sessionStorageKey, current.sessionId)
+          setSnapshot(current)
+        }
       } catch (error) {
         if (error instanceof ApiError && error.code === 'TAVI.GUIDANCE.SESSION.NOT_FOUND')
           window.localStorage.removeItem(sessionStorageKey)
@@ -42,6 +47,8 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
     if (proposal)
       setSelectedChanges(new Set(proposal.changes.map(change => change.id)))
   }, [snapshot?.proposal?.id])
+
+  useEffect(() => setRetryText(snapshot?.retryMessage ?? ''), [snapshot?.retryMessage])
 
   useEffect(() => {
     if (!snapshot || snapshot.state !== 'Generating')
@@ -120,6 +127,29 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
     await run(async () => setSnapshot(await guidanceApi.cancel(snapshot.sessionId)))
   }
 
+  async function retry(event: FormEvent) {
+    event.preventDefault()
+    if (!snapshot || !retryText.trim())
+      return
+    await run(async () => {
+      const operation = await guidanceApi.retry(snapshot.sessionId, retryText.trim())
+      setSnapshot(operation.snapshot)
+      setStreamingText('')
+    })
+  }
+
+  async function refreshSession() {
+    if (!snapshot)
+      return
+    await run(async () => {
+      await guidanceApi.refresh(snapshot.sessionId)
+      window.localStorage.removeItem(sessionStorageKey)
+      setSnapshot(null)
+      setInput('')
+      setRetryText('')
+    })
+  }
+
   async function commit() {
     if (!snapshot)
       return
@@ -132,24 +162,6 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
       }
       onError(result.issues.map(issue => issue.message).join('；') || '提案暂时无法提交。')
     })
-  }
-
-  async function beginNew() {
-    const previousPotential = snapshot?.messages.find(message => message.role === 'Player')?.text ?? ''
-    if (snapshot) {
-      try {
-        if (!['Completed', 'Cancelled', 'Failed'].includes(snapshot.state))
-          await guidanceApi.cancel(snapshot.sessionId)
-        await guidanceApi.forget(snapshot.sessionId)
-      } catch {
-        // 会话清理由服务端决定；本地仍可重新开始。
-      }
-    }
-    window.localStorage.removeItem(sessionStorageKey)
-    setSnapshot(null)
-    setStreamingText('')
-    setSelectedChanges(new Set())
-    setInput(previousPotential)
   }
 
   async function run(operation: () => Promise<void>) {
@@ -186,8 +198,8 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
     return null
 
   const generating = snapshot?.state === 'Generating'
-  const ready = snapshot?.state === 'ReadyForReview'
-  const terminal = snapshot && ['Completed', 'Cancelled', 'Failed'].includes(snapshot.state)
+  const ready = snapshot?.state === 'Idle' && !!snapshot.proposal
+  const terminal = snapshot?.state === 'Faulted'
   const conflict = snapshot?.proposal && snapshot.proposal.baseWorldRevision !== world.revision
 
   return (
@@ -220,6 +232,7 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
             </section>
 
             {snapshot.failure && <div className="guidance-failure"><strong>本次构筑未能完成</strong><span>{snapshot.failure.message}</span></div>}
+            {snapshot.retryMessage && <form className="guidance-start" onSubmit={retry}><p>上一条消息尚未成功处理，可以编辑后重试：</p><textarea rows={4} value={retryText} onChange={event => setRetryText(event.target.value)} /><button disabled={working || !retryText.trim()}><Sparkles size={16} />重试这条消息</button></form>}
             {snapshot.proposal && (
               <section className="proposal-review">
                 <header><div><span>WORLD PROPOSAL</span><h3>{snapshot.proposal.summary || '世界变化提案'}</h3></div><small>{selectedChanges.size}/{snapshot.proposal.changes.length}</small></header>
@@ -233,9 +246,9 @@ export function GuidancePanel({ open, world, onClose, onWorldChanged, onError }:
 
           <footer className="guidance-footer">
             {generating && <button className="guidance-cancel" disabled={working} onClick={() => void cancel()}><CircleStop size={15} />停止生成</button>}
-            {!generating && !terminal && !ready && <form onSubmit={continueConversation}><textarea rows={2} value={input} onChange={event => setInput(event.target.value)} placeholder="回应 Guidance…" /><button aria-label="发送" disabled={working || !input.trim()}><Send size={16} /></button></form>}
-            {ready && <><form onSubmit={continueConversation}><textarea rows={2} value={input} onChange={event => setInput(event.target.value)} placeholder="也可以补充要求，让 Guidance 重新考虑…" /><button aria-label="发送" disabled={working || !input.trim()}><Send size={16} /></button></form>{conflict ? <button className="guidance-new" disabled={working} onClick={() => void beginNew()}><Sparkles size={16} />基于当前世界重新开始</button> : <button className="guidance-commit" disabled={working || selectedChanges.size === 0} onClick={() => void commit()}>{working ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}提交 {selectedChanges.size} 项变化</button>}</>}
-            {terminal && <button className="guidance-new" onClick={() => void beginNew()}><Plus size={16} />开始新的 Guidance</button>}
+            {!generating && !terminal && !ready && <><form onSubmit={continueConversation}><textarea rows={2} value={input} onChange={event => setInput(event.target.value)} placeholder="准备下一轮消息…" /><button aria-label="发送" disabled={working || !!snapshot.retryMessage || !input.trim()}><Send size={16} /></button></form><button className="guidance-new" disabled={working} onClick={() => void refreshSession()}><Plus size={16} />刷新 Guidance 对话</button></>}
+            {ready && <><form onSubmit={continueConversation}><textarea rows={2} value={input} onChange={event => setInput(event.target.value)} placeholder="也可以补充要求，让 Guidance 继续考虑…" /><button aria-label="发送" disabled={working || !input.trim()}><Send size={16} /></button></form>{conflict ? <button className="guidance-new" disabled={working} onClick={() => void refreshSession()}><Sparkles size={16} />刷新 Guidance 对话</button> : <button className="guidance-commit" disabled={working || selectedChanges.size === 0} onClick={() => void commit()}>{working ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}提交 {selectedChanges.size} 项变化</button>}</>}
+            {terminal && <button className="guidance-new" onClick={() => void refreshSession()}><Plus size={16} />刷新 Guidance Session</button>}
           </footer>
         </>
       )}
@@ -258,7 +271,7 @@ function referenceName(reference: ProposalAnchorReferenceViewModel, world: World
 }
 
 function stateLabel(state: GuidanceSnapshotViewModel['state']) {
-  return { Created: '已创建', Generating: '构筑中', AwaitingPlayer: '等待回应', ReadyForReview: '等待审阅', Committing: '提交中', Completed: '已完成', Cancelled: '已取消', Failed: '失败' }[state]
+  return { Idle: '空闲', Generating: '构筑中', Faulted: '需要刷新' }[state]
 }
 
 function toMessage(error: unknown) {

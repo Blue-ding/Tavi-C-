@@ -8,7 +8,7 @@ import type { AnchorType, AnchorViewModel, FeaturePolicy, LanguageModelSettingsV
 type ScopeFilter = 'all' | 'world' | string
 type Dialog = 'anchor' | 'relation' | null
 
-const emptyWorld: WorldGraphViewModel = { worldId: '', revision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', nodes: [], edges: [], subWorlds: [] }
+const emptyWorld: WorldGraphViewModel = { worldId: '', revision: 0, stagingRevision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', nodes: [], edges: [], subWorlds: [], stagedChanges: [] }
 
 function layoutPosition(index: number, total: number) {
   const columns = Math.max(1, Math.ceil(Math.sqrt(total)))
@@ -219,6 +219,15 @@ function App() {
               </button>
             ))}
             {!world.nodes.length && <div className="empty-list">世界尚无要素。<br />从一次添加开始。</div>}
+          </div>
+          <div className="sidebar-heading"><span>暂存修改</span><span className="count">{world.stagedChanges.length}</span></div>
+          <div className="anchor-list">
+            {world.stagedChanges.map(change => <button key={change.id} title={change.issue ?? change.operation} onClick={() => void perform(() => worldApi.deleteStaged(change.id))}><span className={`anchor-icon ${change.status === 'Valid' ? 'item' : 'character'}`}>{change.status === 'Valid' ? <Check size={14} /> : <X size={14} />}</span><span><strong>{change.operation}</strong><small>{change.source} · {change.status}{change.issue ? ` · ${change.issue}` : ''}</small></span></button>)}
+            {!world.stagedChanges.length && <div className="empty-list">暂存区为空。</div>}
+          </div>
+          <div className="sidebar-actions">
+            <button disabled={working || !world.stagedChanges.some(change => change.status === 'Valid')} onClick={() => void perform(() => worldApi.commitStaged(world.revision, world.stagedChanges.filter(change => change.status === 'Valid').map(change => change.id)))}><Check size={16} />提交有效项</button>
+            <button disabled={working || !world.stagedChanges.some(change => change.status === 'Invalid')} onClick={() => void perform(worldApi.deleteInvalidStaged)}><Trash2 size={16} />清理无效项</button>
           </div>
         </aside>
 

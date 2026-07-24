@@ -14,14 +14,18 @@ public sealed class WorldSession : IAsyncDisposable
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly object _worldSync = new();
     private readonly object _debounceSync = new();
+    private readonly object _disposeSync = new();
     private readonly CancellationTokenSource _lifetimeSource = new();
     private readonly Stack<AppliedWorldChangeSet> _undoHistory = new();
     private readonly Stack<AppliedWorldChangeSet> _redoHistory = new();
+    private readonly WorldStagingArea _staging = new();
     private CancellationTokenSource? _debounceSource;
+    private readonly List<Task> _autoSaveTasks = [];
     private RuntimeWorld? _current;
     private long _savedRevision;
     private int _reportedDirty;
     private bool _disposed;
+    private Task? _disposeTask;
 
     /// <summary>
     /// 创建世界会话。
@@ -78,6 +82,9 @@ public sealed class WorldSession : IAsyncDisposable
     /// </summary>
     public bool CanRedo => ExecuteLocked(() => _redoHistory.Count > 0);
 
+    /// <summary>获取当前暂存区 revision。</summary>
+    public long StagingRevision => ExecuteLocked(() => _staging.Revision);
+
     /// <summary>
     /// 获取最近一次后台自动保存异常。
     /// </summary>
@@ -119,6 +126,46 @@ public sealed class WorldSession : IAsyncDisposable
         WorldCommitResult result = ApplyCore(changeSet, expectedRevision, HistoryAction.Record);
         PublishCommit(result, WorldSessionOperation.Apply);
         return result;
+    }
+
+    /// <summary>将一项不可变 World 操作追加到暂存日志；暂存不会修改真实 World。</summary>
+    public Guid Stage(WorldOperation operation, WorldStagedChangeSource source = WorldStagedChangeSource.Player) => ExecuteLocked(() => _staging.Stage(operation, source));
+
+    /// <summary>将指向同一 World 项目的操作组作为一项原子暂存记录追加。</summary>
+    public Guid Stage(WorldChangeSet changeSet, WorldStagedChangeSource source = WorldStagedChangeSource.Player) => ExecuteLocked(() => _staging.Stage(changeSet, source));
+
+    /// <summary>将一组不可变 World 操作按顺序追加到暂存日志；全部操作通过结构校验后才会写入。</summary>
+    public IReadOnlyList<Guid> Stage(IEnumerable<WorldOperation> operations, WorldStagedChangeSource source) => ExecuteLocked(() => _staging.Stage(operations, source));
+
+    /// <summary>创建包含全部暂存项及临时 World 投影的不可变快照。</summary>
+    public WorldStagingSnapshot CreateStagingSnapshot() => ExecuteLocked(() =>
+    {
+        RuntimeWorld world = RequireCurrent();
+        return _staging.CreateSnapshot(world.CreateSnapshot(), world.Revision);
+    });
+
+    /// <summary>删除指定暂存日志项；不存在时返回 false。</summary>
+    public bool DeleteStaged(Guid changeId) => ExecuteLocked(() => _staging.Delete(changeId));
+
+    /// <summary>删除当前全部无效暂存项并返回删除数量；冲突项不会被删除。</summary>
+    public int DeleteInvalidStaged() => ExecuteLocked(() => _staging.DeleteInvalid(RequireCurrent().CreateSnapshot()));
+
+    /// <summary>原子提交选中的有效暂存项并在成功后消费它们。</summary>
+    public WorldStagingCommitResult CommitStaged(IEnumerable<Guid> selectedChangeIds, long expectedRevision)
+    {
+        ArgumentNullException.ThrowIfNull(selectedChangeIds);
+        WorldCommitResult commit;
+        Guid[] selected;
+        lock (_worldSync)
+        {
+            EnsureUsableLocked();
+            RuntimeWorld world = RequireCurrent();
+            (WorldChangeSet changeSet, selected) = _staging.PrepareCommit(selectedChangeIds, world.CreateSnapshot());
+            commit = ApplyCoreLocked(changeSet, expectedRevision, HistoryAction.Record);
+            _staging.Consume(selected);
+        }
+        PublishCommit(commit, WorldSessionOperation.Apply);
+        return new WorldStagingCommitResult { Commit = commit, ConsumedChangeIds = selected };
     }
 
     /// <summary>
@@ -164,11 +211,15 @@ public sealed class WorldSession : IAsyncDisposable
     /// <summary>
     /// 取消自动保存并在释放健康会话前刷新未保存修改；Faulted 会话不会覆盖可靠存档。
     /// </summary>
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_disposed)
-            return;
-        CancelPendingAutoSave();
+        lock (_disposeSync)
+            return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        await CancelAndDrainPendingAutoSaveAsync();
         try
         {
             if (_current is not null && Health == WorldSessionHealth.Healthy)
@@ -195,53 +246,56 @@ public sealed class WorldSession : IAsyncDisposable
     private WorldCommitResult ApplyCore(WorldChangeSet? requestedChangeSet, long expectedRevision, HistoryAction historyAction)
     {
         lock (_worldSync)
+            return ApplyCoreLocked(requestedChangeSet, expectedRevision, historyAction);
+    }
+
+    private WorldCommitResult ApplyCoreLocked(WorldChangeSet? requestedChangeSet, long expectedRevision, HistoryAction historyAction)
+    {
+        EnsureUsableLocked();
+        RuntimeWorld world = RequireCurrent();
+        if (world.Revision != expectedRevision)
+            throw new WorldRevisionConflictException(expectedRevision, world.Revision);
+        AppliedWorldChangeSet? historyEntry = historyAction switch
         {
-            EnsureUsableLocked();
-            RuntimeWorld world = RequireCurrent();
-            if (world.Revision != expectedRevision)
-                throw new WorldRevisionConflictException(expectedRevision, world.Revision);
-            AppliedWorldChangeSet? historyEntry = historyAction switch
-            {
-                HistoryAction.Undo => _undoHistory.TryPeek(out AppliedWorldChangeSet? undo) ? undo : throw new InvalidOperationException("没有可撤销的世界操作。"),
-                HistoryAction.Redo => _redoHistory.TryPeek(out AppliedWorldChangeSet? redo) ? redo : throw new InvalidOperationException("没有可重做的世界操作。"),
-                _ => null
-            };
-            WorldChangeSet changeSet = historyAction switch
-            {
-                HistoryAction.Undo => historyEntry!.Inverse,
-                HistoryAction.Redo => historyEntry!.Forward,
-                _ => requestedChangeSet!
-            };
-            WorldApplyResult applied;
-            try
-            {
-                applied = world.Apply(changeSet);
-            }
-            catch (WorldTransactionException)
-            {
-                Health = WorldSessionHealth.Faulted;
-                CancelPendingAutoSave();
-                throw;
-            }
-            if (!applied.Changed)
-                return WorldCommitResult.Unchanged(world.Revision);
-            switch (historyAction)
-            {
-                case HistoryAction.Record:
-                    _undoHistory.Push(applied.ChangeSet!);
-                    _redoHistory.Clear();
-                    break;
-                case HistoryAction.Undo:
-                    _undoHistory.Pop();
-                    _redoHistory.Push(historyEntry!);
-                    break;
-                case HistoryAction.Redo:
-                    _redoHistory.Pop();
-                    _undoHistory.Push(historyEntry!);
-                    break;
-            }
-            return new WorldCommitResult(Guid.NewGuid(), applied.PreviousRevision, applied.Revision, applied.ChangeSet);
+            HistoryAction.Undo => _undoHistory.TryPeek(out AppliedWorldChangeSet? undo) ? undo : throw new InvalidOperationException("没有可撤销的世界操作。"),
+            HistoryAction.Redo => _redoHistory.TryPeek(out AppliedWorldChangeSet? redo) ? redo : throw new InvalidOperationException("没有可重做的世界操作。"),
+            _ => null
+        };
+        WorldChangeSet changeSet = historyAction switch
+        {
+            HistoryAction.Undo => historyEntry!.Inverse,
+            HistoryAction.Redo => historyEntry!.Forward,
+            _ => requestedChangeSet!
+        };
+        WorldApplyResult applied;
+        try
+        {
+            applied = world.Apply(changeSet);
         }
+        catch (WorldTransactionException)
+        {
+            Health = WorldSessionHealth.Faulted;
+            CancelPendingAutoSave();
+            throw;
+        }
+        if (!applied.Changed)
+            return WorldCommitResult.Unchanged(world.Revision);
+        switch (historyAction)
+        {
+            case HistoryAction.Record:
+                _undoHistory.Push(applied.ChangeSet!);
+                _redoHistory.Clear();
+                break;
+            case HistoryAction.Undo:
+                _undoHistory.Pop();
+                _redoHistory.Push(historyEntry!);
+                break;
+            case HistoryAction.Redo:
+                _redoHistory.Pop();
+                _undoHistory.Push(historyEntry!);
+                break;
+        }
+        return new WorldCommitResult(Guid.NewGuid(), applied.PreviousRevision, applied.Revision, applied.ChangeSet);
     }
 
     private void PublishCommit(WorldCommitResult result, WorldSessionOperation operation)
@@ -298,12 +352,13 @@ public sealed class WorldSession : IAsyncDisposable
             _debounceSource?.Dispose();
             source = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeSource.Token);
             _debounceSource = source;
+            _autoSaveTasks.Add(RunAutoSaveAsync(source));
         }
-        _ = RunAutoSaveAsync(source);
     }
 
     private async Task RunAutoSaveAsync(CancellationTokenSource source)
     {
+        await Task.Yield();
         try
         {
             await Task.Delay(_autoSaveDelay, source.Token);
@@ -334,6 +389,20 @@ public sealed class WorldSession : IAsyncDisposable
             _debounceSource?.Cancel();
             _debounceSource = null;
         }
+    }
+
+    private async Task CancelAndDrainPendingAutoSaveAsync()
+    {
+        Task[] tasks;
+        lock (_debounceSync)
+        {
+            _debounceSource?.Cancel();
+            _debounceSource = null;
+            tasks = _autoSaveTasks.ToArray();
+            _autoSaveTasks.Clear();
+        }
+        if (tasks.Length > 0)
+            await Task.WhenAll(tasks);
     }
 
     private void NotifyDirtyChanged()

@@ -90,8 +90,9 @@ public sealed record GuidanceFailureViewModel(string Code, string Message, bool 
 /// <param name="BaseWorldRevision">Guidance 开始时的世界 revision。</param>
 /// <param name="Messages">按发生顺序排列的对话消息。</param>
 /// <param name="Proposal">当前可审阅提案；尚未形成时为空。</param>
-/// <param name="Failure">会话失败信息；未失败时为空。</param>
-public sealed record GuidanceSnapshotViewModel(Guid SessionId, string State, long BaseWorldRevision, IReadOnlyList<GuidanceMessageViewModel> Messages, WorldProposalViewModel? Proposal, GuidanceFailureViewModel? Failure);
+/// <param name="Failure">最近一次可恢复失败；未失败时为空。</param>
+/// <param name="RetryMessage">失败后保留的可编辑玩家消息；没有可重试消息时为空。</param>
+public sealed record GuidanceSnapshotViewModel(Guid SessionId, string State, long BaseWorldRevision, IReadOnlyList<GuidanceMessageViewModel> Messages, WorldProposalViewModel? Proposal, GuidanceFailureViewModel? Failure, string? RetryMessage);
 
 /// <summary>表示已被 Host 接管的一次 Guidance 异步操作。</summary>
 /// <param name="OperationId">操作标识。</param>
@@ -137,6 +138,10 @@ public sealed record StartGuidanceRequest(string Potential);
 /// <summary>表示继续 Guidance 对话的请求。</summary>
 /// <param name="Message">玩家追加的文本。</param>
 public sealed record ContinueGuidanceRequest(string Message);
+
+/// <summary>表示编辑并重试上次失败玩家消息的请求。</summary>
+/// <param name="Message">编辑后的玩家消息。</param>
+public sealed record RetryGuidanceRequest(string Message);
 
 /// <summary>表示提交 Guidance 提案的请求。</summary>
 /// <param name="AcceptedChangeIds">玩家接受的提案修改标识。</param>

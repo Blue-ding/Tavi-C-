@@ -27,6 +27,7 @@ export interface SubWorldViewModel {
 export interface WorldGraphViewModel {
   worldId: string
   revision: number
+  stagingRevision: number
   isDirty: boolean
   canUndo: boolean
   canRedo: boolean
@@ -34,6 +35,16 @@ export interface WorldGraphViewModel {
   nodes: AnchorViewModel[]
   edges: RelationViewModel[]
   subWorlds: SubWorldViewModel[]
+  stagedChanges: WorldStagedChangeViewModel[]
+}
+
+export interface WorldStagedChangeViewModel {
+  id: string
+  source: 'Player' | 'Guidance'
+  status: 'Valid' | 'Conflict' | 'Invalid'
+  operation: string
+  issue: string | null
+  conflictingChangeIds: string[]
 }
 
 export interface WorldCommitViewModel {
@@ -93,7 +104,7 @@ export interface GuidanceAvailabilityViewModel {
   message: string
 }
 
-export type GuidanceState = 'Created' | 'Generating' | 'AwaitingPlayer' | 'ReadyForReview' | 'Committing' | 'Completed' | 'Cancelled' | 'Failed'
+export type GuidanceState = 'Idle' | 'Generating' | 'Faulted'
 export type GuidanceMessageRole = 'Player' | 'Guidance'
 
 export interface GuidanceMessageViewModel {
@@ -148,6 +159,7 @@ export interface GuidanceSnapshotViewModel {
   messages: GuidanceMessageViewModel[]
   proposal: WorldProposalViewModel | null
   failure: { code: string; message: string; isTransient: boolean } | null
+  retryMessage: string | null
 }
 
 export interface GuidanceOperationViewModel {

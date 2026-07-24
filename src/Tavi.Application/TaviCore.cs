@@ -26,6 +26,6 @@ public sealed class TaviCore
     public IGuidanceService CreateGuidanceService(WorldSession worldSession)
     {
         ArgumentNullException.ThrowIfNull(worldSession);
-        return new GuidanceService(worldSession, LanguageModels, Logger);
+        return new GuidanceSession(worldSession, LanguageModels, Logger);
     }
 }

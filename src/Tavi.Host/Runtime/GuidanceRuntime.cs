@@ -37,6 +37,17 @@ internal sealed class GuidanceRuntime : IHostedService
 
     internal GuidanceAvailabilityViewModel Availability => new(_service is not null, _provider, _availabilityMessage);
 
+    /// <summary>获取唯一 Guidance Session 当前是否正在生成。</summary>
+    internal bool IsGenerating
+    {
+        get
+        {
+            if (_service is not GuidanceSession session)
+                return false;
+            return session.GetSnapshot(session.Id).State == GuidanceState.Generating;
+        }
+    }
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         try
@@ -127,6 +138,12 @@ internal sealed class GuidanceRuntime : IHostedService
 
     internal GuidanceSnapshotViewModel GetSnapshot(Guid sessionId) => GuidanceViewModelMapper.ToSnapshot(RequireService().GetSnapshot(sessionId));
 
+    internal GuidanceSnapshotViewModel GetCurrentSnapshot()
+    {
+        IGuidanceService service = RequireService();
+        return GuidanceViewModelMapper.ToSnapshot(service.GetSnapshot(service.Id));
+    }
+
     internal GuidanceCommitViewModel Commit(Guid sessionId, IReadOnlyCollection<string> acceptedChangeIds)
     {
         IGuidanceService service = RequireService();
@@ -152,6 +169,23 @@ internal sealed class GuidanceRuntime : IHostedService
         GuidanceSnapshot snapshot = service.GetSnapshot(sessionId);
         if (!service.Forget(sessionId))
             throw new InvalidOperationException($"Guidance 会话当前状态为 {snapshot.State}，不能遗忘。");
+    }
+
+    internal GuidanceOperationViewModel Retry(Guid sessionId, string message)
+    {
+        IGuidanceService service = RequireService();
+        GuidanceOperation operation = service.Retry(sessionId, new GuidanceMessage(message), _lifetime.ApplicationStopping);
+        TrackOperation(service, operation);
+        return GuidanceViewModelMapper.ToOperation(operation, service.GetSnapshot(sessionId));
+    }
+
+    internal GuidanceSnapshotViewModel Refresh(Guid sessionId)
+    {
+        IGuidanceService service = RequireService();
+        service.Refresh(sessionId);
+        GuidanceSnapshotViewModel snapshot = GuidanceViewModelMapper.ToSnapshot(service.GetSnapshot(sessionId));
+        _events.Publish(new GuidanceEventViewModel("guidance.refreshed", sessionId, null, null, snapshot, null));
+        return snapshot;
     }
 
     private void TrackOperation(IGuidanceService service, GuidanceOperation operation)

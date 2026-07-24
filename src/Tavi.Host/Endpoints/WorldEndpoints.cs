@@ -26,23 +26,28 @@ internal static class WorldEndpoints
         world.MapPost("/undo", UndoAsync);
         world.MapPost("/redo", RedoAsync);
         world.MapPost("/save", SaveAsync);
+        world.MapGet("/staging", GetWorldAsync);
+        world.MapPost("/staging/commit", CommitStagedAsync);
+        world.MapDelete("/staging/invalid", DeleteInvalidStagedAsync);
+        world.MapDelete("/staging/{changeId:guid}", DeleteStagedAsync);
         world.MapGet("/events", StreamEventsAsync);
         return endpoints;
     }
 
     private static Task<WorldGraphViewModel> GetWorldAsync(WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(WorldViewModelMapper.ToGraph, cancellationToken);
 
-    private static Task<WorldCommitViewModel> AddAnchorAsync(AddAnchorRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
+    private static Task<WorldStagingResultViewModel> AddAnchorAsync(AddAnchorRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
     {
         return runtime.ExecuteAsync(session =>
         {
             AnchorType type = ParseAnchorType(request.Type);
             AddAnchorOperation operation = WorldOperations.AddAnchor(request.Name, request.Description, type);
-            return WorldViewModelMapper.ToCommit(session.Apply(WorldOperations.Single(operation), request.ExpectedRevision), operation.AnchorId);
+            Guid id = session.Stage(operation);
+            return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(session));
         }, cancellationToken);
     }
 
-    private static Task<WorldCommitViewModel> UpdateAnchorAsync(Guid anchorId, UpdateAnchorRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
+    private static Task<WorldStagingResultViewModel> UpdateAnchorAsync(Guid anchorId, UpdateAnchorRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
     {
         return runtime.ExecuteAsync(session =>
         {
@@ -54,22 +59,23 @@ internal static class WorldEndpoints
             if (request.Type is not null)
                 operations.Add(new UpdateAnchorTypeOperation(anchorId, ParseAnchorType(request.Type)));
             RequireOperations(operations);
-            return WorldViewModelMapper.ToCommit(session.Apply(new WorldChangeSet(operations), request.ExpectedRevision), anchorId);
+            Guid id = session.Stage(new WorldChangeSet(operations));
+            return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(session));
         }, cancellationToken);
     }
 
-    private static Task<WorldCommitViewModel> RemoveAnchorAsync(Guid anchorId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Apply(WorldOperations.Single(new RemoveAnchorOperation(anchorId)), expectedRevision), anchorId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveAnchorAsync(Guid anchorId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveAnchorOperation(anchorId)), cancellationToken);
 
-    private static Task<WorldCommitViewModel> AddRelationAsync(AddRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
+    private static Task<WorldStagingResultViewModel> AddRelationAsync(AddRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
     {
         return runtime.ExecuteAsync(session =>
         {
             AddRelationOperation operation = WorldOperations.AddRelation(request.Name, request.Description, request.SourceId, request.TargetId, request.DomainCharacterId);
-            return WorldViewModelMapper.ToCommit(session.Apply(WorldOperations.Single(operation), request.ExpectedRevision), operation.RelationId);
+            return Stage(session, operation);
         }, cancellationToken);
     }
 
-    private static Task<WorldCommitViewModel> UpdateRelationAsync(Guid relationId, UpdateRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
+    private static Task<WorldStagingResultViewModel> UpdateRelationAsync(Guid relationId, UpdateRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
     {
         return runtime.ExecuteAsync(session =>
         {
@@ -79,22 +85,43 @@ internal static class WorldEndpoints
             if (request.Description is not null)
                 operations.Add(new UpdateRelationDescriptionOperation(relationId, request.Description));
             RequireOperations(operations);
-            return WorldViewModelMapper.ToCommit(session.Apply(new WorldChangeSet(operations), request.ExpectedRevision), relationId);
+            Guid id = session.Stage(new WorldChangeSet(operations));
+            return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(session));
         }, cancellationToken);
     }
 
-    private static Task<WorldCommitViewModel> RemoveRelationAsync(Guid relationId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Apply(WorldOperations.Single(new RemoveRelationOperation(relationId)), expectedRevision), relationId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveRelationAsync(Guid relationId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveRelationOperation(relationId)), cancellationToken);
 
-    private static Task<WorldCommitViewModel> CreateSubWorldAsync(CreateSubWorldRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
+    private static Task<WorldStagingResultViewModel> CreateSubWorldAsync(CreateSubWorldRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
     {
         return runtime.ExecuteAsync(session =>
         {
             CreateSubWorldOperation operation = WorldOperations.CreateSubWorld(request.CharacterId);
-            return WorldViewModelMapper.ToCommit(session.Apply(WorldOperations.Single(operation), request.ExpectedRevision), operation.SubWorldId);
+            return Stage(session, operation);
         }, cancellationToken);
     }
 
-    private static Task<WorldCommitViewModel> RemoveSubWorldAsync(Guid characterId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Apply(WorldOperations.Single(new RemoveSubWorldOperation(characterId)), expectedRevision), characterId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveSubWorldAsync(Guid characterId, long expectedRevision, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveSubWorldOperation(characterId)), cancellationToken);
+
+    private static Task<WorldCommitViewModel> CommitStagedAsync(CommitStagedRequest request, WorldRuntime runtime, GuidanceRuntime guidance, CancellationToken cancellationToken)
+    {
+        if (guidance.IsGenerating)
+            throw new InvalidOperationException("Guidance 正在生成；请先停止生成，再提交真实 World。");
+        return runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.CommitStaged(request.ChangeIds, request.ExpectedRevision).Commit), cancellationToken);
+    }
+
+    private static Task<WorldStagingResultViewModel> DeleteStagedAsync(Guid changeId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
+    {
+        if (!session.DeleteStaged(changeId))
+            throw new ArgumentException($"不存在暂存项 {changeId}。", nameof(changeId));
+        return new WorldStagingResultViewModel([changeId], WorldViewModelMapper.ToGraph(session));
+    }, cancellationToken);
+
+    private static Task<WorldStagingResultViewModel> DeleteInvalidStagedAsync(WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
+    {
+        int removed = session.DeleteInvalidStaged();
+        return new WorldStagingResultViewModel([], WorldViewModelMapper.ToGraph(session));
+    }, cancellationToken);
 
     private static Task<WorldCommitViewModel> UndoAsync(RevisionRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Undo(request.ExpectedRevision)), cancellationToken);
 
@@ -133,5 +160,11 @@ internal static class WorldEndpoints
     {
         if (operations.Count == 0)
             throw new ArgumentException("更新请求至少需要包含一个可修改属性。");
+    }
+
+    private static WorldStagingResultViewModel Stage(WorldSession session, WorldOperation operation)
+    {
+        Guid id = session.Stage(operation);
+        return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(session));
     }
 }

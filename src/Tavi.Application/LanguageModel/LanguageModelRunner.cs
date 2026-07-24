@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.Json;
 using Tavi.Application.Logging;
 
 namespace Tavi.Application.LanguageModel;
@@ -369,6 +370,11 @@ public sealed class LanguageModelRunner : ILanguageModelService
             catch (OperationCanceledException)
             {
                 throw;
+            }
+            catch (ToolArgumentException exception)
+            {
+                results[index] = ModelMessage.Tool(call.CallId, JsonSerializer.Serialize(new { error = exception.Message, retryable = true }));
+                Log(LogLevel.Warning, $"工具“{call.Name}”拒绝了参数，已将可重试错误返回模型。", runId, exception);
             }
             catch (Exception exception)
             {

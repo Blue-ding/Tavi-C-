@@ -13,6 +13,8 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     private JsonFileWorldStore? _store;
     private WorldSession? _session;
     private bool _disposed;
+    private readonly object _disposeSync = new();
+    private Task? _disposeTask;
 
     /// <summary>创建使用指定配置和事件代理的世界运行时。</summary>
     public WorldRuntime(IConfiguration configuration, WorldEventBroker events)
@@ -73,10 +75,14 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     internal WorldSession Session => RequireSession();
 
     /// <summary>释放世界会话、存储和访问同步资源。</summary>
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_disposed)
-            return;
+        lock (_disposeSync)
+            return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+    }
+
+    private async Task DisposeCoreAsync()
+    {
         _disposed = true;
         if (_session is not null)
         {

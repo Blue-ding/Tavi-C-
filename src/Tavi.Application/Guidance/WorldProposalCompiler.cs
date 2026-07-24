@@ -32,17 +32,18 @@ public static class WorldProposalCompiler
 
         ProposeAddAnchor[] anchors = proposal.Changes.OfType<ProposeAddAnchor>().Where(change => accepted.Contains(change.Id)).ToArray();
         ProposeAddRelation[] relations = proposal.Changes.OfType<ProposeAddRelation>().Where(change => accepted.Contains(change.Id)).ToArray();
-        var anchorIds = anchors.ToDictionary(change => change.AnchorId, _ => Guid.NewGuid());
+        var anchorIds = anchors.ToDictionary(change => change.AnchorId, change => change.AnchorId.Value);
+        WorldSnapshot projectedWorld = worldSession.CreateStagingSnapshot().ProjectedWorld;
         var operations = new List<WorldOperation>(anchors.Length + relations.Length);
         operations.AddRange(anchors.Select(change => new AddAnchorOperation(anchorIds[change.AnchorId], change.Name, change.Description, change.Type)));
         foreach (ProposeAddRelation relation in relations)
         {
-            Guid sourceId = ResolveAnchor(relation.Source, anchorIds, worldSession);
-            Guid targetId = ResolveAnchor(relation.Target, anchorIds, worldSession);
+            Guid sourceId = ResolveAnchor(relation.Source, anchorIds, projectedWorld);
+            Guid targetId = ResolveAnchor(relation.Target, anchorIds, projectedWorld);
             Guid? domainId = relation.Scope switch
             {
                 ProposedRelationScope.World => null,
-                ProposedRelationScope.SubWorld subWorld => RequireCharacter(ResolveAnchor(subWorld.Character, anchorIds, worldSession), anchors, anchorIds, worldSession),
+                ProposedRelationScope.SubWorld subWorld => RequireCharacter(ResolveAnchor(subWorld.Character, anchorIds, projectedWorld), anchors, anchorIds, projectedWorld),
                 _ => throw new ArgumentOutOfRangeException(nameof(relation.Scope))
             };
             operations.Add(WorldOperations.AddRelation(relation.Name, relation.Description, sourceId, targetId, domainId));
@@ -50,22 +51,22 @@ public static class WorldProposalCompiler
         return new ProposalCompilationResult(new WorldChangeSet(operations), anchorIds);
     }
 
-    private static Guid ResolveAnchor(ProposalAnchorReference reference, IReadOnlyDictionary<ProposalAnchorId, Guid> anchorIds, WorldSession session)
+    private static Guid ResolveAnchor(ProposalAnchorReference reference, IReadOnlyDictionary<ProposalAnchorId, Guid> anchorIds, WorldSnapshot world)
     {
         return reference switch
         {
-            ProposalAnchorReference.Existing existing => session.Queries.GetAnchor(existing.AnchorId).Id,
+            ProposalAnchorReference.Existing existing => existing.AnchorId,
             ProposalAnchorReference.Proposed proposed when anchorIds.TryGetValue(proposed.AnchorId, out Guid anchorId) => anchorId,
             ProposalAnchorReference.Proposed proposed => throw new InvalidOperationException($"Relation 引用的临时 Anchor {proposed.AnchorId.Value} 未被接受。"),
             _ => throw new ArgumentOutOfRangeException(nameof(reference))
         };
     }
 
-    private static Guid RequireCharacter(Guid anchorId, IReadOnlyCollection<ProposeAddAnchor> proposedAnchors, IReadOnlyDictionary<ProposalAnchorId, Guid> anchorIds, WorldSession session)
+    private static Guid RequireCharacter(Guid anchorId, IReadOnlyCollection<ProposeAddAnchor> proposedAnchors, IReadOnlyDictionary<ProposalAnchorId, Guid> anchorIds, WorldSnapshot world)
     {
         ProposeAddAnchor? proposed = proposedAnchors.SingleOrDefault(change => anchorIds.GetValueOrDefault(change.AnchorId) == anchorId);
-        AnchorType type = proposed?.Type ?? session.Queries.GetAnchor(anchorId).Type;
-        if (type != AnchorType.Character)
+        AnchorType? type = proposed?.Type ?? world.Anchors.GetValueOrDefault(anchorId)?.Type;
+        if (type.HasValue && type != AnchorType.Character)
             throw new InvalidOperationException($"Anchor {anchorId} 不是 Character，不能持有子世界。");
         return anchorId;
     }

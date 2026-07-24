@@ -9,7 +9,7 @@ internal static class GuidanceViewModelMapper
     {
         GuidanceMessageViewModel[] messages = snapshot.Messages.Select(message => new GuidanceMessageViewModel(message.Role.ToString(), message.Text)).ToArray();
         GuidanceFailureViewModel? failure = snapshot.Failure is null ? null : new GuidanceFailureViewModel(snapshot.Failure.ErrorCode, snapshot.Failure.Message, snapshot.Failure.IsTransient);
-        return new GuidanceSnapshotViewModel(snapshot.SessionId, snapshot.State.ToString(), snapshot.BaseWorldRevision, messages, snapshot.Proposal is null ? null : ToProposal(snapshot.Proposal), failure);
+        return new GuidanceSnapshotViewModel(snapshot.SessionId, snapshot.State.ToString(), snapshot.BaseWorldRevision, messages, snapshot.Proposal is null ? null : ToProposal(snapshot.Proposal), failure, snapshot.RetryMessage);
     }
 
     internal static GuidanceOperationViewModel ToOperation(GuidanceOperation operation, GuidanceSnapshot snapshot) => new(operation.Id, operation.SessionId, operation.State.ToString(), ToSnapshot(snapshot));

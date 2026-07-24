@@ -56,29 +56,14 @@ public sealed record GuidanceMessage
 /// <summary>指定一次 Guidance 会话当前所处的应用阶段。</summary>
 public enum GuidanceState
 {
-    /// <summary>会话已经登记但尚未开始生成。</summary>
-    Created,
+    /// <summary>会话可接受新消息、重试或刷新。</summary>
+    Idle,
 
     /// <summary>会话正在等待模型或执行草稿工具。</summary>
     Generating,
 
-    /// <summary>模型需要玩家继续提供文本。</summary>
-    AwaitingPlayer,
-
-    /// <summary>会话包含可供玩家选择和提交的提案。</summary>
-    ReadyForReview,
-
-    /// <summary>会话正在编译并提交玩家接受的修改。</summary>
-    Committing,
-
-    /// <summary>玩家接受的修改已经提交。</summary>
-    Completed,
-
-    /// <summary>会话已由调用方取消。</summary>
-    Cancelled,
-
-    /// <summary>会话因无法恢复的 Guidance 执行错误结束。</summary>
-    Failed
+    /// <summary>会话内部状态已经无法可靠恢复，需要显式刷新。</summary>
+    Faulted
 }
 
 /// <summary>表示可安全交给前端读取的 Guidance 会话快照。</summary>
@@ -101,6 +86,9 @@ public sealed record GuidanceSnapshot
 
     /// <summary>获取导致会话失败的 Guidance 异常；会话未失败时为 null。</summary>
     public GuidanceException? Failure { get; init; }
+
+    /// <summary>获取上次失败后保留的可编辑玩家消息；当前没有可重试消息时为空。</summary>
+    public string? RetryMessage { get; init; }
 }
 
 /// <summary>指定一次异步 Guidance 操作的运行状态。</summary>
@@ -241,11 +229,17 @@ public sealed record GuidanceCommitResult
 /// <summary>定义从叙事势能生成、继续、审阅并提交 World 提案的 Application 服务。</summary>
 public interface IGuidanceService
 {
+    /// <summary>获取唯一且长期稳定的 Guidance Session 标识。</summary>
+    Guid Id { get; }
+
     /// <summary>开始一次绑定当前 World revision 的 Guidance 会话，并立即返回可观察操作。</summary>
     GuidanceOperation Start(NarrativePotential potential, CancellationToken cancellationToken = default);
 
     /// <summary>向可继续的 Guidance 会话追加玩家文本，并立即返回可观察操作。</summary>
     GuidanceOperation Continue(Guid sessionId, GuidanceMessage message, CancellationToken cancellationToken = default);
+
+    /// <summary>编辑并重试上次未成功处理的玩家消息。</summary>
+    GuidanceOperation Retry(Guid sessionId, GuidanceMessage editedMessage, CancellationToken cancellationToken = default);
 
     /// <summary>获取指定 Guidance 会话当前的不可变快照。</summary>
     GuidanceSnapshot GetSnapshot(Guid sessionId);
@@ -255,6 +249,9 @@ public interface IGuidanceService
 
     /// <summary>取消指定 Guidance 会话及其当前模型运行。</summary>
     void Cancel(Guid sessionId);
+
+    /// <summary>在没有活动操作时遗忘 Guidance 对话和运行缓存；World 暂存区保持不变。</summary>
+    void Refresh(Guid sessionId);
 
     /// <summary>停止跟踪已经结束的 Guidance 会话；活跃会话不会被移除。</summary>
     bool Forget(Guid sessionId);
