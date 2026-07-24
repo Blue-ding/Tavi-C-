@@ -188,3 +188,45 @@ export interface GuidanceEventViewModel {
 }
 
 export type Selection = { kind: 'anchor'; id: string } | { kind: 'relation'; id: string } | null
+
+export type ManuscriptStatus = 'Editing' | 'Archived'
+
+export interface ManuscriptParagraphViewModel {
+  id: string
+  text: string
+}
+
+export interface ManuscriptViewModel {
+  id: string
+  stateId: string
+  title: string
+  status: ManuscriptStatus
+  paragraphs: ManuscriptParagraphViewModel[]
+  createdAtUtc: string
+  updatedAtUtc: string
+}
+
+export interface ManuscriptSummaryViewModel {
+  id: string
+  title: string
+  status: ManuscriptStatus
+  paragraphCount: number
+  preview: string
+  createdAtUtc: string
+  updatedAtUtc: string
+}
+
+export interface WritingSnapshotViewModel {
+  manuscript: ManuscriptViewModel | null
+  stagingRevision: number
+  isDirty: boolean
+  canUndo: boolean
+  canRedo: boolean
+  stagedChangeCount: number
+  autoSaveError: string | null
+}
+
+export interface WritingWorkspaceViewModel {
+  manuscripts: ManuscriptSummaryViewModel[]
+  session: WritingSnapshotViewModel
+}

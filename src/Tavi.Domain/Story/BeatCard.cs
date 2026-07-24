@@ -1,6 +1,6 @@
 namespace Tavi.Domain.Story;
 
-public class Story
+public class BeatCard
 {
-    //TODO
+    
 }

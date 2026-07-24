@@ -1,8 +1,9 @@
-import type { ApiProblem, GuidanceAvailabilityViewModel, GuidanceCommitViewModel, GuidanceOperationViewModel, GuidanceSnapshotViewModel, LanguageModelSettingsViewModel, OpenAIConfigurationInput, OpenAIConfigurationViewModel, SettingsSaveResultViewModel, WorldGraphViewModel } from './types'
+import type { ApiProblem, GuidanceAvailabilityViewModel, GuidanceCommitViewModel, GuidanceOperationViewModel, GuidanceSnapshotViewModel, LanguageModelSettingsViewModel, ManuscriptViewModel, OpenAIConfigurationInput, OpenAIConfigurationViewModel, SettingsSaveResultViewModel, WorldGraphViewModel, WritingSnapshotViewModel, WritingWorkspaceViewModel } from './types'
 
 const worldUrl = '/api/v1/world'
 const guidanceUrl = '/api/v1/guidance'
 const settingsUrl = '/api/v1/settings'
+const writingUrl = '/api/v1/writing'
 
 export class ApiError extends Error {
   readonly code: string
@@ -72,4 +73,20 @@ export const settingsApi = {
   updateLanguageModel: (settings: LanguageModelSettingsViewModel) => request<LanguageModelSettingsViewModel>(`${settingsUrl}/language-model`, { method: 'PUT', body: JSON.stringify(settings) }),
   getOpenAI: () => request<OpenAIConfigurationViewModel>(`${settingsUrl}/openai`),
   updateOpenAI: (configuration: OpenAIConfigurationInput) => request<OpenAIConfigurationViewModel>(`${settingsUrl}/openai`, { method: 'PUT', body: JSON.stringify(configuration) }),
+}
+
+export const writingApi = {
+  workspace: () => request<WritingWorkspaceViewModel>(`${writingUrl}/`),
+  create: (title: string) => request<WritingSnapshotViewModel>(`${writingUrl}/manuscripts`, { method: 'POST', body: JSON.stringify({ title }) }),
+  get: (id: string) => request<ManuscriptViewModel>(`${writingUrl}/manuscripts/${id}`),
+  renameArchived: (id: string, title: string) => request<ManuscriptViewModel>(`${writingUrl}/manuscripts/${id}/title`, { method: 'PATCH', body: JSON.stringify({ title }) }),
+  deleteArchived: (id: string) => request<void>(`${writingUrl}/manuscripts/${id}`, { method: 'DELETE' }),
+  renameActive: (stateId: string, title: string) => request<WritingSnapshotViewModel>(`${writingUrl}/session/title`, { method: 'PATCH', body: JSON.stringify({ expectedStateId: stateId, title }) }),
+  insertParagraph: (stateId: string, index: number, text = '') => request<WritingSnapshotViewModel>(`${writingUrl}/session/paragraphs`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId, index, text }) }),
+  updateParagraph: (paragraphId: string, stateId: string, text: string) => request<WritingSnapshotViewModel>(`${writingUrl}/session/paragraphs/${paragraphId}`, { method: 'PATCH', body: JSON.stringify({ expectedStateId: stateId, text }) }),
+  removeParagraph: (paragraphId: string, stateId: string) => request<WritingSnapshotViewModel>(`${writingUrl}/session/paragraphs/${paragraphId}?expectedStateId=${stateId}`, { method: 'DELETE' }),
+  undo: (stateId: string) => request<WritingSnapshotViewModel>(`${writingUrl}/session/undo`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
+  redo: (stateId: string) => request<WritingSnapshotViewModel>(`${writingUrl}/session/redo`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
+  save: () => request<WritingSnapshotViewModel>(`${writingUrl}/session/save`, { method: 'POST', body: '{}' }),
+  archive: (stateId: string) => request<ManuscriptViewModel>(`${writingUrl}/session/archive`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
 }

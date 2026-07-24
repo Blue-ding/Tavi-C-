@@ -53,6 +53,8 @@ public static class TaviHost
         builder.Services.AddSingleton<GuidanceRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<GuidanceRuntime>());
         builder.Services.AddSingleton<SettingsRuntime>();
+        builder.Services.AddSingleton<WritingRuntime>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<WritingRuntime>());
 
         WebApplication app = builder.Build();
         app.UseSerilogRequestLogging(requestLogging =>
@@ -76,6 +78,7 @@ public static class TaviHost
         app.MapWorldEndpoints();
         app.MapGuidanceEndpoints();
         app.MapSettingsEndpoints();
+        app.MapWritingEndpoints();
         app.MapFallbackToFile("index.html");
         app.Lifetime.ApplicationStarted.Register(() =>
             app.Logger.LogInformation(HostLogEvents.ApplicationStarted, "Tavi Host 已完成启动。"));

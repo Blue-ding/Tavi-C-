@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, Handle, MarkerType, MiniMap, Position, ReactFlow, getStraightPath, useNodesState, type Edge, type EdgeProps, type Node, type NodeChange, type NodePositionChange, type NodeProps } from '@xyflow/react'
-import { Archive, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
+import { Archive, BookOpen, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
 import { ApiError, settingsApi, worldApi } from './api'
 import { GuidancePanel } from './GuidancePanel'
+import { WritingWorkspace } from './WritingWorkspace'
 import type { AnchorType, AnchorViewModel, FeaturePolicy, LanguageModelSettingsViewModel, OpenAIConfigurationInput, OpenAIClientType, RelationViewModel, Selection, WorldGraphViewModel } from './types'
 
 type ScopeFilter = 'all' | 'world' | string
@@ -150,6 +151,7 @@ function App() {
   const [showGuidance, setShowGuidance] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showStaging, setShowStaging] = useState(false)
+  const [showWriting, setShowWriting] = useState(false)
   const [tooltipsSuppressed, setTooltipsSuppressed] = useState(false)
   const [flowNodes, setFlowNodes, applyNodeChanges] = useNodesState<Node>([])
   const refreshSequence = useRef(0)
@@ -413,6 +415,7 @@ function App() {
             <ChevronDown size={14} />
           </label>
           <div className="toolbar-divider" />
+          <button className="writing-toggle" onClick={() => setShowWriting(true)}><BookOpen size={16} />Writing</button>
           <button className={`guidance-toggle${showGuidance ? ' active' : ''}`} onClick={() => setShowGuidance(current => !current)}><Sparkles size={16} />Guidance</button>
           <button className="staging-toggle" disabled={!world.stagedChanges.length} onClick={() => setShowStaging(true)} title={world.stagedChanges.length ? `查看 ${world.stagedChanges.length} 项暂存修改` : '暂存区为空'}>
             <Archive size={16} />暂存区{world.stagedChanges.length > 0 && <span>{world.stagedChanges.length}</span>}
@@ -475,6 +478,7 @@ function App() {
       <GuidancePanel open={showGuidance} world={world} onClose={() => setShowGuidance(false)} onWorldChanged={() => refresh(true)} onError={setError} />
       {showSettings && <SettingsDialog close={closeSettings} onError={setError} />}
       {showStaging && <StagingDialog world={world} working={working} close={() => setShowStaging(false)} perform={perform} />}
+      <WritingWorkspace open={showWriting} onClose={() => setShowWriting(false)} />
     </main>
   )
 }
