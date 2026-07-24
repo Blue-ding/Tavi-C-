@@ -28,3 +28,5 @@
 - `Tavi.Web` 构建产物写入 `Tavi.Host/wwwroot`，该目录不提交 Git。
 - 发布 Host 时会依据 `package-lock.json` 重新还原并构建前端。
 - Host 默认只监听 `127.0.0.1:5178`，除非启动环境显式提供 `ASPNETCORE_URLS`。
+- `Tavi.App` 在同一进程中组合 Host，并使用动态回环端口和桌面输出目录中的
+  `wwwroot`；Host 的组合入口由 `TaviHost.Build` 统一提供。

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow, useNodesState, type Edge, type Node, type NodeChange, type NodePositionChange } from '@xyflow/react'
-import { Archive, Box, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
+import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, Handle, MiniMap, Position, ReactFlow, getBezierPath, useNodesState, type Edge, type EdgeProps, type Node, type NodeChange, type NodePositionChange, type NodeProps } from '@xyflow/react'
+import { Archive, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, LoaderCircle, Network, Package, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, UserRound, X } from 'lucide-react'
 import { ApiError, settingsApi, worldApi } from './api'
 import { GuidancePanel } from './GuidancePanel'
 import type { AnchorType, AnchorViewModel, FeaturePolicy, LanguageModelSettingsViewModel, OpenAIConfigurationInput, OpenAIClientType, RelationViewModel, Selection, WorldGraphViewModel } from './types'
@@ -10,9 +10,121 @@ type Dialog = 'anchor' | 'relation' | null
 
 const emptyWorld: WorldGraphViewModel = { worldId: '', revision: 0, stagingRevision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', nodes: [], edges: [], subWorlds: [], stagedChanges: [] }
 
+interface RelationshipBundleData extends Record<string, unknown> {
+  relations: RelationViewModel[]
+  nodeNames: Record<string, string>
+  selectedRelationId: string | null
+  tooltipsEnabled: boolean
+  onSelect: (relationId: string) => void
+}
+
+interface AnchorNodeData extends Record<string, unknown> {
+  anchor: AnchorViewModel
+}
+
+type RelationshipBundleEdge = Edge<RelationshipBundleData, 'relationshipBundle'>
+type AnchorFlowNode = Node<AnchorNodeData, 'anchorNode'>
+const edgeTypes = { relationshipBundle: RelationshipBundle }
+const nodeTypes = { anchorNode: AnchorNode }
+
 function layoutPosition(index: number, total: number) {
   const columns = Math.max(1, Math.ceil(Math.sqrt(total)))
   return { x: (index % columns) * 250, y: Math.floor(index / columns) * 170 }
+}
+
+function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected }: EdgeProps<RelationshipBundleEdge>) {
+  const [hovered, setHovered] = useState(false)
+  const closeTimer = useRef<number | null>(null)
+  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: .18 })
+  const relations = data?.relations ?? []
+  const containsSubWorldRelation = relations.some(relation => relation.scope !== 'World')
+
+  const openTooltip = () => {
+    if (!data?.tooltipsEnabled)
+      return
+    if (closeTimer.current !== null)
+      window.clearTimeout(closeTimer.current)
+    closeTimer.current = null
+    setHovered(true)
+  }
+
+  const scheduleClose = () => {
+    if (closeTimer.current !== null)
+      window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = null
+      setHovered(false)
+    }, 120)
+  }
+
+  useEffect(() => {
+    if (!data?.tooltipsEnabled) {
+      if (closeTimer.current !== null)
+        window.clearTimeout(closeTimer.current)
+      closeTimer.current = null
+      setHovered(false)
+    }
+    return () => {
+      if (closeTimer.current !== null)
+        window.clearTimeout(closeTimer.current)
+    }
+  }, [data?.tooltipsEnabled])
+
+  return (
+    <>
+      <g className="relationship-bundle" onMouseEnter={openTooltip} onMouseLeave={scheduleClose}>
+        <BaseEdge
+          id={id}
+          path={path}
+          interactionWidth={30}
+          className={`${containsSubWorldRelation ? 'subworld' : 'world'}${selected ? ' selected' : ''}`}
+        />
+      </g>
+      <EdgeLabelRenderer>
+        <div
+          className={`edge-bundle-overlay nodrag nopan${hovered ? ' open' : ''}`}
+          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: hovered || relations.length > 1 ? 'all' : 'none' }}
+          onMouseEnter={openTooltip}
+          onMouseLeave={scheduleClose}
+        >
+          {relations.length > 1 && <span className="edge-bundle-count" aria-label={`${relations.length} 条重合关系`}>{relations.length}</span>}
+          <div className="edge-tooltip" role="list" aria-label={relations.length > 1 ? '重合关系列表' : '关系信息'}>
+            <header>{relations.length > 1 ? `${relations.length} 条关系` : '关系'}</header>
+            {relations.map(relation => (
+              <button
+                key={relation.id}
+                className={relation.id === data?.selectedRelationId ? 'selected' : ''}
+                onClick={event => {
+                  event.stopPropagation()
+                  data?.onSelect(relation.id)
+                  setHovered(false)
+                }}
+              >
+                <span><strong>{relation.name}</strong><small>{data?.nodeNames[relation.sourceId] ?? '未知节点'} → {data?.nodeNames[relation.targetId] ?? '未知节点'}</small></span>
+                <i>{relation.scope === 'World' ? '事实' : '认知'}</i>
+              </button>
+            ))}
+          </div>
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  )
+}
+
+function AnchorNode({ data, selected }: NodeProps<AnchorFlowNode>) {
+  const { anchor } = data
+  return (
+    <div className={`anchor-node-core ${anchor.type.toLowerCase()}${selected ? ' selected' : ''}`}>
+      <Handle className="anchor-handle" type="target" position={Position.Left} />
+      <span className="anchor-node-dot" />
+      <div className="anchor-node-tooltip">
+        <header><strong>{anchor.name}</strong><span>{anchor.type === 'Character' ? '角色' : '物品'}</span></header>
+        <p>{anchor.description || '暂无描述'}</p>
+        {anchor.hasSubWorld && <small><GitBranch size={11} />拥有认知世界</small>}
+      </div>
+      <Handle className="anchor-handle" type="source" position={Position.Right} />
+    </div>
+  )
 }
 
 function App() {
@@ -28,11 +140,15 @@ function App() {
   const [showGuidance, setShowGuidance] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showStaging, setShowStaging] = useState(false)
+  const [tooltipsSuppressed, setTooltipsSuppressed] = useState(false)
   const [flowNodes, setFlowNodes, applyNodeChanges] = useNodesState<Node>([])
   const refreshSequence = useRef(0)
   const lastRefreshAt = useRef(0)
   const refreshTimer = useRef<number | null>(null)
   const positionCache = useRef(new Map<string, { x: number; y: number }>())
+  const dragMotion = useRef(new Map<string, { position: { x: number; y: number }; time: number; velocity: { x: number; y: number } }>())
+  const inertiaFrames = useRef(new Map<string, number>())
+  const tooltipResumeTimer = useRef<number | null>(null)
 
   const refresh = useCallback(async (quiet = false) => {
     const sequence = ++refreshSequence.current
@@ -113,27 +229,41 @@ function App() {
           ...previous,
           id: anchor.id,
           position: previous?.position ?? positionCache.current.get(anchor.id) ?? layoutPosition(index, visibleAnchors.length),
-          data: { label: <NodeLabel anchor={anchor} /> },
+          type: 'anchorNode',
+          data: { anchor },
           className: `world-node ${anchor.type.toLowerCase()}${selection?.kind === 'anchor' && selection.id === anchor.id ? ' selected' : ''}`,
-          style: { width: 190 },
+          style: { width: 48, height: 48 },
         }
       })
     })
   }, [selection, setFlowNodes, visibleAnchors])
 
-  const edges: Edge[] = useMemo(() => visibleRelations.filter(edge => visibleAnchorIds.has(edge.sourceId) && visibleAnchorIds.has(edge.targetId)).map(edge => ({
-    id: edge.id,
-    source: edge.sourceId,
-    target: edge.targetId,
-    label: edge.name,
-    type: 'smoothstep',
-    animated: selection?.kind === 'relation' && selection.id === edge.id,
-    markerEnd: { type: MarkerType.ArrowClosed, color: edge.scope === 'World' ? '#99a9a3' : '#d4a85a' },
-    className: edge.scope === 'World' ? 'world-edge' : 'subworld-edge',
-    style: { stroke: edge.scope === 'World' ? '#6f817b' : '#bd8c3e', strokeWidth: 1.6, strokeDasharray: edge.scope === 'World' ? undefined : '7 5' },
-    labelStyle: { fill: '#d5ddd9', fontSize: 12, fontWeight: 600 },
-    labelBgStyle: { fill: '#171d1e', fillOpacity: 0.9 },
-  })), [selection, visibleAnchorIds, visibleRelations])
+  const selectRelation = useCallback((relationId: string) => {
+    setSelection({ kind: 'relation', id: relationId })
+    setShowInspector(true)
+  }, [])
+
+  const edges: RelationshipBundleEdge[] = useMemo(() => {
+    const bundles = new Map<string, RelationViewModel[]>()
+    visibleRelations.filter(edge => visibleAnchorIds.has(edge.sourceId) && visibleAnchorIds.has(edge.targetId)).forEach(relation => {
+      const key = [relation.sourceId, relation.targetId].sort().map(encodeURIComponent).join('|')
+      const bundle = bundles.get(key)
+      if (bundle)
+        bundle.push(relation)
+      else
+        bundles.set(key, [relation])
+    })
+    const nodeNames = Object.fromEntries(world.nodes.map(anchor => [anchor.id, anchor.name]))
+    const selectedRelationId = selection?.kind === 'relation' ? selection.id : null
+    return [...bundles.entries()].map(([key, relations]) => ({
+      id: `relationship-bundle:${key}`,
+      source: relations[0].sourceId,
+      target: relations[0].targetId,
+      type: 'relationshipBundle',
+      selected: relations.some(relation => relation.id === selectedRelationId),
+      data: { relations, nodeNames, selectedRelationId, tooltipsEnabled: !tooltipsSuppressed, onSelect: selectRelation },
+    }))
+  }, [selectRelation, selection, tooltipsSuppressed, visibleAnchorIds, visibleRelations, world.nodes])
 
   const selectedAnchor = selection?.kind === 'anchor' ? world.nodes.find(anchor => anchor.id === selection.id) ?? null : null
   const selectedRelation = selection?.kind === 'relation' ? world.edges.find(edge => edge.id === selection.id) ?? null : null
@@ -169,6 +299,82 @@ function App() {
     })
     applyNodeChanges(changes)
   }, [applyNodeChanges])
+
+  const stopInertia = useCallback((nodeId: string) => {
+    const frame = inertiaFrames.current.get(nodeId)
+    if (frame !== undefined)
+      window.cancelAnimationFrame(frame)
+    inertiaFrames.current.delete(nodeId)
+  }, [])
+
+  const handleNodeDragStart = useCallback((_: unknown, node: Node) => {
+    if (tooltipResumeTimer.current !== null)
+      window.clearTimeout(tooltipResumeTimer.current)
+    tooltipResumeTimer.current = null
+    setTooltipsSuppressed(true)
+    stopInertia(node.id)
+    dragMotion.current.set(node.id, { position: node.position, time: performance.now(), velocity: { x: 0, y: 0 } })
+  }, [stopInertia])
+
+  const handleNodeDrag = useCallback((_: unknown, node: Node) => {
+    const now = performance.now()
+    const previous = dragMotion.current.get(node.id)
+    if (!previous)
+      return
+    const elapsed = Math.max(1, now - previous.time)
+    const measured = { x: (node.position.x - previous.position.x) / elapsed, y: (node.position.y - previous.position.y) / elapsed }
+    dragMotion.current.set(node.id, {
+      position: node.position,
+      time: now,
+      velocity: {
+        x: previous.velocity.x * .35 + measured.x * .65,
+        y: previous.velocity.y * .35 + measured.y * .65,
+      },
+    })
+  }, [])
+
+  const handleNodeDragStop = useCallback((_: unknown, node: Node) => {
+    if (tooltipResumeTimer.current !== null)
+      window.clearTimeout(tooltipResumeTimer.current)
+    tooltipResumeTimer.current = window.setTimeout(() => {
+      tooltipResumeTimer.current = null
+      setTooltipsSuppressed(false)
+    }, 180)
+    const motion = dragMotion.current.get(node.id)
+    dragMotion.current.delete(node.id)
+    if (!motion)
+      return
+    const releaseDelay = performance.now() - motion.time
+    const releaseFactor = Math.max(0, 1 - releaseDelay / 140)
+    let velocity = {
+      x: Math.max(-1.15, Math.min(1.15, motion.velocity.x)) * releaseFactor,
+      y: Math.max(-1.15, Math.min(1.15, motion.velocity.y)) * releaseFactor,
+    }
+    if (Math.hypot(velocity.x, velocity.y) < .08)
+      return
+    let position = { ...node.position }
+    let previousTime = performance.now()
+    const animate = (now: number) => {
+      const elapsed = Math.min(32, now - previousTime)
+      previousTime = now
+      position = { x: position.x + velocity.x * elapsed, y: position.y + velocity.y * elapsed }
+      velocity = { x: velocity.x * Math.pow(.88, elapsed / 16.67), y: velocity.y * Math.pow(.88, elapsed / 16.67) }
+      positionCache.current.set(node.id, position)
+      setFlowNodes(current => current.map(candidate => candidate.id === node.id ? { ...candidate, position } : candidate))
+      if (Math.hypot(velocity.x, velocity.y) >= .018)
+        inertiaFrames.current.set(node.id, window.requestAnimationFrame(animate))
+      else
+        inertiaFrames.current.delete(node.id)
+    }
+    inertiaFrames.current.set(node.id, window.requestAnimationFrame(animate))
+  }, [setFlowNodes])
+
+  useEffect(() => () => {
+    inertiaFrames.current.forEach(frame => window.cancelAnimationFrame(frame))
+    inertiaFrames.current.clear()
+    if (tooltipResumeTimer.current !== null)
+      window.clearTimeout(tooltipResumeTimer.current)
+  }, [])
   const closeSettings = useCallback(() => setShowSettings(false), [])
 
   const statusLabel = world.health === 'Faulted' ? '世界会话异常' : world.isDirty ? '等待自动保存' : '已保存'
@@ -226,9 +432,9 @@ function App() {
           </div>
         </aside>
 
-        <section className="canvas">
+        <section className={`canvas${tooltipsSuppressed ? ' tooltips-suppressed' : ''}`}>
           {loading ? <LoadingState /> : (
-            <ReactFlow nodes={flowNodes} edges={edges} onNodesChange={moveNodes} fitView fitViewOptions={{ padding: 0.28 }} minZoom={0.25} maxZoom={1.8} nodesDraggable onPaneClick={() => setSelection(null)} onNodeClick={(_, node) => { setSelection({ kind: 'anchor', id: node.id }); setShowInspector(true) }} onEdgeClick={(_, edge) => { setSelection({ kind: 'relation', id: edge.id }); setShowInspector(true) }}>
+            <ReactFlow nodes={flowNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={moveNodes} onNodeDragStart={handleNodeDragStart} onNodeDrag={handleNodeDrag} onNodeDragStop={handleNodeDragStop} fitView fitViewOptions={{ padding: 0.28 }} minZoom={0.25} maxZoom={1.8} nodesDraggable onPaneClick={() => setSelection(null)} onNodeClick={(_, node) => { stopInertia(node.id); setSelection({ kind: 'anchor', id: node.id }); setShowInspector(true) }}>
               <Background variant={BackgroundVariant.Dots} color="#34413e" gap={24} size={1.15} />
               <Controls showInteractive={false} />
               <MiniMap nodeColor={node => node.className?.toString().includes('character') ? '#b77d55' : '#4c8d82'} maskColor="rgba(10, 14, 15, .76)" pannable zoomable />
@@ -255,10 +461,6 @@ function App() {
       {showStaging && <StagingDialog world={world} working={working} close={() => setShowStaging(false)} perform={perform} />}
     </main>
   )
-}
-
-function NodeLabel({ anchor }: { anchor: AnchorViewModel }) {
-  return <div className="node-label"><span className="node-kind">{anchor.type === 'Character' ? <UserRound size={15} /> : <Box size={15} />}</span><span><strong>{anchor.name}</strong><small>{anchor.description || '暂无描述'}</small></span>{anchor.hasSubWorld && <span className="subworld-badge" title="拥有认知世界"><GitBranch size={12} /></span>}</div>
 }
 
 function IconButton({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: ReactNode }) {

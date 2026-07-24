@@ -13,6 +13,7 @@ src/
   Tavi.Cli/                       命令行入口
   Tavi.Host/                      本地 HTTP/SSE 宿主与 ViewModel 展示层
   Tavi.Web/                       React 世界图工作台
+  Tavi.App/                       .NET MAUI 桌面外壳
 tests/
   Tavi.Domain.Tests/
   Tavi.Application.Tests/
@@ -48,6 +49,24 @@ dotnet run --project src/Tavi.Host
 ```
 
 随后访问 `http://127.0.0.1:5178`。Host 默认加载本地 `Tavi/Saves/default` 存档；可使用 `TAVI_SAVE_DIRECTORY` 覆盖存档目录。前端支持 Anchor、Relation 和 Character 子世界的图形化观察与编辑，以及撤销、重做、手动保存和自动保存状态反馈。配置语言模型后，还可以从顶部工具栏打开 Guidance，通过对话生成、逐项审阅并原子提交世界提案。
+
+## Windows 桌面应用
+
+Windows 外壳使用 .NET MAUI WebView 承载同一套 React 前端，并在应用进程内启动
+`Tavi.Host`。Host 只监听随机的 `127.0.0.1` 回环端口；窗口关闭时会一并停止，
+不会额外打开控制台窗口，也不会占用固定端口。
+
+首次构建前安装 Windows MAUI workload：
+
+```powershell
+dotnet workload install maui-windows
+dotnet build src/Tavi.App/Tavi.App.csproj
+dotnet run --project src/Tavi.App/Tavi.App.csproj
+```
+
+构建桌面项目时会自动执行 `Tavi.Web` 的前端构建，并将静态资源复制到桌面应用
+输出目录。当前项目只启用 Windows TFM；未来开始 Android 或 macOS 适配时，再在
+`Tavi.App.csproj` 中追加对应目标框架和 workload。
 
 ## 语言模型配置
 

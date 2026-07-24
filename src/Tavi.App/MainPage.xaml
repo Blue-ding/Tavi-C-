@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Tavi.App.MainPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="#101416"
+    Shell.NavBarIsVisible="False">
+
+    <Grid>
+        <WebView
+            x:Name="Browser"
+            IsVisible="False"
+            Navigated="OnBrowserNavigated"
+            Navigating="OnBrowserNavigating" />
+
+        <VerticalStackLayout
+            x:Name="LoadingPanel"
+            HorizontalOptions="Center"
+            Spacing="16"
+            VerticalOptions="Center">
+            <ActivityIndicator
+                HeightRequest="36"
+                IsRunning="True"
+                WidthRequest="36"
+                Color="#87C9A5" />
+            <Label
+                FontFamily="OpenSansRegular"
+                FontSize="14"
+                Text="正在启动 Tavi…"
+                TextColor="#AEBBB5" />
+        </VerticalStackLayout>
+
+        <Border
+            x:Name="ErrorPanel"
+            Padding="28"
+            BackgroundColor="#19211E"
+            HorizontalOptions="Center"
+            IsVisible="False"
+            Stroke="#31413A"
+            StrokeShape="RoundRectangle 12"
+            VerticalOptions="Center"
+            WidthRequest="480">
+            <VerticalStackLayout Spacing="14">
+                <Label
+                    FontFamily="OpenSansSemibold"
+                    FontSize="20"
+                    Text="Tavi 无法启动"
+                    TextColor="#F1F5F3" />
+                <Label
+                    x:Name="ErrorMessage"
+                    FontFamily="OpenSansRegular"
+                    FontSize="13"
+                    LineBreakMode="WordWrap"
+                    TextColor="#AEBBB5" />
+                <Button
+                    Padding="18,10"
+                    BackgroundColor="#87C9A5"
+                    Clicked="OnRetryClicked"
+                    CornerRadius="8"
+                    FontFamily="OpenSansSemibold"
+                    HorizontalOptions="Start"
+                    Text="重试"
+                    TextColor="#101713" />
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentPage>
