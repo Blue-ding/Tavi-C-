@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Tavi.Host.ViewModels;
 
 /// <summary>表示前端世界断言图所需的完整可观察状态。</summary>
@@ -32,6 +34,14 @@ public sealed record WorldStagingResultViewModel(IReadOnlyList<Guid> AffectedCha
 /// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param>
 /// <param name="ChangeIds">需要原子提交的暂存项标识。</param>
 public sealed record CommitStagedRequest(Guid ExpectedStateId, IReadOnlyList<Guid> ChangeIds);
+
+/// <summary>表示前端可调用的一项 Module World Authoring Action。</summary>
+/// <param name="Id">稳定 SemanticKey。</param><param name="Name">面向玩家的名称。</param><param name="Description">操作说明。</param><param name="ParameterSchema">JSON Schema 参数定义。</param>
+public sealed record WorldAuthoringActionViewModel(string Id, string Name, string Description, string ParameterSchema);
+
+/// <summary>表示调用 Module World Authoring Action 的请求。</summary>
+/// <param name="ExpectedStateId">调用方观察到的 World 状态标识。</param><param name="Arguments">符合 Action Schema 的 JSON 参数。</param>
+public sealed record InvokeWorldAuthoringActionRequest(Guid ExpectedStateId, JsonElement Arguments);
 
 /// <summary>表示世界断言图中的 Element。</summary>
 /// <param name="Id">Element 标识。</param>

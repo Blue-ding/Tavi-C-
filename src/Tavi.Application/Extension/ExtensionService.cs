@@ -1,7 +1,7 @@
-using Tavi.Application.Scenario;
+using Tavi.Application.Extensions.Loading;
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Extension;
+namespace Tavi.Application.Extensions;
 
 /// <summary>负责加载 Module 包与持久化设置，并向宿主提供可由前端控制的 ExtensionSession。</summary>
 public sealed class ExtensionService

@@ -2,19 +2,15 @@ namespace Tavi.Extensibility;
 
 /// <summary>提供给 Plugin 的只读 Scenario Element 数据。</summary>
 /// <param name="Id">Element 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Type">开放类型。</param>
-public sealed record ScenarioElementView(Guid Id, string Name, string Description, SemanticKey Type);
 
 /// <summary>提供给 Plugin 的只读 Scenario Aspect 数据。</summary>
 /// <param name="Id">Aspect 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="ElementId">目标 Element。</param><param name="ScopeId">唯一 Scope。</param>
-public sealed record ScenarioAspectView(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid ElementId, Guid ScopeId);
 
 /// <summary>提供给 Plugin 的只读 Scenario Relation 数据。</summary>
 /// <param name="Id">Relation 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="SourceElementId">来源 Element。</param><param name="TargetElementId">目标 Element。</param><param name="ScopeId">唯一 Scope。</param>
-public sealed record ScenarioRelationView(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId);
 
 /// <summary>提供给 Plugin 的只读 Scenario Scope 数据。</summary>
 /// <param name="Id">Scope 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="OwnerElementId">Owner Element。</param>
-public sealed record ScenarioScopeView(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid OwnerElementId);
 
 /// <summary>提供给 Plugin 的只读 Scene 槽位绑定数据。</summary>
 /// <param name="SlotId">槽位标识。</param><param name="ElementIds">按绑定顺序排列的 Element 标识。</param>
@@ -34,16 +30,16 @@ public interface IScenarioView
     Guid SourceWorldStateId { get; }
 
     /// <summary>获取全部 Element。</summary>
-    IReadOnlyCollection<ScenarioElementView> Elements { get; }
+    IReadOnlyCollection<ElementView> Elements { get; }
 
     /// <summary>获取全部 Aspect。</summary>
-    IReadOnlyCollection<ScenarioAspectView> Aspects { get; }
+    IReadOnlyCollection<AspectView> Aspects { get; }
 
     /// <summary>获取全部 Relation。</summary>
-    IReadOnlyCollection<ScenarioRelationView> Relations { get; }
+    IReadOnlyCollection<RelationView> Relations { get; }
 
     /// <summary>获取全部 Scope。</summary>
-    IReadOnlyCollection<ScenarioScopeView> Scopes { get; }
+    IReadOnlyCollection<ScopeView> Scopes { get; }
 
     /// <summary>获取全部活跃 Scene。</summary>
     IReadOnlyCollection<ScenarioSceneView> Scenes { get; }
@@ -59,16 +55,16 @@ public sealed record SceneContextView
     public required ScenarioSceneView Scene { get; init; }
 
     /// <summary>获取处理开始时冻结的内部 Element。</summary>
-    public IReadOnlyCollection<ScenarioElementView> Elements { get; init; } = [];
+    public IReadOnlyCollection<ElementView> Elements { get; init; } = [];
 
     /// <summary>获取由内部 Element 持有的 Scope。</summary>
-    public IReadOnlyCollection<ScenarioScopeView> Scopes { get; init; } = [];
+    public IReadOnlyCollection<ScopeView> Scopes { get; init; } = [];
 
     /// <summary>获取目标和所属 Scope 均位于局部边界内的 Aspect。</summary>
-    public IReadOnlyCollection<ScenarioAspectView> Aspects { get; init; } = [];
+    public IReadOnlyCollection<AspectView> Aspects { get; init; } = [];
 
     /// <summary>获取两个端点和所属 Scope 均位于局部边界内的 Relation。</summary>
-    public IReadOnlyCollection<ScenarioRelationView> Relations { get; init; } = [];
+    public IReadOnlyCollection<RelationView> Relations { get; init; } = [];
 }
 
 /// <summary>描述 Module 在冻结 Scene 局部边界内提出的一项结构化结算意图。</summary>

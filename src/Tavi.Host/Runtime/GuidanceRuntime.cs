@@ -12,6 +12,7 @@ namespace Tavi.Host.Runtime;
 internal sealed class GuidanceRuntime : IHostedService
 {
     private readonly WorldRuntime _world;
+    private readonly ExtensionRuntime _extensions;
     private readonly IConfiguration _configuration;
     private readonly ApplicationLoggerAdapter _applicationLogger;
     private readonly ILogger<GuidanceRuntime> _logger;
@@ -24,9 +25,10 @@ internal sealed class GuidanceRuntime : IHostedService
     private string _availabilityMessage = "Guidance 尚未初始化。";
     private string? _provider;
 
-    public GuidanceRuntime(WorldRuntime world, IConfiguration configuration, ApplicationLoggerAdapter applicationLogger, ILogger<GuidanceRuntime> logger, GuidanceEventBroker events, IHostApplicationLifetime lifetime, IEnumerable<ILanguageModelService> providedLanguageModels)
+    public GuidanceRuntime(WorldRuntime world, ExtensionRuntime extensions, IConfiguration configuration, ApplicationLoggerAdapter applicationLogger, ILogger<GuidanceRuntime> logger, GuidanceEventBroker events, IHostApplicationLifetime lifetime, IEnumerable<ILanguageModelService> providedLanguageModels)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
+        _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _applicationLogger = applicationLogger ?? throw new ArgumentNullException(nameof(applicationLogger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -240,7 +242,7 @@ internal sealed class GuidanceRuntime : IHostedService
     private void InitializeService(ILanguageModelService languageModels)
     {
         _provider = languageModels.Capabilities.Provider;
-        _service = new TaviCore(languageModels, _applicationLogger).CreateGuidanceService(_world.Service);
+        _service = new TaviCore(languageModels, _applicationLogger).CreateGuidanceService(_world.Service, _extensions.Frozen);
     }
 
     private IGuidanceService RequireService() => _service ?? throw LanguageModelConfigurationException.Invalid(_availabilityMessage);

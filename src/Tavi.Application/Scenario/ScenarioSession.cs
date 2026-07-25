@@ -1,5 +1,6 @@
 using Tavi.Domain.Scenario;
-using Tavi.Application.Extension;
+using Tavi.Application.Extensions;
+using Tavi.Application.Extensions.Scenario;
 using System.Collections.ObjectModel;
 using Tavi.Extensibility;
 using RuntimeScenario = Tavi.Domain.Scenario.Scenario;
@@ -11,7 +12,8 @@ namespace Tavi.Application.Scenario;
 public sealed class ScenarioSession : IScenarioService
 {
     private readonly IScenarioStore _store;
-    private readonly ScenarioModuleCatalog _catalog;
+    private readonly ModuleCatalog _catalog;
+    private readonly FrozenModuleRuntime _extensions;
     private readonly ScenarioSemanticValidator _validator;
     private readonly Guid _sourceWorldStateId;
     private readonly ScenarioSnapshot? _initialSnapshot;
@@ -30,10 +32,11 @@ public sealed class ScenarioSession : IScenarioService
     private bool _disposed;
 
     /// <summary>创建持有独立 Scenario 的 ScenarioSession。</summary>
-    public ScenarioSession(IScenarioStore store, ScenarioModuleCatalog catalog, Guid sourceWorldStateId, string slot = "default", TimeSpan? autoSaveDelay = null)
+    public ScenarioSession(IScenarioStore store, ModuleCatalog catalog, Guid sourceWorldStateId, string slot = "default", TimeSpan? autoSaveDelay = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        _extensions = new FrozenModuleRuntime(catalog, new Dictionary<ModuleId, IReadOnlyDictionary<string, string>>(), []);
         if (sourceWorldStateId == Guid.Empty)
             throw new ArgumentException("Source World StateId 不能为空。", nameof(sourceWorldStateId));
         if (string.IsNullOrWhiteSpace(slot))
@@ -48,23 +51,25 @@ public sealed class ScenarioSession : IScenarioService
     }
 
     /// <summary>创建会在存档不存在时吸收完整 World 快照的 ScenarioSession。</summary>
-    public ScenarioSession(IScenarioStore store, ScenarioModuleCatalog catalog, WorldSnapshot sourceWorld, string slot = "default", TimeSpan? autoSaveDelay = null)
+    public ScenarioSession(IScenarioStore store, ModuleCatalog catalog, WorldSnapshot sourceWorld, string slot = "default", TimeSpan? autoSaveDelay = null)
         : this(store, catalog, sourceWorld?.Id ?? throw new ArgumentNullException(nameof(sourceWorld)), slot, autoSaveDelay)
     {
         _initialSnapshot = ScenarioWorldBridge.Import(sourceWorld, catalog);
     }
 
     /// <summary>创建使用冻结 Extension 快照的新 ScenarioSession。</summary>
-    public ScenarioSession(IScenarioStore store, FrozenExtensionSnapshot extensions, Guid sourceWorldStateId, string slot = "default", TimeSpan? autoSaveDelay = null)
+    public ScenarioSession(IScenarioStore store, FrozenModuleRuntime extensions, Guid sourceWorldStateId, string slot = "default", TimeSpan? autoSaveDelay = null)
         : this(store, extensions?.Catalog ?? throw new ArgumentNullException(nameof(extensions)), sourceWorldStateId, slot, autoSaveDelay)
     {
+        _extensions = extensions;
         _moduleParameters = CopyParameters(extensions.Parameters);
     }
 
     /// <summary>创建会使用冻结 Extension 快照吸收完整 World 的 ScenarioSession。</summary>
-    public ScenarioSession(IScenarioStore store, FrozenExtensionSnapshot extensions, WorldSnapshot sourceWorld, string slot = "default", TimeSpan? autoSaveDelay = null)
+    public ScenarioSession(IScenarioStore store, FrozenModuleRuntime extensions, WorldSnapshot sourceWorld, string slot = "default", TimeSpan? autoSaveDelay = null)
         : this(store, extensions?.Catalog ?? throw new ArgumentNullException(nameof(extensions)), sourceWorld, slot, autoSaveDelay)
     {
+        _extensions = extensions;
         _moduleParameters = CopyParameters(extensions.Parameters);
         _initialSnapshot = ScenarioWorldBridge.Import(sourceWorld, extensions.Catalog, _moduleParameters);
     }
@@ -141,13 +146,13 @@ public sealed class ScenarioSession : IScenarioService
         ScenarioSnapshot snapshot = ExecuteQuery(scenario => scenario.CreateSnapshot());
         Dictionary<string, string> modules = snapshot.Modules.ToDictionary(value => value.Id, value => value.Version, StringComparer.Ordinal);
         var definitions = _catalog.StaticScenes.Where(scene => _catalog.IsModuleActive(scene.Module, modules)).Select(scene => ExtensibilityCopies.Scene(scene) with { SourceScenarioStateId = snapshot.Id }).ToList();
-        foreach (ISceneDefinitionProvider provider in _catalog.SceneProviders.Where(provider => _catalog.IsModuleActive(provider.Module, modules)))
+        foreach ((ModuleId module, IScenarioDefinitionExtension provider) in _extensions.ScenarioDefinitionExtensions.Where(value => _catalog.IsModuleActive(value.Module, modules)))
         {
-            var context = new SceneDefinitionContext { Scenario = ScenarioExtensibilityAdapter.ToView(snapshot), RandomSeed = randomSeed, Parameters = GetModuleParameters(provider.Module) };
+            var context = new SceneDefinitionContext { Scenario = ScenarioExtensibilityAdapter.ToView(snapshot), RandomSeed = randomSeed, Parameters = GetModuleParameters(module) };
             IReadOnlyList<SceneDefinition> provided = await provider.EvaluateAsync(context, cancellationToken);
             foreach (SceneDefinition definition in provided)
             {
-                ValidateProviderDefinition(provider, definition, snapshot.Id);
+                ValidateProviderDefinition(module, provider, definition, snapshot.Id);
                 definitions.Add(ExtensibilityCopies.Scene(definition) with { SourceScenarioStateId = snapshot.Id });
             }
         }
@@ -237,7 +242,7 @@ public sealed class ScenarioSession : IScenarioService
             return (scenario.CreateSnapshot(), scene);
         });
         SceneDefinition definition = ScenarioExtensibilityAdapter.ToDefinition(captured.Scene);
-        ISceneRuleSettler settler = _catalog.RuleSettlers.SingleOrDefault(value => value.Module == definition.Module && value.Definitions.Contains(definition.Id)) ?? throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.CapabilityUnavailable, TaviErrorCategory.Configuration, nameof(SettleSceneByRulesAsync), $"SceneDefinition {definition.Id} 没有注册规则结算器。");
+        IScenarioSettlementExtension settler = _extensions.ScenarioSettlementExtensions.Where(value => value.Module == definition.Module).Select(value => value.Extension).SingleOrDefault(value => value.Definitions.Contains(definition.Id)) ?? throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.CapabilityUnavailable, TaviErrorCategory.Configuration, nameof(SettleSceneByRulesAsync), $"SceneDefinition {definition.Id} 没有注册规则结算器。");
         var context = new SceneSettlementContext { Context = ScenarioExtensibilityAdapter.ToSceneContext(captured.Snapshot, captured.Scene), Definition = definition, RandomSeed = randomSeed, Parameters = GetModuleParameters(definition.Module) };
         SceneSettlementProposal proposal = await settler.SettleAsync(context, cancellationToken);
         return SettleScene(sceneId, proposal, expectedStateId);
@@ -452,9 +457,9 @@ public sealed class ScenarioSession : IScenarioService
             throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.StateConflict, TaviErrorCategory.Conflict, operation, $"SceneDefinition {definition.Id} 已经过期。");
     }
 
-    private static void ValidateProviderDefinition(ISceneDefinitionProvider provider, SceneDefinition definition, Guid stateId)
+    private static void ValidateProviderDefinition(ModuleId module, IScenarioDefinitionExtension provider, SceneDefinition definition, Guid stateId)
     {
-        if (definition is null || definition.Module != provider.Module || definition.Id.Namespace != provider.Module || definition.SourceScenarioStateId.HasValue && definition.SourceScenarioStateId.Value != stateId || definition.SettlementCapabilities == SceneSettlementCapabilities.None)
+        if (definition is null || definition.Module != module || definition.Id.Namespace != module || definition.SourceScenarioStateId.HasValue && definition.SourceScenarioStateId.Value != stateId || definition.SettlementCapabilities == SceneSettlementCapabilities.None)
             throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.InvalidModule, TaviErrorCategory.Protocol, nameof(GetSceneDefinitionsAsync), $"Provider {provider.GetType().FullName} 返回了无效 SceneDefinition。");
     }
 

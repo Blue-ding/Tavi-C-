@@ -1,4 +1,5 @@
 using Tavi.Application.Scenario;
+using Tavi.Application.Extensions;
 using Tavi.Domain.World;
 using Xunit;
 
@@ -14,7 +15,7 @@ public sealed class ScenarioWorldBridgeTests
         Guid elementId = Guid.NewGuid();
         var world = new WorldSnapshot();
         world.Elements.Add(elementId, new Element(elementId, "Alice", "", ElementType.None));
-        ScenarioModuleCatalog catalog = ScenarioModuleCatalog.Create([]);
+        ModuleCatalog catalog = ModuleCatalog.Create([]);
         Tavi.Domain.Scenario.ScenarioSnapshot scenario = ScenarioWorldBridge.Import(world, catalog);
         scenario.Elements[elementId] = new Tavi.Domain.Scenario.Element(elementId, "Alicia", "", Tavi.Domain.Scenario.ElementType.None);
         Guid createdId = Guid.NewGuid();

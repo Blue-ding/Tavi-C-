@@ -23,7 +23,10 @@ public enum WorldStagedChangeSource
     Player,
 
     /// <summary>操作由 Guidance 提案产生。</summary>
-    Guidance
+    Guidance,
+
+    /// <summary>操作由活动 Module 的组合式 World Authoring 能力产生。</summary>
+    Module
 }
 
 /// <summary>描述不可变的暂存 World 操作组及其当前校验结果。</summary>

@@ -1,4 +1,7 @@
 using Tavi.Application.Scenario;
+using Tavi.Application.Extensions;
+using Tavi.Application.Extensions.Loading;
+using Tavi.Application.Extensions.Scenario;
 using Tavi.Domain.Scenario;
 using Tavi.Extensibility;
 using Xunit;
@@ -37,10 +40,9 @@ public sealed class ScenarioSessionTests
     [Fact]
     public async Task RuleSettlementUsesLocalContext()
     {
-        ScenarioModuleCatalog catalog = LoadCharacterCatalog();
         var plugin = new CharacterTestPlugin();
-        catalog.RegisterPlugin(plugin);
-        await using var session = new ScenarioSession(new MemoryScenarioStore(), catalog, Guid.NewGuid());
+        FrozenModuleRuntime runtime = new ExtensionSession([LoadCharacterPackage()], plugins: [plugin]).Freeze();
+        await using var session = new ScenarioSession(new MemoryScenarioStore(), runtime, Guid.NewGuid());
         await session.InitializeAsync();
         Guid actorId = AddCharacter(session, "Alice");
         _ = AddCharacter(session, "Outside");
@@ -132,7 +134,8 @@ public sealed class ScenarioSessionTests
         Slots = [new SceneSlotDefinition { Id = "actor", Name = "Actor", Minimum = 1, Maximum = 1, Requirement = new SceneSlotRequirement { ElementTypes = new HashSet<SemanticKey> { new("character:character") } } }]
     };
 
-    private static ScenarioModuleCatalog LoadCharacterCatalog() => ScenarioModuleCatalog.Create([ModulePackageLoader.Load(FindCharacterDirectory())]);
+    private static ModuleCatalog LoadCharacterCatalog() => ModuleCatalog.Create([LoadCharacterPackage()]);
+    private static ModulePackageDefinition LoadCharacterPackage() => ModulePackageLoader.Load(FindCharacterDirectory());
 
     private static string FindCharacterDirectory()
     {
@@ -158,26 +161,26 @@ public sealed class ScenarioSessionTests
         }
     }
 
-    private sealed class CharacterTestPlugin : ITaviPlugin
+    private sealed class CharacterTestPlugin : ITaviPlugin, IScenarioSettlementExtension
     {
         internal CharacterRuleSettler Settler { get; } = new();
         public ModuleId Module => new("character");
         public ModuleVersion Version => new("1.0.0");
-        public void Register(IPluginRegistrar registrar) => registrar.AddSceneRuleSettler(Settler);
+        public IReadOnlySet<SemanticKey> Definitions => Settler.Definitions;
+        public ValueTask<SceneSettlementProposal> SettleAsync(SceneSettlementContext context, CancellationToken cancellationToken) => Settler.SettleAsync(context, cancellationToken);
     }
 
-    private sealed class CharacterRuleSettler : ISceneRuleSettler
+    private sealed class CharacterRuleSettler
     {
         internal int Calls { get; private set; }
         internal int VisibleElementCount { get; private set; }
-        public ModuleId Module => new("character");
         public IReadOnlySet<SemanticKey> Definitions { get; } = new HashSet<SemanticKey> { new("character:test-action") };
 
         public ValueTask<SceneSettlementProposal> SettleAsync(SceneSettlementContext context, CancellationToken cancellationToken)
         {
             Calls++;
             VisibleElementCount = context.Context.Elements.Count;
-            ScenarioElementView actor = Assert.Single(context.Context.Elements);
+            ElementView actor = Assert.Single(context.Context.Elements);
             return ValueTask.FromResult(new SceneSettlementProposal { ExpectedScenarioStateId = context.Context.ScenarioStateId, Operations = [new SceneOperationIntent.UpdateElement(actor.Id, actor.Name, "Rule settled", actor.Type)] });
         }
     }

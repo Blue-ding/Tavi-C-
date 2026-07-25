@@ -4,6 +4,8 @@ using Tavi.Domain.World;
 using Tavi.Host.Mapping;
 using Tavi.Host.Runtime;
 using Tavi.Host.ViewModels;
+using Tavi.Application.Extensions.World;
+using Tavi.Extensibility;
 
 namespace Tavi.Host.Endpoints;
 
@@ -35,6 +37,8 @@ internal static class WorldEndpoints
         world.MapPost("/staging/commit", CommitStagedAsync);
         world.MapDelete("/staging/invalid", DeleteInvalidStagedAsync);
         world.MapDelete("/staging/{changeId:guid}", DeleteStagedAsync);
+        world.MapGet("/module-actions", GetModuleActionsAsync);
+        world.MapPost("/module-actions/{module}/{action}", InvokeModuleActionAsync);
         world.MapGet("/events", StreamEventsAsync);
         return endpoints;
     }
@@ -133,6 +137,21 @@ internal static class WorldEndpoints
     {
         session.DeleteInvalidStaged();
         return new WorldStagingResultViewModel([], WorldViewModelMapper.ToGraph(session));
+    }, cancellationToken);
+
+    private static Task<WorldAuthoringActionViewModel[]> GetModuleActionsAsync(WorldRuntime runtime, ExtensionRuntime extensions, CancellationToken cancellationToken) => runtime.ExecuteAsync(async session =>
+    {
+        var coordinator = new WorldAuthoringCoordinator(session, extensions.Frozen);
+        IReadOnlyList<WorldAuthoringAction> actions = await coordinator.GetActionsAsync(cancellationToken);
+        return actions.Select(action => new WorldAuthoringActionViewModel(action.Id.Value, action.Name, action.Description, action.ParameterSchema)).ToArray();
+    }, cancellationToken);
+
+    private static Task<WorldStagingResultViewModel> InvokeModuleActionAsync(string module, string action, InvokeWorldAuthoringActionRequest request, WorldRuntime runtime, ExtensionRuntime extensions, CancellationToken cancellationToken) => runtime.ExecuteAsync(async session =>
+    {
+        RequireExpectedState(session, request.ExpectedStateId);
+        var coordinator = new WorldAuthoringCoordinator(session, extensions.Frozen);
+        Guid changeId = await coordinator.ProposeAndStageAsync(new SemanticKey($"{module}:{action}"), request.Arguments.GetRawText(), cancellationToken: cancellationToken);
+        return new WorldStagingResultViewModel([changeId], WorldViewModelMapper.ToGraph(session));
     }, cancellationToken);
 
     private static Task<WorldCommitViewModel> UndoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Undo(request.ExpectedStateId)), cancellationToken);

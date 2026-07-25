@@ -1,4 +1,5 @@
 using Tavi.Extensibility;
+using Tavi.Application.Extensions;
 using DomainScenario = Tavi.Domain.Scenario;
 
 namespace Tavi.Application.Scenario;
@@ -80,10 +81,10 @@ internal static class ScenarioExtensibilityAdapter
         return result;
     }
 
-    private static ScenarioElementView ToView(DomainScenario.Element value) => new(value.Id, value.Name, value.Description, new SemanticKey(value.Type.Value));
-    private static ScenarioScopeView ToView(DomainScenario.Scope value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.OwnerElementId);
-    private static ScenarioAspectView ToView(DomainScenario.Aspect value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.ElementId, value.ScopeId);
-    private static ScenarioRelationView ToView(DomainScenario.Relation value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId);
+    private static ElementView ToView(DomainScenario.Element value) => new(value.Id, value.Name, value.Description, new SemanticKey(value.Type.Value));
+    private static ScopeView ToView(DomainScenario.Scope value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.OwnerElementId);
+    private static AspectView ToView(DomainScenario.Aspect value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.ElementId, value.ScopeId);
+    private static RelationView ToView(DomainScenario.Relation value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId);
 
     /// <summary>逐项模拟局部实体集合，确保新建实体可被后续操作引用而既有外部实体永远不可寻址。</summary>
     private sealed class LocalBoundary
@@ -245,10 +246,10 @@ internal static class ScenarioExtensibilityAdapter
 
         public Guid StateId { get; }
         public Guid SourceWorldStateId { get; }
-        public IReadOnlyCollection<ScenarioElementView> Elements { get; }
-        public IReadOnlyCollection<ScenarioAspectView> Aspects { get; }
-        public IReadOnlyCollection<ScenarioRelationView> Relations { get; }
-        public IReadOnlyCollection<ScenarioScopeView> Scopes { get; }
+        public IReadOnlyCollection<ElementView> Elements { get; }
+        public IReadOnlyCollection<AspectView> Aspects { get; }
+        public IReadOnlyCollection<RelationView> Relations { get; }
+        public IReadOnlyCollection<ScopeView> Scopes { get; }
         public IReadOnlyCollection<ScenarioSceneView> Scenes { get; }
     }
 

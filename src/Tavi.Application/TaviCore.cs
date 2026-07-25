@@ -2,6 +2,7 @@ using Tavi.Application.Guidance;
 using Tavi.Application.LanguageModel;
 using Tavi.Application.Logging;
 using Tavi.Application.World;
+using Tavi.Application.Extensions;
 
 namespace Tavi.Application;
 
@@ -27,5 +28,13 @@ public sealed class TaviCore
     {
         ArgumentNullException.ThrowIfNull(worldService);
         return new GuidanceSession(worldService, LanguageModels, Logger);
+    }
+
+    /// <summary>创建绑定到指定 World 服务并使用冻结 Module Runtime 的 Guidance 应用服务。</summary>
+    public IGuidanceService CreateGuidanceService(IWorldService worldService, FrozenModuleRuntime extensions)
+    {
+        ArgumentNullException.ThrowIfNull(worldService);
+        ArgumentNullException.ThrowIfNull(extensions);
+        return new GuidanceSession(worldService, LanguageModels, Logger, extensions);
     }
 }

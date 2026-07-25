@@ -1,5 +1,6 @@
 using Tavi.Domain.Scenario;
 using Tavi.Extensibility;
+using Tavi.Application.Extensions;
 
 namespace Tavi.Application.Scenario;
 
@@ -25,10 +26,10 @@ public sealed record ScenarioSemanticIssue
 /// <summary>在完整候选 Scenario 上执行已激活 Module 的声明式语义约束。</summary>
 public sealed class ScenarioSemanticValidator
 {
-    private readonly ScenarioModuleCatalog _catalog;
+    private readonly ModuleCatalog _catalog;
 
     /// <summary>创建使用指定 Module Catalog 的语义校验器。</summary>
-    public ScenarioSemanticValidator(ScenarioModuleCatalog catalog) => _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+    public ScenarioSemanticValidator(ModuleCatalog catalog) => _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
 
     /// <summary>校验完整快照并返回全部可发现问题；该方法不修改输入快照。</summary>
     public IReadOnlyList<ScenarioSemanticIssue> Validate(ScenarioSnapshot snapshot)

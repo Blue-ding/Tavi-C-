@@ -1,7 +1,7 @@
 using System.Collections.Frozen;
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Scenario;
+namespace Tavi.Application.Extensions;
 
 internal static class ExtensibilityCopies
 {
@@ -9,8 +9,7 @@ internal static class ExtensibilityCopies
     {
         Manifest = Manifest(source.Manifest),
         Semantics = Semantics(source.Semantics),
-        Scenes = Array.AsReadOnly(source.Scenes.Select(Scene).ToArray()),
-        SourceDirectory = source.SourceDirectory
+        Scenes = Array.AsReadOnly(source.Scenes.Select(Scene).ToArray())
     };
 
     internal static ModuleManifest Manifest(ModuleManifest source) => source with { Dependencies = Array.AsReadOnly(source.Dependencies.Select(value => value with { }).ToArray()), Parameters = Array.AsReadOnly(source.Parameters.Select(value => value with { AllowedValues = Array.AsReadOnly(value.AllowedValues.ToArray()) }).ToArray()) };

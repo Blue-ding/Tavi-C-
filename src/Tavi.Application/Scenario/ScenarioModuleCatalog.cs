@@ -1,9 +1,9 @@
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Scenario;
+namespace Tavi.Application.Extensions;
 
 /// <summary>保存经过统一校验的声明式 Module 和可选 Plugin 能力。</summary>
-public sealed class ScenarioModuleCatalog
+public sealed class ModuleCatalog
 {
     private readonly Dictionary<ModuleId, ModulePackageDefinition> _modules;
     private readonly Dictionary<SemanticKey, ElementTypeDefinition> _elementTypes;
@@ -12,9 +12,7 @@ public sealed class ScenarioModuleCatalog
     private readonly Dictionary<SemanticKey, AspectTypeDefinition> _aspectTypes;
     private readonly Dictionary<SemanticKey, RelationTypeDefinition> _relationTypes;
     private readonly Dictionary<SemanticKey, SceneDefinition> _scenes;
-    private readonly PluginRegistrar _plugins;
-
-    private ScenarioModuleCatalog(IEnumerable<ModulePackageDefinition> packages)
+    private ModuleCatalog(IEnumerable<ModulePackageDefinition> packages)
     {
         ModulePackageDefinition[] copied = packages.Select(ExtensibilityCopies.Package).ToArray();
         _modules = Unique(copied, package => package.Manifest.Id, "Module");
@@ -24,15 +22,14 @@ public sealed class ScenarioModuleCatalog
         _aspectTypes = Unique(copied.SelectMany(package => package.Semantics.AspectTypes), definition => definition.Key, "AspectType");
         _relationTypes = Unique(copied.SelectMany(package => package.Semantics.RelationTypes), definition => definition.Key, "RelationType");
         _scenes = Unique(copied.SelectMany(package => package.Scenes), definition => definition.Id, "SceneDefinition");
-        _plugins = new PluginRegistrar(_modules);
         Validate();
     }
 
     /// <summary>校验并创建 Module Catalog；Catalog 创建后声明式定义不可替换。</summary>
-    public static ScenarioModuleCatalog Create(IEnumerable<ModulePackageDefinition> packages)
+    public static ModuleCatalog Create(IEnumerable<ModulePackageDefinition> packages)
     {
         ArgumentNullException.ThrowIfNull(packages);
-        return new ScenarioModuleCatalog(packages);
+        return new ModuleCatalog(packages);
     }
 
     /// <summary>获取按 Module 标识稳定排序的 Manifest。</summary>
@@ -40,17 +37,6 @@ public sealed class ScenarioModuleCatalog
 
     /// <summary>获取按定义键稳定排序的静态 SceneDefinition。</summary>
     public IReadOnlyList<SceneDefinition> StaticScenes => Array.AsReadOnly(_scenes.Values.Select(ExtensibilityCopies.Scene).OrderBy(scene => scene.Id.Value, StringComparer.Ordinal).ToArray());
-
-    /// <summary>注册并立即校验一个代码 Plugin 的细粒度能力。</summary>
-    public void RegisterPlugin(ITaviPlugin plugin)
-    {
-        ArgumentNullException.ThrowIfNull(plugin);
-        if (!_modules.TryGetValue(plugin.Module, out ModulePackageDefinition? package))
-            throw Invalid(nameof(RegisterPlugin), $"Plugin 所属 Module {plugin.Module} 未加载。");
-        if (plugin.Version != package.Manifest.Version)
-            throw Invalid(nameof(RegisterPlugin), $"Plugin {plugin.Module} 版本 {plugin.Version} 与 Module 版本 {package.Manifest.Version} 不一致。");
-        plugin.Register(_plugins.For(plugin.Module));
-    }
 
     /// <summary>根据稳定键获取静态 SceneDefinition；不存在时返回 null。</summary>
     public SceneDefinition? FindStaticScene(SemanticKey id) => _scenes.TryGetValue(id, out SceneDefinition? value) ? ExtensibilityCopies.Scene(value) : null;
@@ -61,8 +47,6 @@ public sealed class ScenarioModuleCatalog
     internal IReadOnlyDictionary<SemanticKey, AspectGroupDefinition> AspectGroups => _aspectGroups;
     internal IReadOnlyDictionary<SemanticKey, AspectTypeDefinition> AspectTypes => _aspectTypes;
     internal IReadOnlyDictionary<SemanticKey, RelationTypeDefinition> RelationTypes => _relationTypes;
-    internal IReadOnlyList<ISceneDefinitionProvider> SceneProviders => _plugins.SceneProviders;
-    internal IReadOnlyList<ISceneRuleSettler> RuleSettlers => _plugins.RuleSettlers;
 
     internal bool IsModuleActive(ModuleId id, IReadOnlyDictionary<string, string> references) => references.TryGetValue(id.Value, out string? version) && _modules.TryGetValue(id, out ModulePackageDefinition? package) && package.Manifest.Version.Value == version;
 
@@ -175,55 +159,5 @@ public sealed class ScenarioModuleCatalog
         return 0;
     }
 
-    private static ScenarioApplicationException Invalid(string operation, string message) => new(ScenarioApplicationErrorCodes.InvalidModule, TaviErrorCategory.Configuration, operation, message);
-
-    private sealed class PluginRegistrar
-    {
-        private readonly IReadOnlyDictionary<ModuleId, ModulePackageDefinition> _modules;
-        private readonly List<ISceneDefinitionProvider> _sceneProviders = [];
-        private readonly List<ISceneRuleSettler> _ruleSettlers = [];
-        private readonly List<IWritingContextContributor> _writingContributors = [];
-        private readonly List<IWritingInteractionPolicy> _writingPolicies = [];
-        private readonly List<IWrittenSceneOutcomeContributor> _outcomeContributors = [];
-
-        internal PluginRegistrar(IReadOnlyDictionary<ModuleId, ModulePackageDefinition> modules) => _modules = modules;
-
-        internal IReadOnlyList<ISceneDefinitionProvider> SceneProviders => _sceneProviders.OrderBy(value => value.Module.Value, StringComparer.Ordinal).ToArray();
-        internal IReadOnlyList<ISceneRuleSettler> RuleSettlers => _ruleSettlers.OrderBy(value => value.Module.Value, StringComparer.Ordinal).ToArray();
-
-        internal IPluginRegistrar For(ModuleId owner) => new ScopedRegistrar(this, owner);
-
-        private void Add<T>(T capability, ModuleId owner, Func<T, ModuleId> getModule, List<T> values) where T : class
-        {
-            ArgumentNullException.ThrowIfNull(capability);
-            if (getModule(capability) != owner || !_modules.ContainsKey(owner))
-                throw Invalid(nameof(RegisterPlugin), $"Plugin 能力声明的 Module 与注册边界不一致：{getModule(capability)} != {owner}。");
-            values.Add(capability);
-        }
-
-        private sealed class ScopedRegistrar : IPluginRegistrar
-        {
-            private readonly PluginRegistrar _owner;
-            private readonly ModuleId _module;
-
-            internal ScopedRegistrar(PluginRegistrar owner, ModuleId module)
-            {
-                _owner = owner;
-                _module = module;
-            }
-
-            public void AddSceneDefinitionProvider(ISceneDefinitionProvider provider) => _owner.Add(provider, _module, value => value.Module, _owner._sceneProviders);
-            public void AddSceneRuleSettler(ISceneRuleSettler settler)
-            {
-                ArgumentNullException.ThrowIfNull(settler);
-                SemanticKey? duplicate = settler.Definitions.FirstOrDefault(definition => _owner._ruleSettlers.Any(existing => existing.Definitions.Contains(definition)));
-                if (duplicate.HasValue && !duplicate.Value.IsEmpty)
-                    throw Invalid(nameof(RegisterPlugin), $"SceneDefinition {duplicate.Value} 已有规则结算器。");
-                _owner.Add(settler, _module, value => value.Module, _owner._ruleSettlers);
-            }
-            public void AddWritingContextContributor(IWritingContextContributor contributor) => _owner.Add(contributor, _module, value => value.Module, _owner._writingContributors);
-            public void AddWritingInteractionPolicy(IWritingInteractionPolicy policy) => _owner.Add(policy, _module, value => value.Module, _owner._writingPolicies);
-            public void AddWrittenSceneOutcomeContributor(IWrittenSceneOutcomeContributor contributor) => _owner.Add(contributor, _module, value => value.Module, _owner._outcomeContributors);
-        }
-    }
+    private static ModuleConfigurationException Invalid(string operation, string message) => new($"TAVI.EXTENSIONS.{operation.ToUpperInvariant()}.INVALID_MODULE", message);
 }

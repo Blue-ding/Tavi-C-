@@ -1,4 +1,5 @@
 using Tavi.Domain.World;
+using Tavi.Application.Extensions;
 using ScenarioDomain = Tavi.Domain.Scenario;
 using WorldDomain = Tavi.Domain.World;
 
@@ -17,7 +18,7 @@ public sealed record ScenarioWorldProposal
 public static class ScenarioWorldBridge
 {
     /// <summary>把完整 World 快照复制为不含 Scene 的初始 Scenario，并冻结所需 Module 引用。</summary>
-    public static ScenarioDomain.ScenarioSnapshot Import(WorldSnapshot world, ScenarioModuleCatalog catalog, IReadOnlyDictionary<Tavi.Extensibility.ModuleId, IReadOnlyDictionary<string, string>>? parameters = null)
+    public static ScenarioDomain.ScenarioSnapshot Import(WorldSnapshot world, ModuleCatalog catalog, IReadOnlyDictionary<Tavi.Extensibility.ModuleId, IReadOnlyDictionary<string, string>>? parameters = null)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(catalog);

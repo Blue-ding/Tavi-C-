@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Tavi.Host.ViewModels;
+using Tavi.Extensibility;
 
 namespace Tavi.Host.Errors;
 
@@ -45,6 +46,22 @@ public sealed class TaviExceptionHandler : IExceptionHandler
             };
             return (status, new ErrorViewModel(taviException.ErrorCode, taviException.Message, taviException.Category.ToString(), taviException.Operation, taviException.IsTransient, taviException.Details, context.TraceIdentifier));
         }
+        if (exception is ModuleException moduleException)
+        {
+            int status = moduleException switch
+            {
+                ModuleArgumentException => StatusCodes.Status400BadRequest,
+                ModuleSemanticException or ModuleConfigurationException => StatusCodes.Status422UnprocessableEntity,
+                _ => StatusCodes.Status500InternalServerError
+            };
+            IReadOnlyDictionary<string, string> details = moduleException switch
+            {
+                ModuleArgumentException { ParameterName: not null } value => new Dictionary<string, string> { ["parameter"] = value.ParameterName },
+                ModuleSemanticException value => CreateModuleSemanticDetails(value),
+                _ => EmptyDetails
+            };
+            return (status, new ErrorViewModel(moduleException.Code, moduleException.Message, moduleException.GetType().Name, null, moduleException.Retryable, details, context.TraceIdentifier));
+        }
         if (exception is ArgumentException argumentException)
             return (StatusCodes.Status400BadRequest, new ErrorViewModel("TAVI.HOST.REQUEST.INVALID_ARGUMENT", argumentException.Message, "Validation", null, false, EmptyDetails, context.TraceIdentifier));
         if (exception is KeyNotFoundException)
@@ -55,4 +72,13 @@ public sealed class TaviExceptionHandler : IExceptionHandler
     }
 
     private static IReadOnlyDictionary<string, string> EmptyDetails { get; } = new Dictionary<string, string>();
+    private static IReadOnlyDictionary<string, string> CreateModuleSemanticDetails(ModuleSemanticException exception)
+    {
+        var details = new Dictionary<string, string>();
+        if (exception.DefinitionId is SemanticKey definitionId)
+            details["definitionId"] = definitionId.Value;
+        if (exception.EntityId is Guid entityId)
+            details["entityId"] = entityId.ToString();
+        return details;
+    }
 }

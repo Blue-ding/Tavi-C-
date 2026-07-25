@@ -1,9 +1,8 @@
 using System.Globalization;
 using System.Collections.ObjectModel;
-using Tavi.Application.Scenario;
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Extension;
+namespace Tavi.Application.Extensions;
 
 /// <summary>维护下一次 ScenarioSession 使用的 Module 启用状态和行为参数，并产生冻结快照。</summary>
 public sealed class ExtensionSession
@@ -12,7 +11,7 @@ public sealed class ExtensionSession
     private readonly Dictionary<ModuleId, ITaviPlugin> _plugins;
     private readonly Dictionary<ModuleId, bool> _enabled;
     private readonly Dictionary<ModuleId, Dictionary<string, string>> _parameters;
-    private FrozenExtensionSnapshot? _frozen;
+    private FrozenModuleRuntime? _frozen;
 
     /// <summary>从已校验的 Module 包、持久化设置和受信 Plugin 创建 ExtensionSession。</summary>
     public ExtensionSession(IEnumerable<ModulePackageDefinition> packages, ExtensionSettings? settings = null, IEnumerable<ITaviPlugin>? plugins = null)
@@ -85,14 +84,14 @@ public sealed class ExtensionSession
     }
 
     /// <summary>冻结当前已启用 Module、Plugin 和有效参数；后续设置变化不会修改已返回快照。</summary>
-    public FrozenExtensionSnapshot Freeze()
+    public FrozenModuleRuntime Freeze()
     {
         ModulePackageDefinition[] enabledPackages = _packages.Values.Where(package => _enabled[package.Manifest.Id]).ToArray();
-        var catalog = ScenarioModuleCatalog.Create(enabledPackages);
-        foreach (ITaviPlugin plugin in _plugins.Values.Where(plugin => _enabled.GetValueOrDefault(plugin.Module)))
-            catalog.RegisterPlugin(plugin);
+        var catalog = ModuleCatalog.Create(enabledPackages);
+        ITaviPlugin[] activePlugins = _plugins.Values.Where(plugin => _enabled.GetValueOrDefault(plugin.Module)).ToArray();
+        ValidatePlugins(catalog, activePlugins);
         var parameters = enabledPackages.ToDictionary(package => package.Manifest.Id, package => GetEffectiveParameters(package.Manifest.Id));
-        _frozen = new FrozenExtensionSnapshot { Catalog = catalog, Parameters = new ReadOnlyDictionary<ModuleId, IReadOnlyDictionary<string, string>>(parameters) };
+        _frozen = new FrozenModuleRuntime(catalog, new ReadOnlyDictionary<ModuleId, IReadOnlyDictionary<string, string>>(parameters), activePlugins);
         RestartRequired = false;
         return _frozen;
     }
@@ -144,6 +143,24 @@ public sealed class ExtensionSession
     {
         if (_frozen is not null)
             RestartRequired = true;
+    }
+
+    private void ValidatePlugins(ModuleCatalog catalog, IEnumerable<ITaviPlugin> plugins)
+    {
+        Dictionary<ModuleId, ModuleManifest> modules = catalog.Modules.ToDictionary(module => module.Id);
+        foreach (ITaviPlugin plugin in plugins)
+        {
+            if (!modules.TryGetValue(plugin.Module, out ModuleManifest? module))
+                throw new ModuleConfigurationException("TAVI.EXTENSIONS.PLUGIN.MODULE_MISSING", $"Plugin 所属 Module {plugin.Module} 未加载。");
+            if (plugin.Version != module.Version)
+                throw new ModuleConfigurationException("TAVI.EXTENSIONS.PLUGIN.VERSION_MISMATCH", $"Plugin {plugin.Module} 版本 {plugin.Version} 与 Module 版本 {module.Version} 不一致。");
+            if (plugin is Application.Extensions.Scenario.IScenarioSettlementExtension settlement)
+            {
+                SemanticKey? foreign = settlement.Definitions.Cast<SemanticKey?>().FirstOrDefault(definition => definition!.Value.Namespace != plugin.Module);
+                if (foreign.HasValue)
+                    throw new ModuleConfigurationException("TAVI.EXTENSIONS.PLUGIN.FOREIGN_DEFINITION", $"Plugin {plugin.Module} 声明了其他 Module 的 SceneDefinition {foreign.Value}。");
+            }
+        }
     }
 
     private ModulePackageDefinition GetPackage(ModuleId module) => _packages.TryGetValue(module, out ModulePackageDefinition? package) ? package : throw Missing(module);

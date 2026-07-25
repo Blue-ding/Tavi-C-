@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Tavi.Application.Extension;
+using Tavi.Application.Extensions;
 using Tavi.Extensibility;
 
 namespace Tavi.Infrastructure.Persistence;

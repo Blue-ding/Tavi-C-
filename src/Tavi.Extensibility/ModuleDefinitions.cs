@@ -68,8 +68,6 @@ public sealed record ModuleManifest
     /// <summary>获取会在 ScenarioSession 创建时冻结的行为参数定义。</summary>
     public IReadOnlyList<ModuleParameterDefinition> Parameters { get; init; } = [];
 
-    /// <summary>获取可选 Plugin 程序集入口类型；纯声明式 Module 返回 null。</summary>
-    public string? Entrypoint { get; init; }
 }
 
 /// <summary>聚合一个 Module 的 Manifest、语义定义和静态 Scene 定义。</summary>
@@ -84,6 +82,4 @@ public sealed record ModulePackageDefinition
     /// <summary>获取 Module 静态声明的 SceneDefinition。</summary>
     public IReadOnlyList<SceneDefinition> Scenes { get; init; } = [];
 
-    /// <summary>获取声明文件所在的规范化目录；内存定义没有目录时为 null。</summary>
-    public string? SourceDirectory { get; init; }
 }

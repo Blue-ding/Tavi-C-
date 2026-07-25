@@ -1,6 +1,10 @@
 using Tavi.Application.LanguageModel;
 using Tavi.Application.Logging;
 using Tavi.Application.World;
+using Tavi.Application.Extensions;
+using Tavi.Application.Extensions.Guidance;
+using Tavi.Application.Extensions.World;
+using Tavi.Extensibility;
 using Tavi.Domain.World;
 using System.Text.Json;
 
@@ -21,6 +25,8 @@ internal sealed class GuidanceSession : IGuidanceService
     private readonly IWorldService _world;
     private readonly ILanguageModelService _languageModels;
     private readonly ILogger _logger;
+    private readonly FrozenModuleRuntime? _extensions;
+    private readonly WorldAuthoringCoordinator? _authoring;
     private readonly List<GuidanceMessage> _messages = [];
     private LanguageModelConversation _conversation = new();
     private GuidanceState _state = GuidanceState.Idle;
@@ -30,11 +36,13 @@ internal sealed class GuidanceSession : IGuidanceService
     private WorldProposal? _latestProposal;
 
     /// <summary>创建绑定到指定 World 服务和语言模型执行器的长期 Guidance Session。</summary>
-    public GuidanceSession(IWorldService world, ILanguageModelService languageModels, ILogger? logger = null)
+    public GuidanceSession(IWorldService world, ILanguageModelService languageModels, ILogger? logger = null, FrozenModuleRuntime? extensions = null)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _languageModels = languageModels ?? throw new ArgumentNullException(nameof(languageModels));
         _logger = logger ?? NullLogger.Instance;
+        _extensions = extensions;
+        _authoring = extensions is null ? null : new WorldAuthoringCoordinator(world, extensions);
         Id = Guid.NewGuid();
     }
 
@@ -202,7 +210,23 @@ internal sealed class GuidanceSession : IGuidanceService
         Guid modelOperationId = Guid.Empty;
         try
         {
-            IReadOnlyList<ITool> tools = WorldGuidanceTool.CreateTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld)).ToArray();
+            var tools = WorldGuidanceTool.CreateTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld)).ToList();
+            if (_extensions is not null && _authoring is not null)
+            {
+                IWorldView worldView = WorldExtensibilityAdapter.ToView(workspace.ProjectedWorld);
+                foreach ((ModuleId module, IGuidanceExtension extension) in _extensions.GuidanceExtensions)
+                {
+                    IReadOnlyList<GuidanceInstructionContribution> contributions = await extension.GetInstructionsAsync(worldView, _extensions.GetParameters(module), linkedSource.Token);
+                    foreach (GuidanceInstructionContribution contribution in contributions)
+                    {
+                        if (contribution.Id.Namespace != module)
+                            throw new ModuleConfigurationException("TAVI.MODULE.GUIDANCE.INSTRUCTION_NAMESPACE", $"Guidance 贡献 {contribution.Id} 不属于 Module {module}。");
+                        conversation = conversation.Append(ModelMessage.System(contribution.Content));
+                    }
+                }
+                IReadOnlyList<WorldAuthoringAction> actions = await _authoring.GetActionsAsync(linkedSource.Token);
+                tools.AddRange(actions.Select(action => new ModuleWorldAuthoringTool(_authoring, action)));
+            }
             LanguageModelOperation modelOperation = _languageModels.Start(new LanguageModelRunRequest { Conversation = conversation, Tools = tools, ToolCallMode = ToolCallMode.Auto }, linkedSource.Token);
             modelOperationId = modelOperation.Id;
             modelOperation.TextReceived += (_, text) => operation.ReportText(text);

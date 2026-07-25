@@ -1,4 +1,4 @@
-using Tavi.Application.Extension;
+using Tavi.Application.Extensions;
 using Tavi.Extensibility;
 using Xunit;
 
@@ -21,7 +21,7 @@ public sealed class ExtensionSessionTests
     {
         ModulePackageDefinition package = Package("configurable", parameters: [new ModuleParameterDefinition { Key = "intensity", Name = "Intensity", Type = ModuleParameterType.Number, DefaultValue = "1", Minimum = 0, Maximum = 10 }]);
         var session = new ExtensionSession([package]);
-        FrozenExtensionSnapshot frozen = session.Freeze();
+        FrozenModuleRuntime frozen = session.Freeze();
         session.SetParameter(new ModuleId("configurable"), "intensity", "2.50");
         Assert.True(session.RestartRequired);
         Assert.Equal("1", frozen.Parameters[new ModuleId("configurable")]["intensity"]);

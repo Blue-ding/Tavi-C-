@@ -1,7 +1,6 @@
-using Tavi.Application.Scenario;
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Extension;
+namespace Tavi.Application.Extensions;
 
 /// <summary>保存一个 Module 的期望启用状态和规范参数文本。</summary>
 public sealed record ExtensionModuleSettings
@@ -30,13 +29,4 @@ public interface IExtensionSettingsStore
     Task<ExtensionSettings?> LoadAsync(CancellationToken cancellationToken = default);
     /// <summary>保存完整设置。</summary>
     Task SaveAsync(ExtensionSettings settings, CancellationToken cancellationToken = default);
-}
-
-/// <summary>保存创建 ScenarioSession 时使用的不可变 Module Catalog 和有效参数。</summary>
-public sealed record FrozenExtensionSnapshot
-{
-    /// <summary>获取只包含已启用 Module 和受信 Plugin 的 Catalog。</summary>
-    public required ScenarioModuleCatalog Catalog { get; init; }
-    /// <summary>获取按 Module ID 索引的规范有效参数。</summary>
-    public IReadOnlyDictionary<ModuleId, IReadOnlyDictionary<string, string>> Parameters { get; init; } = new Dictionary<ModuleId, IReadOnlyDictionary<string, string>>();
 }

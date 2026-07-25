@@ -1,4 +1,4 @@
-using Tavi.Application.Extension;
+using Tavi.Application.Extensions;
 using Tavi.Extensibility;
 using Tavi.Infrastructure.Persistence;
 using Xunit;

@@ -20,16 +20,6 @@ public sealed record WritingContextRequest
     public required SceneContextView Context { get; init; }
 }
 
-/// <summary>由 Plugin 实现，用于向未来 Writing 流程提供 Module 专属上下文。</summary>
-public interface IWritingContextContributor
-{
-    /// <summary>获取实现所属的 Module。</summary>
-    ModuleId Module { get; }
-
-    /// <summary>产生结构化 Writing 上下文贡献；实现不得调用或持有 WritingSession。</summary>
-    ValueTask<IReadOnlyList<WritingContextContribution>> ContributeAsync(WritingContextRequest request, CancellationToken cancellationToken);
-}
-
 /// <summary>表示 Module 为未来 Writing 玩家交互提供的一个选项。</summary>
 public sealed record WritingInteractionOption
 {
@@ -53,16 +43,6 @@ public sealed record WritingInteractionContext
     public IReadOnlyList<string> Messages { get; init; } = [];
 }
 
-/// <summary>由 Plugin 实现，用于影响未来 Writing 中可呈现的玩家互动方式。</summary>
-public interface IWritingInteractionPolicy
-{
-    /// <summary>获取实现所属的 Module。</summary>
-    ModuleId Module { get; }
-
-    /// <summary>评估当前 Scene 并返回玩家互动选项。</summary>
-    ValueTask<IReadOnlyList<WritingInteractionOption>> EvaluateAsync(WritingInteractionContext context, CancellationToken cancellationToken);
-}
-
 /// <summary>表示未来 Writing 演绎完成后交给 Module 的独立结果。</summary>
 public sealed record WrittenSceneOutcomeContext
 {
@@ -71,14 +51,4 @@ public sealed record WrittenSceneOutcomeContext
 
     /// <summary>获取玩家最终接受的文字结果。</summary>
     public required string Text { get; init; }
-}
-
-/// <summary>由 Plugin 实现，用于对未来 Writing 结果提出结构化 Scenario 修改建议。</summary>
-public interface IWrittenSceneOutcomeContributor
-{
-    /// <summary>获取实现所属的 Module。</summary>
-    ModuleId Module { get; }
-
-    /// <summary>根据玩家接受的结果提出结构化修改；该能力与规则结算器相互独立。</summary>
-    ValueTask<SceneSettlementProposal> ContributeAsync(WrittenSceneOutcomeContext context, CancellationToken cancellationToken);
 }

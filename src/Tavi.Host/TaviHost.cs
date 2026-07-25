@@ -46,6 +46,8 @@ public static class TaviHost
         builder.Services.AddProblemDetails();
         builder.Services.AddExceptionHandler<TaviExceptionHandler>();
         builder.Services.AddSingleton<ApplicationLoggerAdapter>();
+        builder.Services.AddSingleton<ExtensionRuntime>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<ExtensionRuntime>());
         builder.Services.AddSingleton<WorldEventBroker>();
         builder.Services.AddSingleton<WorldRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<WorldRuntime>());

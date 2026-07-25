@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Scenario;
+namespace Tavi.Application.Extensions.Loading;
 
 /// <summary>从标准 Module 目录读取 Manifest、声明式语义和静态 SceneDefinition。</summary>
 public static class ModulePackageLoader
@@ -26,11 +26,10 @@ public static class ModulePackageLoader
             {
                 Manifest = convertedManifest,
                 Semantics = ConvertSemantics(semantics),
-                Scenes = scenes.Scenes.Select(scene => ConvertScene(scene, convertedManifest)).ToArray(),
-                SourceDirectory = fullDirectory
+                Scenes = scenes.Scenes.Select(scene => ConvertScene(scene, convertedManifest)).ToArray()
             };
         }
-        catch (ScenarioApplicationException)
+        catch (ModuleConfigurationException)
         {
             throw;
         }
@@ -70,7 +69,6 @@ public static class ModulePackageLoader
             SchemaVersion = raw.SchemaVersion,
             Name = Required(raw.Name, "module.name"),
             Description = raw.Description ?? string.Empty,
-            Entrypoint = string.IsNullOrWhiteSpace(raw.Entrypoint) ? null : raw.Entrypoint,
             Dependencies = raw.Dependencies.Select(dependency => new ModuleDependency { Id = new ModuleId(Required(dependency.Id, "dependency.id")), MinimumVersion = new ModuleVersion(Required(dependency.MinimumVersion, "dependency.minimumVersion")) }).ToArray(),
             Parameters = raw.Parameters.Select(parameter => new ModuleParameterDefinition
             {
@@ -154,7 +152,7 @@ public static class ModulePackageLoader
 
     private static string Required(string? value, string path) => string.IsNullOrWhiteSpace(value) ? throw Invalid(nameof(Load), $"{path} 不能为空。") : value;
 
-    private static ScenarioApplicationException Invalid(string operation, string message, Exception? innerException = null) => new(ScenarioApplicationErrorCodes.InvalidModule, TaviErrorCategory.Configuration, operation, message, innerException: innerException);
+    private static ModuleConfigurationException Invalid(string operation, string message, Exception? innerException = null) => new($"TAVI.EXTENSIONS.LOADING.{operation.ToUpperInvariant()}", message, innerException);
 
     private sealed class RawManifest
     {
