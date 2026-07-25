@@ -9,6 +9,7 @@ namespace Tavi.Application.World;
 public sealed class WorldSession : IWorldService
 {
     private readonly IWorldStore _store;
+    private readonly IWorldTypePolicy _typePolicy;
     private readonly string _slot;
     private readonly TimeSpan _autoSaveDelay;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
@@ -30,9 +31,10 @@ public sealed class WorldSession : IWorldService
     /// <summary>
     /// 创建世界会话。
     /// </summary>
-    public WorldSession(IWorldStore store, string slot = "default", TimeSpan? autoSaveDelay = null)
+    public WorldSession(IWorldStore store, IWorldTypePolicy typePolicy, string slot = "default", TimeSpan? autoSaveDelay = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _typePolicy = typePolicy ?? throw new ArgumentNullException(nameof(typePolicy));
         if (string.IsNullOrWhiteSpace(slot))
             throw new ArgumentException("存档槽名称不能为空。", nameof(slot));
         _slot = slot;
@@ -121,19 +123,36 @@ public sealed class WorldSession : IWorldService
     public WorldCommitResult Apply(WorldChangeSet changeSet, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(changeSet);
+        ValidateRegisteredTypes(changeSet.Operations);
         WorldCommitResult result = ApplyCore(changeSet, expectedStateId, HistoryAction.Record);
         PublishCommit(result, WorldSessionOperation.Apply);
         return result;
     }
 
     /// <summary>将一项不可变 World 操作追加到暂存日志；暂存不会修改真实 World。</summary>
-    public Guid Stage(WorldOperation operation, WorldStagedChangeSource source = WorldStagedChangeSource.Player) => ExecuteLocked(() => _staging.Stage(operation, source));
+    public Guid Stage(WorldOperation operation, WorldStagedChangeSource source = WorldStagedChangeSource.Player)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ValidateRegisteredType(operation);
+        return ExecuteLocked(() => _staging.Stage(operation, source));
+    }
 
     /// <summary>将指向同一 World 项目的操作组作为一项原子暂存记录追加。</summary>
-    public Guid Stage(WorldChangeSet changeSet, WorldStagedChangeSource source = WorldStagedChangeSource.Player) => ExecuteLocked(() => _staging.Stage(changeSet, source));
+    public Guid Stage(WorldChangeSet changeSet, WorldStagedChangeSource source = WorldStagedChangeSource.Player)
+    {
+        ArgumentNullException.ThrowIfNull(changeSet);
+        ValidateRegisteredTypes(changeSet.Operations);
+        return ExecuteLocked(() => _staging.Stage(changeSet, source));
+    }
 
     /// <summary>将一组不可变 World 操作按顺序追加到暂存日志；全部操作通过结构校验后才会写入。</summary>
-    public IReadOnlyList<Guid> Stage(IEnumerable<WorldOperation> operations, WorldStagedChangeSource source) => ExecuteLocked(() => _staging.Stage(operations, source));
+    public IReadOnlyList<Guid> Stage(IEnumerable<WorldOperation> operations, WorldStagedChangeSource source)
+    {
+        ArgumentNullException.ThrowIfNull(operations);
+        WorldOperation[] copied = operations.ToArray();
+        ValidateRegisteredTypes(copied);
+        return ExecuteLocked(() => _staging.Stage(copied, source));
+    }
 
     /// <summary>创建包含全部暂存项及临时 World 投影的不可变快照。</summary>
     public WorldStagingSnapshot CreateStagingSnapshot() => ExecuteLocked(() =>
@@ -415,6 +434,30 @@ public sealed class WorldSession : IWorldService
     private void RaiseStateChanged(WorldSessionStateChange change, Exception? exception = null)
     {
         StateChanged?.Invoke(this, new WorldSessionStateChangedEventArgs(change, IsDirty, exception));
+    }
+
+    private void ValidateRegisteredTypes(IEnumerable<WorldOperation> operations)
+    {
+        foreach (WorldOperation operation in operations)
+            ValidateRegisteredType(operation);
+    }
+
+    private void ValidateRegisteredType(WorldOperation operation)
+    {
+        string? unregistered = operation switch
+        {
+            AddElementOperation value when !_typePolicy.IsRegistered(value.Type) => $"ElementType {value.Type}",
+            UpdateElementTypeOperation value when !_typePolicy.IsRegistered(value.Type) => $"ElementType {value.Type}",
+            AddScopeOperation value when !_typePolicy.IsRegistered(value.Type) => $"ScopeType {value.Type}",
+            UpdateScopeTypeOperation value when !_typePolicy.IsRegistered(value.Type) => $"ScopeType {value.Type}",
+            AddAspectOperation value when !_typePolicy.IsRegistered(value.Type) => $"AspectType {value.Type}",
+            UpdateAspectTypeOperation value when !_typePolicy.IsRegistered(value.Type) => $"AspectType {value.Type}",
+            AddRelationOperation value when !_typePolicy.IsRegistered(value.Type) => $"RelationType {value.Type}",
+            UpdateRelationTypeOperation value when !_typePolicy.IsRegistered(value.Type) => $"RelationType {value.Type}",
+            _ => null
+        };
+        if (unregistered is not null)
+            throw new ArgumentException($"World 操作 {operation.GetType().Name} 使用了未注册或类别不匹配的 {unregistered}。", nameof(operation));
     }
 
     private TResult ExecuteLocked<TResult>(Func<TResult> operation)

@@ -39,6 +39,26 @@ public sealed record CommitStagedRequest(Guid ExpectedStateId, IReadOnlyList<Gui
 /// <param name="Id">稳定 SemanticKey。</param><param name="Name">面向玩家的名称。</param><param name="Description">操作说明。</param><param name="ParameterSchema">JSON Schema 参数定义。</param>
 public sealed record WorldAuthoringActionViewModel(string Id, string Name, string Description, string ParameterSchema);
 
+/// <summary>表示前端可选择的 ElementType。</summary>
+/// <param name="Key">稳定类型键。</param><param name="ModuleId">所属 Module 标识。</param><param name="ModuleName">所属 Module 展示名称。</param><param name="Name">类型展示名称。</param><param name="Description">类型语义说明。</param>
+public sealed record ElementTypeDefinitionViewModel(string Key, string ModuleId, string ModuleName, string Name, string Description);
+
+/// <summary>表示前端可选择的 ScopeType。</summary>
+/// <param name="Key">稳定类型键。</param><param name="ModuleId">所属 Module 标识。</param><param name="ModuleName">所属 Module 展示名称。</param><param name="Name">类型展示名称。</param><param name="Description">类型语义说明。</param>
+public sealed record ScopeTypeDefinitionViewModel(string Key, string ModuleId, string ModuleName, string Name, string Description);
+
+/// <summary>表示前端可选择的 AspectType。</summary>
+/// <param name="Key">稳定类型键。</param><param name="ModuleId">所属 Module 标识。</param><param name="ModuleName">所属 Module 展示名称。</param><param name="Name">类型展示名称。</param><param name="Description">类型语义说明。</param>
+public sealed record AspectTypeDefinitionViewModel(string Key, string ModuleId, string ModuleName, string Name, string Description);
+
+/// <summary>表示前端可选择的 RelationType。</summary>
+/// <param name="Key">稳定类型键。</param><param name="ModuleId">所属 Module 标识。</param><param name="ModuleName">所属 Module 展示名称。</param><param name="Name">类型展示名称。</param><param name="Description">类型语义说明。</param>
+public sealed record RelationTypeDefinitionViewModel(string Key, string ModuleId, string ModuleName, string Name, string Description);
+
+/// <summary>表示当前活动 Module 提供的四类 World 开放类型目录。</summary>
+/// <param name="ElementTypes">ElementType 目录。</param><param name="ScopeTypes">ScopeType 目录。</param><param name="AspectTypes">AspectType 目录。</param><param name="RelationTypes">RelationType 目录。</param>
+public sealed record WorldTypeLibraryViewModel(IReadOnlyList<ElementTypeDefinitionViewModel> ElementTypes, IReadOnlyList<ScopeTypeDefinitionViewModel> ScopeTypes, IReadOnlyList<AspectTypeDefinitionViewModel> AspectTypes, IReadOnlyList<RelationTypeDefinitionViewModel> RelationTypes);
+
 /// <summary>表示调用 Module World Authoring Action 的请求。</summary>
 /// <param name="ExpectedStateId">调用方观察到的 World 状态标识。</param><param name="Arguments">符合 Action Schema 的 JSON 参数。</param>
 public sealed record InvokeWorldAuthoringActionRequest(Guid ExpectedStateId, JsonElement Arguments);

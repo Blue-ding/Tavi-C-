@@ -31,6 +31,7 @@
     {
       "key": "character:gender.female",
       "name": "女性",
+      "description": "角色的性别身份为女性。",
       "group": "character:gender",
       "subjectElementTypes": [
         "character:character"
@@ -39,6 +40,7 @@
     {
       "key": "character:gender.male",
       "name": "男性",
+      "description": "角色的性别身份为男性。",
       "group": "character:gender",
       "subjectElementTypes": [
         "character:character"
@@ -47,6 +49,7 @@
     {
       "key": "character:gender.nonbinary",
       "name": "非二元性别",
+      "description": "角色的性别身份不局限于男性或女性二元分类。",
       "group": "character:gender",
       "subjectElementTypes": [
         "character:character"
@@ -55,6 +58,7 @@
     {
       "key": "character:gender.unspecified",
       "name": "未指定性别",
+      "description": "角色的性别身份尚未指定。",
       "group": "character:gender",
       "subjectElementTypes": [
         "character:character"

@@ -1,29 +1,36 @@
+using System.Collections.Frozen;
 using Tavi.Extensibility;
+using Tavi.Domain.World;
 
 namespace Tavi.Application.Extensions;
 
 /// <summary>保存经过统一校验的声明式 Module 和可选 Plugin 能力。</summary>
-public sealed class ModuleCatalog
+public sealed class ModuleCatalog : IWorldTypePolicy
 {
     private readonly Dictionary<ModuleId, ModulePackageDefinition> _modules;
-    private readonly Dictionary<SemanticKey, ElementTypeDefinition> _elementTypes;
-    private readonly Dictionary<SemanticKey, ScopeTypeDefinition> _scopeTypes;
+    private readonly ElementTypeDefinition[] _elementTypes;
+    private readonly ScopeTypeDefinition[] _scopeTypes;
     private readonly Dictionary<SemanticKey, AspectGroupDefinition> _aspectGroups;
-    private readonly Dictionary<SemanticKey, AspectTypeDefinition> _aspectTypes;
-    private readonly Dictionary<SemanticKey, RelationTypeDefinition> _relationTypes;
+    private readonly AspectTypeDefinition[] _aspectTypes;
+    private readonly RelationTypeDefinition[] _relationTypes;
     private readonly Dictionary<SemanticKey, SceneDefinition> _scenes;
     private ModuleCatalog(IEnumerable<ModulePackageDefinition> packages)
     {
         ModulePackageDefinition[] copied = packages.Select(ExtensibilityCopies.Package).ToArray();
         _modules = Unique(copied, package => package.Manifest.Id, "Module");
-        _elementTypes = Unique(copied.SelectMany(package => package.Semantics.ElementTypes), definition => definition.Key, "ElementType");
-        _scopeTypes = Unique(copied.SelectMany(package => package.Semantics.ScopeTypes), definition => definition.Key, "ScopeType");
+        _elementTypes = UniqueList([CoreElementType, .. copied.SelectMany(package => package.Semantics.ElementTypes)], definition => definition.Key, "ElementType");
+        _scopeTypes = UniqueList([CoreScopeType, .. copied.SelectMany(package => package.Semantics.ScopeTypes)], definition => definition.Key, "ScopeType");
         _aspectGroups = Unique(copied.SelectMany(package => package.Semantics.AspectGroups), definition => definition.Key, "AspectGroup");
-        _aspectTypes = Unique(copied.SelectMany(package => package.Semantics.AspectTypes), definition => definition.Key, "AspectType");
-        _relationTypes = Unique(copied.SelectMany(package => package.Semantics.RelationTypes), definition => definition.Key, "RelationType");
+        _aspectTypes = UniqueList([CoreAspectType, .. copied.SelectMany(package => package.Semantics.AspectTypes)], definition => definition.Key, "AspectType");
+        _relationTypes = UniqueList([CoreRelationType, .. copied.SelectMany(package => package.Semantics.RelationTypes)], definition => definition.Key, "RelationType");
         _scenes = Unique(copied.SelectMany(package => package.Scenes), definition => definition.Id, "SceneDefinition");
         Validate();
     }
+
+    private static ElementTypeDefinition CoreElementType { get; } = new() { Key = new SemanticKey("core:none"), Name = "无类型", Description = "不携带 Module 专属语义的 Element。", Tags = Array.Empty<SemanticKey>().ToFrozenSet() };
+    private static ScopeTypeDefinition CoreScopeType { get; } = new() { Key = new SemanticKey("core:none"), Name = "无类型", Description = "不携带 Module 专属语义的 Scope。", OwnerElementTypes = Array.Empty<SemanticKey>().ToFrozenSet(), Tags = Array.Empty<SemanticKey>().ToFrozenSet() };
+    private static AspectTypeDefinition CoreAspectType { get; } = new() { Key = new SemanticKey("core:none"), Name = "无类型", Description = "不携带 Module 专属语义的 Aspect。", SubjectElementTypes = Array.Empty<SemanticKey>().ToFrozenSet(), Tags = Array.Empty<SemanticKey>().ToFrozenSet() };
+    private static RelationTypeDefinition CoreRelationType { get; } = new() { Key = new SemanticKey("core:none"), Name = "无类型", Description = "不携带 Module 专属语义的 Relation。", SourceElementTypes = Array.Empty<SemanticKey>().ToFrozenSet(), TargetElementTypes = Array.Empty<SemanticKey>().ToFrozenSet(), Tags = Array.Empty<SemanticKey>().ToFrozenSet() };
 
     /// <summary>校验并创建 Module Catalog；Catalog 创建后声明式定义不可替换。</summary>
     public static ModuleCatalog Create(IEnumerable<ModulePackageDefinition> packages)
@@ -41,12 +48,48 @@ public sealed class ModuleCatalog
     /// <summary>根据稳定键获取静态 SceneDefinition；不存在时返回 null。</summary>
     public SceneDefinition? FindStaticScene(SemanticKey id) => _scenes.TryGetValue(id, out SceneDefinition? value) ? ExtensibilityCopies.Scene(value) : null;
 
+    /// <summary>获取按稳定键排序的全部 ElementType 定义。</summary>
+    public IReadOnlyList<ElementTypeDefinition> GetElementTypes() => Copy(_elementTypes);
+
+    /// <summary>获取按稳定键排序的全部 ScopeType 定义。</summary>
+    public IReadOnlyList<ScopeTypeDefinition> GetScopeTypes() => Copy(_scopeTypes);
+
+    /// <summary>获取按稳定键排序的全部 AspectType 定义。</summary>
+    public IReadOnlyList<AspectTypeDefinition> GetAspectTypes() => Copy(_aspectTypes);
+
+    /// <summary>获取按稳定键排序的全部 RelationType 定义。</summary>
+    public IReadOnlyList<RelationTypeDefinition> GetRelationTypes() => Copy(_relationTypes);
+
+    /// <summary>查找指定 ElementType 定义；未注册时返回 null。</summary>
+    public ElementTypeDefinition? FindElementType(ElementType type) => _elementTypes.FirstOrDefault(value => value.Key.Value == type.Value) is { } value ? value with { } : null;
+
+    /// <summary>查找指定 ScopeType 定义；未注册时返回 null。</summary>
+    public ScopeTypeDefinition? FindScopeType(ScopeType type) => _scopeTypes.FirstOrDefault(value => value.Key.Value == type.Value) is { } value ? value with { } : null;
+
+    /// <summary>查找指定 AspectType 定义；未注册时返回 null。</summary>
+    public AspectTypeDefinition? FindAspectType(AspectType type) => _aspectTypes.FirstOrDefault(value => value.Key.Value == type.Value) is { } value ? value with { } : null;
+
+    /// <summary>查找指定 RelationType 定义；未注册时返回 null。</summary>
+    public RelationTypeDefinition? FindRelationType(RelationType type) => _relationTypes.FirstOrDefault(value => value.Key.Value == type.Value) is { } value ? value with { } : null;
+
+    /// <inheritdoc />
+    public bool IsRegistered(ElementType type) => FindElementType(type) is not null;
+
+    /// <inheritdoc />
+    public bool IsRegistered(ScopeType type) => FindScopeType(type) is not null;
+
+    /// <inheritdoc />
+    public bool IsRegistered(AspectType type) => FindAspectType(type) is not null;
+
+    /// <inheritdoc />
+    public bool IsRegistered(RelationType type) => FindRelationType(type) is not null;
+
     internal IReadOnlyCollection<ModulePackageDefinition> Packages => _modules.Values;
-    internal IReadOnlyDictionary<SemanticKey, ElementTypeDefinition> ElementTypes => _elementTypes;
-    internal IReadOnlyDictionary<SemanticKey, ScopeTypeDefinition> ScopeTypes => _scopeTypes;
     internal IReadOnlyDictionary<SemanticKey, AspectGroupDefinition> AspectGroups => _aspectGroups;
-    internal IReadOnlyDictionary<SemanticKey, AspectTypeDefinition> AspectTypes => _aspectTypes;
-    internal IReadOnlyDictionary<SemanticKey, RelationTypeDefinition> RelationTypes => _relationTypes;
+    internal ElementTypeDefinition? FindElementType(SemanticKey key) => _elementTypes.FirstOrDefault(value => value.Key == key);
+    internal ScopeTypeDefinition? FindScopeType(SemanticKey key) => _scopeTypes.FirstOrDefault(value => value.Key == key);
+    internal AspectTypeDefinition? FindAspectType(SemanticKey key) => _aspectTypes.FirstOrDefault(value => value.Key == key);
+    internal RelationTypeDefinition? FindRelationType(SemanticKey key) => _relationTypes.FirstOrDefault(value => value.Key == key);
 
     internal bool IsModuleActive(ModuleId id, IReadOnlyDictionary<string, string> references) => references.TryGetValue(id.Value, out string? version) && _modules.TryGetValue(id, out ModulePackageDefinition? package) && package.Manifest.Version.Value == version;
 
@@ -77,6 +120,8 @@ public sealed class ModuleCatalog
     {
         if (package.Manifest.Parameters.GroupBy(parameter => parameter.Key, StringComparer.Ordinal).Any(group => group.Count() > 1))
             throw Invalid(nameof(Create), $"Module {package.Manifest.Id} 包含重复参数键。");
+        if (package.Semantics.ElementTypes.Any(value => string.IsNullOrWhiteSpace(value.Name) || string.IsNullOrWhiteSpace(value.Description)) || package.Semantics.ScopeTypes.Any(value => string.IsNullOrWhiteSpace(value.Name) || string.IsNullOrWhiteSpace(value.Description)) || package.Semantics.AspectTypes.Any(value => string.IsNullOrWhiteSpace(value.Name) || string.IsNullOrWhiteSpace(value.Description)) || package.Semantics.RelationTypes.Any(value => string.IsNullOrWhiteSpace(value.Name) || string.IsNullOrWhiteSpace(value.Description)))
+            throw Invalid(nameof(Create), $"Module {package.Manifest.Id} 的开放类型必须提供名称和语义说明。");
         foreach (ModuleParameterDefinition parameter in package.Manifest.Parameters)
         {
             if (string.IsNullOrWhiteSpace(parameter.Key) || !char.IsAsciiLetterLower(parameter.Key[0]) || parameter.Key.Any(character => !char.IsAsciiLetterLower(character) && !char.IsDigit(character) && character is not '.' and not '_' and not '-'))
@@ -102,7 +147,7 @@ public sealed class ModuleCatalog
         {
             if (constraint.Minimum < 0 || constraint.Maximum < constraint.Minimum)
                 throw Invalid(nameof(Create), $"约束 {constraint.Key} 的基数范围无效。");
-            if (!_elementTypes.ContainsKey(constraint.SubjectElementType) || !_scopeTypes.ContainsKey(constraint.ScopeType))
+            if (FindElementType(constraint.SubjectElementType) is null || FindScopeType(constraint.ScopeType) is null)
                 throw Invalid(nameof(Create), $"约束 {constraint.Key} 引用了不存在的 ElementType 或 ScopeType。");
             if (constraint.Kind == SemanticConstraintKind.AspectGroupCardinality && (constraint.AspectGroup is not SemanticKey group || !_aspectGroups.ContainsKey(group)))
                 throw Invalid(nameof(Create), $"约束 {constraint.Key} 缺少有效 AspectGroup。");
@@ -132,6 +177,17 @@ public sealed class ModuleCatalog
         }
         return result;
     }
+
+    private static TValue[] UniqueList<TValue, TKey>(IEnumerable<TValue> values, Func<TValue, TKey> keySelector, string kind) where TKey : notnull
+    {
+        TValue[] result = values.OrderBy(value => keySelector(value).ToString(), StringComparer.Ordinal).ToArray();
+        IGrouping<TKey, TValue>? duplicate = result.GroupBy(keySelector).FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+            throw Invalid(nameof(Create), $"{kind} {duplicate.Key} 重复注册。");
+        return result;
+    }
+
+    private static IReadOnlyList<T> Copy<T>(IEnumerable<T> values) where T : class => Array.AsReadOnly(values.ToArray());
 
     private static void EnsureOwned(IEnumerable<SemanticKey> keys, ModuleId owner, string kind)
     {

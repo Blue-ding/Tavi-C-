@@ -158,6 +158,29 @@ button:disabled { opacity: .38; cursor: not-allowed; }
 .modal-kicker { color: #9a7b44; font: 600 9px Consolas, monospace; letter-spacing: .16em; }
 .modal h2 { margin: 4px 0 0; font-size: 18px; }
 .modal-form { padding: 20px 22px 22px; }
+.type-field > button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 52px; padding: 8px 10px; color: #dce4e1; text-align: left; border: 1px solid #303a38; border-radius: 7px; background: #0f1415; cursor: pointer; }
+.type-field > button:hover { border-color: #6d817b; background: #131a1a; }
+.type-field > button span { display: grid; min-width: 0; gap: 3px; }
+.type-field > button strong { font-size: 12px; }
+.type-field > button small { overflow: hidden; color: #63716c; font: 9px Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.type-picker { display: grid; gap: 12px; padding: 16px 18px 20px; }
+.type-search { display: flex; align-items: center; gap: 8px; padding: 0 10px; color: #71807b; border: 1px solid #303a38; border-radius: 8px; background: #0f1415; }
+.type-search input { width: 100%; min-height: 38px; color: #dce4e1; border: 0; outline: 0; background: transparent; font-size: 11px; }
+.type-picker-body { display: grid; grid-template-columns: 145px minmax(0, 1fr); min-height: 330px; max-height: min(520px, calc(100vh - 230px)); overflow: hidden; border: 1px solid #293230; border-radius: 9px; }
+.type-picker-body nav, .type-picker-body section { min-height: 0; overflow: auto; }
+.type-picker-body nav { padding: 7px; border-right: 1px solid #293230; background: #111718; }
+.type-picker-body nav button { display: grid; width: 100%; gap: 2px; margin-bottom: 4px; padding: 8px; color: #89958f; text-align: left; border: 0; border-radius: 6px; background: transparent; cursor: pointer; font-size: 10px; }
+.type-picker-body nav button:hover, .type-picker-body nav button.active { color: #dce4e1; background: #202a28; }
+.type-picker-body nav small { color: #56645f; font: 8px Consolas, monospace; }
+.type-picker-body section { padding: 8px; background: #0e1314; }
+.type-picker-body section > button { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 12px; margin-bottom: 6px; padding: 11px; color: #b9c3bf; text-align: left; border: 1px solid #27302e; border-radius: 8px; background: #151b1c; cursor: pointer; }
+.type-picker-body section > button:hover { border-color: #52665f; background: #192120; }
+.type-picker-body section > button.selected { color: #dce8e4; border-color: #698b81; background: #1b2b27; }
+.type-picker-body section > button span { display: grid; gap: 3px; }
+.type-picker-body section > button strong { font-size: 12px; }
+.type-picker-body section > button small { color: #6f817a; font: 9px Consolas, monospace; }
+.type-picker-body section > button p { margin: 3px 0 0; color: #7f8b87; font-size: 9px; line-height: 1.5; }
+.type-picker-empty { display: grid; place-items: center; min-height: 220px; color: #5d6965; font-size: 10px; }
 .form-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 3px; }
 .modal-actions > button { display: flex; align-items: center; gap: 6px; min-height: 38px; margin: 0; padding: 0 14px; border: 1px solid #36413f; border-radius: 8px; background: #1b2323; cursor: pointer; font-size: 12px; }

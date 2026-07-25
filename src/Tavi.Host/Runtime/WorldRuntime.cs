@@ -9,6 +9,7 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
 {
     private readonly IConfiguration _configuration;
     private readonly WorldEventBroker _events;
+    private readonly ExtensionRuntime _extensions;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private JsonFileWorldStore? _store;
     private IWorldService? _service;
@@ -17,10 +18,11 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     private Task? _disposeTask;
 
     /// <summary>创建使用指定配置和事件代理的世界运行时。</summary>
-    public WorldRuntime(IConfiguration configuration, WorldEventBroker events)
+    public WorldRuntime(IConfiguration configuration, WorldEventBroker events, ExtensionRuntime extensions)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _events = events ?? throw new ArgumentNullException(nameof(events));
+        _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
     }
 
     /// <summary>初始化默认 JSON 存储和世界会话。</summary>
@@ -31,7 +33,7 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
         string saveDirectory = _configuration["Tavi:SaveDirectory"] ?? Environment.GetEnvironmentVariable("TAVI_SAVE_DIRECTORY") ?? defaultDirectory;
         string slot = _configuration["Tavi:WorldSlot"] ?? "default";
         _store = new JsonFileWorldStore(saveDirectory);
-        _service = new WorldSession(_store, slot);
+        _service = new WorldSession(_store, _extensions.Frozen.Catalog, slot);
         _service.Changed += OnWorldChanged;
         _service.StateChanged += OnWorldStateChanged;
         await _service.InitializeAsync(cancellationToken);

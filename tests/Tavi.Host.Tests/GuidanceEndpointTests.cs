@@ -113,7 +113,7 @@ public sealed class GuidanceEndpointTests
             try
             {
                 ITool tool = request.Tools.Single(candidate => candidate.name == "propose_element");
-                await tool.Execute(BinaryData.FromString("""{"Rationale":"承载雨夜谜团","Name":"雨夜钟","Description":"只在无人看见时响起","Type":"story:artifact"}"""), cancellationToken);
+                await tool.Execute(BinaryData.FromString("""{"Rationale":"承载雨夜谜团","Name":"雨夜钟","Description":"只在无人看见时响起","Type":"core:none"}"""), cancellationToken);
                 const string output = "我整理了一项可以审阅的世界变化。";
                 operation.ReportText(output);
                 operation.SetStatus(LanguageModelRunStatus.Completed);

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Tavi.Application.LanguageModel;
+using Tavi.Application.Extensions;
 using Tavi.Domain.World;
 
 namespace Tavi.Application.Guidance;
@@ -10,11 +11,12 @@ internal static class GuidanceProposalTool
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    internal static IReadOnlyCollection<ITool> CreateTools(GuidanceDraft guidance, WorldSnapshot projectedWorld)
+    internal static IReadOnlyCollection<ITool> CreateTools(GuidanceDraft guidance, WorldSnapshot projectedWorld, ModuleCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(guidance);
         ArgumentNullException.ThrowIfNull(projectedWorld);
-        return [new SetSummaryTool(guidance), new ProposeElementTool(guidance), new ProposeScopeTool(guidance, projectedWorld), new ProposeAspectTool(guidance, projectedWorld), new ProposeRelationTool(guidance, projectedWorld)];
+        ArgumentNullException.ThrowIfNull(catalog);
+        return [new WorldTypeDiscoveryTool(catalog), new SetSummaryTool(guidance), new ProposeElementTool(guidance), new ProposeScopeTool(guidance, projectedWorld), new ProposeAspectTool(guidance, projectedWorld), new ProposeRelationTool(guidance, projectedWorld)];
     }
 
     private static ProposalElementReference ResolveElementReference(GuidanceDraft guidance, WorldSnapshot world, ReferenceKind kind, string selector)

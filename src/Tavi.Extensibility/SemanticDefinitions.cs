@@ -16,6 +16,9 @@ public sealed record ElementTypeDefinition
     /// <summary>获取由当前 Module 拥有的类型键。</summary>
     public required SemanticKey Key { get; init; }
 
+    /// <summary>获取拥有该类型键的 Module。</summary>
+    public ModuleId Module => Key.Namespace;
+
     /// <summary>获取面向作者的名称。</summary>
     public required string Name { get; init; }
 
@@ -31,6 +34,9 @@ public sealed record ScopeTypeDefinition
 {
     /// <summary>获取由当前 Module 拥有的类型键。</summary>
     public required SemanticKey Key { get; init; }
+
+    /// <summary>获取拥有该类型键的 Module。</summary>
+    public ModuleId Module => Key.Namespace;
 
     /// <summary>获取面向作者的名称。</summary>
     public required string Name { get; init; }
@@ -64,8 +70,14 @@ public sealed record AspectTypeDefinition
     /// <summary>获取由当前 Module 拥有的类型键。</summary>
     public required SemanticKey Key { get; init; }
 
+    /// <summary>获取拥有该类型键的 Module。</summary>
+    public ModuleId Module => Key.Namespace;
+
     /// <summary>获取面向作者的名称。</summary>
     public required string Name { get; init; }
+
+    /// <summary>获取面向作者、诊断或语言模型的说明。</summary>
+    public required string Description { get; init; }
 
     /// <summary>获取可选 Aspect Group；没有分组时为 null。</summary>
     public SemanticKey? Group { get; init; }
@@ -89,8 +101,14 @@ public sealed record RelationTypeDefinition
     /// <summary>获取由当前 Module 拥有的类型键。</summary>
     public required SemanticKey Key { get; init; }
 
+    /// <summary>获取拥有该类型键的 Module。</summary>
+    public ModuleId Module => Key.Namespace;
+
     /// <summary>获取面向作者的名称。</summary>
     public required string Name { get; init; }
+
+    /// <summary>获取面向作者、诊断或语言模型的说明。</summary>
+    public required string Description { get; init; }
 
     /// <summary>获取允许作为来源的 Element 类型；空集合表示不附加类型限制。</summary>
     public IReadOnlySet<SemanticKey> SourceElementTypes { get; init; } = new HashSet<SemanticKey>();

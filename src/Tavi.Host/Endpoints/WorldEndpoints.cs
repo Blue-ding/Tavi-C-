@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Tavi.Application.World;
+using Tavi.Application.Extensions;
 using Tavi.Domain.World;
 using Tavi.Host.Mapping;
 using Tavi.Host.Runtime;
@@ -18,6 +19,7 @@ internal static class WorldEndpoints
     {
         RouteGroupBuilder world = endpoints.MapGroup("/api/v1/world");
         world.MapGet("/", GetWorldAsync);
+        world.MapGet("/types", GetTypes);
         world.MapPost("/elements", AddElementAsync);
         world.MapPatch("/elements/{elementId:guid}", UpdateElementAsync);
         world.MapDelete("/elements/{elementId:guid}", RemoveElementAsync);
@@ -44,6 +46,18 @@ internal static class WorldEndpoints
     }
 
     private static Task<WorldGraphViewModel> GetWorldAsync(WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(WorldViewModelMapper.ToGraph, cancellationToken);
+
+    private static WorldTypeLibraryViewModel GetTypes(ExtensionRuntime extensions)
+    {
+        ModuleCatalog catalog = extensions.Frozen.Catalog;
+        Dictionary<ModuleId, string> moduleNames = catalog.Modules.ToDictionary(module => module.Id, module => module.Name);
+        string ModuleName(ModuleId module) => module.Value == "core" ? "Tavi Core" : moduleNames.GetValueOrDefault(module) ?? module.Value;
+        return new WorldTypeLibraryViewModel(
+            catalog.GetElementTypes().Select(value => new ElementTypeDefinitionViewModel(value.Key.Value, value.Module.Value, ModuleName(value.Module), value.Name, value.Description)).ToArray(),
+            catalog.GetScopeTypes().Select(value => new ScopeTypeDefinitionViewModel(value.Key.Value, value.Module.Value, ModuleName(value.Module), value.Name, value.Description)).ToArray(),
+            catalog.GetAspectTypes().Select(value => new AspectTypeDefinitionViewModel(value.Key.Value, value.Module.Value, ModuleName(value.Module), value.Name, value.Description)).ToArray(),
+            catalog.GetRelationTypes().Select(value => new RelationTypeDefinitionViewModel(value.Key.Value, value.Module.Value, ModuleName(value.Module), value.Name, value.Description)).ToArray());
+    }
 
     private static Task<WorldStagingResultViewModel> AddElementAsync(AddElementRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddElement(request.Name, request.Description, new ElementType(request.Type)), request.ExpectedStateId), cancellationToken);
 

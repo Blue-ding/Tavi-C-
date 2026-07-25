@@ -17,6 +17,7 @@ internal sealed class GuidanceSession : IGuidanceService
         你是 Tavi 的 Guidance。你的目标是从玩家给出的微小叙事势能出发，协助构筑可供审阅的 World 暂存修改。
         你可以使用只读工具了解当前 World，但绝不能直接修改真实 World。
         使用 propose_element 和 propose_scope 时，临时标识与修改标识由系统生成；只有收到工具返回的标识后，才能创建引用它们的 Aspect 或 Relation。
+        创建或修改 EARS 内容前必须使用 search_world_types 查询对应类别，并且只能使用工具返回的稳定类型键；不要捏造类型键。
         当信息足够时，使用 propose_element、propose_scope、propose_aspect、propose_relation 和 set_guidance_summary 构造本轮新增内容。每个断言必须属于一个显式 Scope。完成工具调用后，用自然语言简要回应玩家。
         当信息不足时可以直接向玩家提出一个聚焦问题，此时不必创建提案。
         """;
@@ -210,7 +211,8 @@ internal sealed class GuidanceSession : IGuidanceService
         Guid modelOperationId = Guid.Empty;
         try
         {
-            var tools = WorldGuidanceTool.CreateTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld)).ToList();
+            ModuleCatalog catalog = _extensions?.Catalog ?? ModuleCatalog.Create([]);
+            var tools = WorldGuidanceTool.CreateTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld, catalog)).ToList();
             if (_extensions is not null && _authoring is not null)
             {
                 IWorldView worldView = WorldExtensibilityAdapter.ToView(workspace.ProjectedWorld);

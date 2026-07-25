@@ -104,7 +104,7 @@ public sealed class WorldStagingTests
 
     private static async Task<WorldSession> CreateSessionAsync(WorldSnapshot? snapshot = null)
     {
-        var session = new WorldSession(new MemoryWorldStore(snapshot ?? new WorldSnapshot()));
+        var session = new WorldSession(new MemoryWorldStore(snapshot ?? new WorldSnapshot()), AnyWorldTypePolicy.Instance);
         await session.InitializeAsync();
         return session;
     }

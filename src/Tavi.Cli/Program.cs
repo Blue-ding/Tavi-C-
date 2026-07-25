@@ -2,6 +2,7 @@ using System.Text;
 using Tavi.Application.LanguageModel;
 using Tavi.Application.Logging;
 using Tavi.Application.World;
+using Tavi.Application.Extensions;
 using Tavi.Infrastructure.OpenAI;
 using Tavi.Infrastructure.Persistence;
 
@@ -27,7 +28,7 @@ internal static class Program
         using var languageModelSettingsStore = new JsonFileLanguageModelSettingsStore(
             Path.Combine(settingsDirectory, "language-model.json"));
         using var openAIConfigurationStore = new JsonFileOpenAIConfigurationStore(openAIConfigurationPath);
-        await using var session = new WorldSession(store);
+        await using var session = new WorldSession(store, ModuleCatalog.Create([]));
         try
         {
             var settingsService = new LanguageModelSettingsService(languageModelSettingsStore);

@@ -61,7 +61,7 @@ public sealed class ScenarioSemanticValidator
             return false;
         if (requirement.RequiredAspectGroups.Count == 0)
             return true;
-        HashSet<SemanticKey> elementGroups = snapshot.Aspects.Values.Where(aspect => aspect.ElementId == element.Id).Select(aspect => _catalog.AspectTypes.GetValueOrDefault(new SemanticKey(aspect.Type.Value))?.Group).OfType<SemanticKey>().ToHashSet();
+        HashSet<SemanticKey> elementGroups = snapshot.Aspects.Values.Where(aspect => aspect.ElementId == element.Id).Select(aspect => _catalog.FindAspectType(new SemanticKey(aspect.Type.Value))?.Group).OfType<SemanticKey>().ToHashSet();
         return requirement.RequiredAspectGroups.All(elementGroups.Contains);
     }
 
@@ -87,13 +87,13 @@ public sealed class ScenarioSemanticValidator
     private void ValidateRegisteredTypes(ScenarioSnapshot snapshot, IReadOnlyDictionary<string, string> references, List<ScenarioSemanticIssue> issues)
     {
         foreach (Element element in snapshot.Elements.Values)
-            ValidateType(new SemanticKey(element.Type.Value), element.Id, _catalog.ElementTypes.ContainsKey, references, issues);
+            ValidateType(new SemanticKey(element.Type.Value), element.Id, key => _catalog.FindElementType(key) is not null, references, issues);
         foreach (Scope scope in snapshot.Scopes.Values)
-            ValidateType(new SemanticKey(scope.Type.Value), scope.Id, _catalog.ScopeTypes.ContainsKey, references, issues);
+            ValidateType(new SemanticKey(scope.Type.Value), scope.Id, key => _catalog.FindScopeType(key) is not null, references, issues);
         foreach (Aspect aspect in snapshot.Aspects.Values)
-            ValidateType(new SemanticKey(aspect.Type.Value), aspect.Id, _catalog.AspectTypes.ContainsKey, references, issues);
+            ValidateType(new SemanticKey(aspect.Type.Value), aspect.Id, key => _catalog.FindAspectType(key) is not null, references, issues);
         foreach (Relation relation in snapshot.Relations.Values)
-            ValidateType(new SemanticKey(relation.Type.Value), relation.Id, _catalog.RelationTypes.ContainsKey, references, issues);
+            ValidateType(new SemanticKey(relation.Type.Value), relation.Id, key => _catalog.FindRelationType(key) is not null, references, issues);
     }
 
     private void ValidateType(SemanticKey key, Guid entityId, Func<SemanticKey, bool> isRegistered, IReadOnlyDictionary<string, string> references, List<ScenarioSemanticIssue> issues)
@@ -111,7 +111,8 @@ public sealed class ScenarioSemanticValidator
         foreach (Scope scope in snapshot.Scopes.Values)
         {
             SemanticKey key = new(scope.Type.Value);
-            if (!_catalog.ScopeTypes.TryGetValue(key, out ScopeTypeDefinition? definition) || !_catalog.IsModuleActive(key.Namespace, references) || definition.OwnerElementTypes.Count == 0)
+            ScopeTypeDefinition? definition = _catalog.FindScopeType(key);
+            if (definition is null || !_catalog.IsModuleActive(key.Namespace, references) || definition.OwnerElementTypes.Count == 0)
                 continue;
             Element owner = snapshot.Elements[scope.OwnerElementId];
             if (!definition.OwnerElementTypes.Contains(new SemanticKey(owner.Type.Value)))
@@ -120,7 +121,8 @@ public sealed class ScenarioSemanticValidator
         foreach (Aspect aspect in snapshot.Aspects.Values)
         {
             SemanticKey key = new(aspect.Type.Value);
-            if (!_catalog.AspectTypes.TryGetValue(key, out AspectTypeDefinition? definition) || !_catalog.IsModuleActive(key.Namespace, references))
+            AspectTypeDefinition? definition = _catalog.FindAspectType(key);
+            if (definition is null || !_catalog.IsModuleActive(key.Namespace, references))
                 continue;
             Element subject = snapshot.Elements[aspect.ElementId];
             if (definition.SubjectElementTypes.Count > 0 && !definition.SubjectElementTypes.Contains(new SemanticKey(subject.Type.Value)))
@@ -130,7 +132,8 @@ public sealed class ScenarioSemanticValidator
         foreach (Relation relation in snapshot.Relations.Values)
         {
             SemanticKey key = new(relation.Type.Value);
-            if (!_catalog.RelationTypes.TryGetValue(key, out RelationTypeDefinition? definition) || !_catalog.IsModuleActive(key.Namespace, references))
+            RelationTypeDefinition? definition = _catalog.FindRelationType(key);
+            if (definition is null || !_catalog.IsModuleActive(key.Namespace, references))
                 continue;
             Element source = snapshot.Elements[relation.SourceElementId];
             Element target = snapshot.Elements[relation.TargetElementId];
@@ -144,7 +147,7 @@ public sealed class ScenarioSemanticValidator
 
     private void ValidateConstraints(ScenarioSnapshot snapshot, IReadOnlyDictionary<string, string> references, List<ScenarioSemanticIssue> issues)
     {
-        Dictionary<SemanticKey, HashSet<SemanticKey>> groupMembers = _catalog.AspectTypes.Values.Where(type => type.Group.HasValue).GroupBy(type => type.Group!.Value).ToDictionary(group => group.Key, group => group.Select(type => type.Key).ToHashSet());
+        Dictionary<SemanticKey, HashSet<SemanticKey>> groupMembers = _catalog.GetAspectTypes().Where(type => type.Group.HasValue).GroupBy(type => type.Group!.Value).ToDictionary(group => group.Key, group => group.Select(type => type.Key).ToHashSet());
         foreach (ModulePackageDefinition package in _catalog.Packages.Where(package => _catalog.IsModuleActive(package.Manifest.Id, references)))
         {
             foreach (SemanticConstraintDefinition constraint in package.Semantics.Constraints)

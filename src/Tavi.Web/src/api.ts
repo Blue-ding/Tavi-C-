@@ -1,4 +1,4 @@
-import type { ApiProblem, GuidanceAvailabilityViewModel, GuidanceCommitViewModel, GuidanceOperationViewModel, GuidanceSnapshotViewModel, LanguageModelSettingsViewModel, ManuscriptViewModel, OpenAIConfigurationInput, OpenAIConfigurationViewModel, ScenarioWorkspaceViewModel, SettingsSaveResultViewModel, WorldGraphViewModel, WritingSnapshotViewModel, WritingWorkspaceViewModel } from './types'
+import type { ApiProblem, GuidanceAvailabilityViewModel, GuidanceCommitViewModel, GuidanceOperationViewModel, GuidanceSnapshotViewModel, LanguageModelSettingsViewModel, ManuscriptViewModel, OpenAIConfigurationInput, OpenAIConfigurationViewModel, ScenarioWorkspaceViewModel, SettingsSaveResultViewModel, WorldGraphViewModel, WorldTypeLibraryViewModel, WritingSnapshotViewModel, WritingWorkspaceViewModel } from './types'
 
 const worldUrl = '/api/v1/world'
 const guidanceUrl = '/api/v1/guidance'
@@ -35,6 +35,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const worldApi = {
   get: () => request<WorldGraphViewModel>(`${worldUrl}/`),
+  types: () => request<WorldTypeLibraryViewModel>(`${worldUrl}/types`),
   addElement: (stateId: string, name: string, description: string, type: string) => request(`${worldUrl}/elements`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId, name, description, type }) }),
   updateElement: (id: string, stateId: string, changes: { name?: string; description?: string; type?: string }) => request(`${worldUrl}/elements/${id}`, { method: 'PATCH', body: JSON.stringify({ expectedStateId: stateId, ...changes }) }),
   removeElement: (id: string, stateId: string) => request(`${worldUrl}/elements/${id}?expectedStateId=${stateId}`, { method: 'DELETE' }),

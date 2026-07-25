@@ -52,7 +52,7 @@ public sealed class WorldAuthoringExtensionTests
 
     private static async Task<WorldSession> CreateWorldAsync()
     {
-        var world = new WorldSession(new MemoryWorldStore());
+        var world = new WorldSession(new MemoryWorldStore(), ModuleCatalog.Create([]));
         await world.InitializeAsync();
         return world;
     }

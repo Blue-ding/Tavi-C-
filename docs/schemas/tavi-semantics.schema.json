@@ -61,7 +61,8 @@
       "type": "object",
       "required": [
         "key",
-        "name"
+        "name",
+        "description"
       ],
       "properties": {
         "key": {

@@ -49,6 +49,21 @@ export interface WorldGraphViewModel {
   stagedChanges: WorldStagedChangeViewModel[]
 }
 
+export interface WorldTypeDefinitionViewModel {
+  key: string
+  moduleId: string
+  moduleName: string
+  name: string
+  description: string
+}
+
+export interface WorldTypeLibraryViewModel {
+  elementTypes: WorldTypeDefinitionViewModel[]
+  scopeTypes: WorldTypeDefinitionViewModel[]
+  aspectTypes: WorldTypeDefinitionViewModel[]
+  relationTypes: WorldTypeDefinitionViewModel[]
+}
+
 export interface WorldStagedChangeViewModel {
   id: string
   source: 'Player' | 'Guidance'

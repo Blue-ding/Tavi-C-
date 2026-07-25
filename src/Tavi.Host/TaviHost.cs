@@ -21,6 +21,7 @@ public static class TaviHost
         string[] args,
         TaviHostOptions? options = null)
     {
+        ConfigureConsoleEncoding();
         options ??= new TaviHostOptions();
         EmergencyLog.Write("Tavi Host 正在启动。");
         SelfLog.Enable(EmergencyLog.Write);
@@ -99,9 +100,21 @@ public static class TaviHost
         return app;
     }
 
+    internal static void ConfigureConsoleEncoding(Action<Encoding>? setOutputEncoding = null)
+    {
+        try
+        {
+            (setOutputEncoding ?? (encoding => Console.OutputEncoding = encoding))(
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+        catch (IOException)
+        {
+            // Windows GUI 进程可能没有控制台句柄；此时没有可配置的控制台输出。
+        }
+    }
+
     public static async Task RunAsync(string[] args)
     {
-        Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         WebApplication? app = null;
         try
         {

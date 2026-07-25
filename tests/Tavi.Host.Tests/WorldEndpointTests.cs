@@ -19,7 +19,7 @@ public sealed class WorldEndpointTests
         using HttpClient client = factory.CreateClient();
         WorldGraphViewModel initial = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
         Assert.Empty(initial.Elements);
-        HttpResponseMessage addResponse = await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(initial.StateId, "Alice", "旅行者", "story:person"));
+        HttpResponseMessage addResponse = await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(initial.StateId, "Alice", "旅行者", "core:none"));
         WorldStagingResultViewModel staged = await RequireJsonAsync<WorldStagingResultViewModel>(addResponse);
         WorldCommitViewModel commit = await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(initial.StateId, staged.AffectedChangeIds)));
         WorldGraphViewModel updated = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
@@ -36,9 +36,9 @@ public sealed class WorldEndpointTests
         using var factory = new TaviHostFactory();
         using HttpClient client = factory.CreateClient();
         WorldGraphViewModel initial = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
-        WorldStagingResultViewModel first = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(initial.StateId, "Alice", "", "story:person")));
+        WorldStagingResultViewModel first = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(initial.StateId, "Alice", "", "core:none")));
         await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(initial.StateId, first.AffectedChangeIds)));
-        HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(initial.StateId, "Key", "", "story:item"));
+        HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(initial.StateId, "Key", "", "core:none"));
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         string content = await response.Content.ReadAsStringAsync();
         Assert.Contains("TAVI.WORLD.STATE.CONFLICT", content, StringComparison.Ordinal);
@@ -57,6 +57,30 @@ public sealed class WorldEndpointTests
         Assert.Contains("TAVI.HOST.REQUEST.INVALID_ARGUMENT", content, StringComparison.Ordinal);
     }
 
+    /// <summary>验证格式合法但未注册的开放类型不能进入玩家暂存区。</summary>
+    [Fact]
+    public async Task UnregisteredElementTypeIsRejected()
+    {
+        using var factory = new TaviHostFactory();
+        using HttpClient client = factory.CreateClient();
+        WorldGraphViewModel initial = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
+        HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(initial.StateId, "Fabricated", "", "story:fabricated"));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("未注册", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    /// <summary>验证类型目录按 EARS 类别暴露内置类型和活动 Module 的名称与说明。</summary>
+    [Fact]
+    public async Task TypeLibraryExposesRegisteredDefinitions()
+    {
+        using var factory = new TaviHostFactory();
+        using HttpClient client = factory.CreateClient();
+        WorldTypeLibraryViewModel library = await RequireJsonAsync<WorldTypeLibraryViewModel>(await client.GetAsync("/api/v1/world/types"));
+        Assert.Contains(library.ElementTypes, value => value.Key == "core:none" && value.ModuleId == "core");
+        Assert.Contains(library.ElementTypes, value => value.Key == "character:character" && value.Name == "角色" && value.Description.Length > 0);
+        Assert.Contains(library.AspectTypes, value => value.Key == "character:gender.unspecified" && value.Description.Length > 0);
+    }
+
     /// <summary>验证 Element、Scope、Relation 和撤销可以组成完整编辑流程。</summary>
     [Fact]
     public async Task ScopedRelationCanBeCreatedAndUndone()
@@ -64,13 +88,13 @@ public sealed class WorldEndpointTests
         using var factory = new TaviHostFactory();
         using HttpClient client = factory.CreateClient();
         WorldGraphViewModel graph = await RequireJsonAsync<WorldGraphViewModel>(await client.GetAsync("/api/v1/world/"));
-        WorldStagingResultViewModel ownerStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(graph.StateId, "Alice", "", "story:person")));
+        WorldStagingResultViewModel ownerStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(graph.StateId, "Alice", "", "core:none")));
         Guid ownerId = ownerStage.World.Elements.Single().Id;
-        WorldStagingResultViewModel itemStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(graph.StateId, "Key", "", "story:item")));
+        WorldStagingResultViewModel itemStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/elements", new AddElementRequest(graph.StateId, "Key", "", "core:none")));
         Guid itemId = itemStage.World.Elements.Single(node => node.Name == "Key").Id;
-        WorldStagingResultViewModel scopeStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/scopes", new AddScopeRequest(graph.StateId, "Alice belief", "", 1, "epistemic:belief", ownerId)));
+        WorldStagingResultViewModel scopeStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/scopes", new AddScopeRequest(graph.StateId, "Alice belief", "", 1, "core:none", ownerId)));
         Guid scopeId = scopeStage.World.Scopes.Single().Id;
-        var relationRequest = new AddRelationRequest(graph.StateId, "寻找", "", 0.6, "story:seeks", ownerId, itemId, scopeId);
+        var relationRequest = new AddRelationRequest(graph.StateId, "寻找", "", 0.6, "core:none", ownerId, itemId, scopeId);
         WorldStagingResultViewModel relationStage = await RequireJsonAsync<WorldStagingResultViewModel>(await client.PostAsJsonAsync("/api/v1/world/relations", relationRequest));
         Guid[] allChanges = relationStage.World.StagedChanges.Where(change => change.Status == "Valid").Select(change => change.Id).ToArray();
         WorldCommitViewModel relation = await RequireJsonAsync<WorldCommitViewModel>(await client.PostAsJsonAsync("/api/v1/world/staging/commit", new CommitStagedRequest(graph.StateId, allChanges)));

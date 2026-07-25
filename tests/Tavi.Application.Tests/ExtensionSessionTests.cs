@@ -1,4 +1,5 @@
 using Tavi.Application.Extensions;
+using Tavi.Domain.World;
 using Tavi.Extensibility;
 using Xunit;
 
@@ -7,6 +8,22 @@ namespace Tavi.Application.Tests;
 /// <summary>验证 Module 启停、依赖、参数规范化和冻结快照。</summary>
 public sealed class ExtensionSessionTests
 {
+    /// <summary>验证四种开放类型目录保持名义隔离，并始终包含各自的 core:none。</summary>
+    [Fact]
+    public void TypeCatalogKeepsFourDefinitionKindsSeparate()
+    {
+        ModulePackageDefinition package = Package("test") with { Semantics = new SemanticModuleDefinition { ElementTypes = [new ElementTypeDefinition { Key = new SemanticKey("test:entity"), Name = "实体", Description = "仅注册为 ElementType。" }] } };
+
+        ModuleCatalog catalog = ModuleCatalog.Create([package]);
+
+        Assert.NotNull(catalog.FindElementType(new ElementType("test:entity")));
+        Assert.Null(catalog.FindScopeType(new ScopeType("test:entity")));
+        Assert.Contains(catalog.GetElementTypes(), value => value.Key.Value == "core:none");
+        Assert.Contains(catalog.GetScopeTypes(), value => value.Key.Value == "core:none");
+        Assert.Contains(catalog.GetAspectTypes(), value => value.Key.Value == "core:none");
+        Assert.Contains(catalog.GetRelationTypes(), value => value.Key.Value == "core:none");
+    }
+
     /// <summary>验证禁用被依赖 Module 会被拒绝。</summary>
     [Fact]
     public void CannotDisableRequiredModule()

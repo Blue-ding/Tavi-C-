@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -12,6 +14,41 @@ namespace Tavi.Host.Tests;
 /// <summary>验证 Host 日志可以安全持久化、关联错误响应并维护保留期限。</summary>
 public sealed class LoggingPersistenceTests
 {
+    /// <summary>验证嵌入桌面应用的 Host 在写出首条日志前统一使用 UTF-8 控制台编码。</summary>
+    [Fact]
+    public async Task EmbeddedHostBuildConfiguresUtf8ConsoleEncoding()
+    {
+        Encoding originalEncoding = Console.OutputEncoding;
+        string directory = Path.Combine(Path.GetTempPath(), $"tavi-console-encoding-tests-{Guid.NewGuid():N}");
+        try
+        {
+            Console.OutputEncoding = Encoding.Latin1;
+            WebApplication application = TaviHost.Build(
+                [
+                    "--Tavi:SaveDirectory", Path.Combine(directory, "saves"),
+                    "--Tavi:SettingsDirectory", Path.Combine(directory, "settings"),
+                    "--Tavi:Logging:Directory", Path.Combine(directory, "logs")
+                ]);
+            await using (application)
+                Assert.Equal(Encoding.UTF8.CodePage, Console.OutputEncoding.CodePage);
+        }
+        finally
+        {
+            Console.OutputEncoding = originalEncoding;
+            await DeleteDirectoryEventuallyAsync(directory);
+        }
+    }
+
+    /// <summary>验证无控制台句柄的桌面进程不会因 UTF-8 初始化失败而中止 Host 启动。</summary>
+    [Fact]
+    public void MissingConsoleHandleDoesNotPreventHostInitialization()
+    {
+        Exception? exception = Record.Exception(() =>
+            TaviHost.ConfigureConsoleEncoding(_ => throw new IOException("句柄无效。")));
+
+        Assert.Null(exception);
+    }
+
     /// <summary>验证被拒绝的请求会将错误码和 TraceId 写入滚动日志，并清理过期日志。</summary>
     [Fact]
     public async Task RejectedRequestIsPersistedWithCorrelationData()
