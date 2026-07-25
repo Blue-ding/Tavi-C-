@@ -1,5 +1,7 @@
 using Tavi.Application.Extensions;
+using Tavi.Application.Extensions.Guidance;
 using Tavi.Application.Extensions.Loading;
+using Tavi.Application.Extensions.World;
 using Tavi.Application.Scenario;
 using Tavi.Domain.World;
 using Tavi.Extensibility;
@@ -11,6 +13,38 @@ namespace Tavi.Application.Tests;
 /// <summary>验证 Magic Module 声明、冻结参数与局部规则结算。</summary>
 public sealed class MagicModuleTests
 {
+    /// <summary>验证冻结 Runtime 会索引 Magic 的 Guidance 与 World Authoring 能力。</summary>
+    [Fact]
+    public async Task GuidanceReceivesMagicSemanticsAndAtomicActions()
+    {
+        FrozenModuleRuntime runtime = CreateRuntime();
+        (ModuleId Module, IGuidanceExtension Extension) guidance = Assert.Single(runtime.GuidanceExtensions);
+        (ModuleId Module, IWorldAuthoringExtension Extension) authoring = Assert.Single(runtime.WorldAuthoringExtensions);
+        IWorldView world = WorldExtensibilityAdapter.ToView(new WorldSnapshot());
+        GuidanceInstructionContribution instruction = Assert.Single(await guidance.Extension.GetInstructionsAsync(world, runtime.GetParameters(guidance.Module), default));
+        IReadOnlyList<WorldAuthoringAction> actions = await authoring.Extension.GetActionsAsync(world, runtime.GetParameters(authoring.Module), default);
+        Assert.Equal(new ModuleId("magic"), guidance.Module);
+        Assert.Contains("magic:spell-definition", instruction.Content, StringComparison.Ordinal);
+        Assert.Equal(["magic:awaken-character", "magic:create-spell"], actions.Select(value => value.Id.Value).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>验证 Magic World Action 会把受约束结构作为一个原子提案返回。</summary>
+    [Fact]
+    public async Task MagicWorldActionsProduceCompleteStructures()
+    {
+        var plugin = new MagicPlugin();
+        Guid characterId = Guid.NewGuid();
+        var source = new WorldSnapshot();
+        source.Elements.Add(characterId, new Element(characterId, "艾拉", "", new ElementType("character:character")));
+        IWorldView world = WorldExtensibilityAdapter.ToView(source);
+        WorldAuthoringProposal spell = await plugin.ProposeAsync(new WorldAuthoringRequest { World = world, ActionId = new SemanticKey("magic:create-spell"), Arguments = """{"name":"微光术","description":"制造微光","manaCost":3}""" }, default);
+        WorldAuthoringProposal awakening = await plugin.ProposeAsync(new WorldAuthoringRequest { World = world, ActionId = new SemanticKey("magic:awaken-character"), Arguments = $$"""{"characterId":"{{characterId}}","initialMana":10}""" }, default);
+        Assert.Collection(spell.Intents, value => Assert.IsType<WorldAuthoringIntent.AddElement>(value), value => Assert.IsType<WorldAuthoringIntent.AddScope>(value), value => Assert.IsType<WorldAuthoringIntent.AddAspect>(value));
+        Assert.Collection(awakening.Intents, value => Assert.IsType<WorldAuthoringIntent.AddScope>(value), value => Assert.IsType<WorldAuthoringIntent.AddAspect>(value));
+        _ = WorldExtensibilityAdapter.ToChangeSet(spell, source);
+        _ = WorldExtensibilityAdapter.ToChangeSet(awakening, source);
+    }
+
     /// <summary>验证施法 Scene 会按冻结倍率原子扣减施法者法力。</summary>
     [Fact]
     public async Task CastSpellConsumesMana()
