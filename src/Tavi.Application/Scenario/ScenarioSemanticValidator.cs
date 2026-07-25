@@ -1,7 +1,7 @@
 using Tavi.Domain.Scenario;
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Evolution;
+namespace Tavi.Application.Scenario;
 
 /// <summary>描述一个阻止候选 Scenario 提交的声明式语义问题。</summary>
 public sealed record ScenarioSemanticIssue
@@ -25,10 +25,10 @@ public sealed record ScenarioSemanticIssue
 /// <summary>在完整候选 Scenario 上执行已激活 Module 的声明式语义约束。</summary>
 public sealed class ScenarioSemanticValidator
 {
-    private readonly EvolutionModuleCatalog _catalog;
+    private readonly ScenarioModuleCatalog _catalog;
 
     /// <summary>创建使用指定 Module Catalog 的语义校验器。</summary>
-    public ScenarioSemanticValidator(EvolutionModuleCatalog catalog) => _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+    public ScenarioSemanticValidator(ScenarioModuleCatalog catalog) => _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
 
     /// <summary>校验完整快照并返回全部可发现问题；该方法不修改输入快照。</summary>
     public IReadOnlyList<ScenarioSemanticIssue> Validate(ScenarioSnapshot snapshot)
@@ -44,14 +44,14 @@ public sealed class ScenarioSemanticValidator
         return issues;
     }
 
-    /// <summary>校验完整快照，并在发现问题时抛出带结构化详情的 EvolutionException。</summary>
+    /// <summary>校验完整快照，并在发现问题时抛出带结构化详情的 ScenarioApplicationException。</summary>
     public void EnsureValid(ScenarioSnapshot snapshot, string operation)
     {
         IReadOnlyList<ScenarioSemanticIssue> issues = Validate(snapshot);
         if (issues.Count == 0)
             return;
         var details = new Dictionary<string, string> { ["Issues"] = string.Join(Environment.NewLine, issues.Select(issue => $"{issue.Code}: {issue.Message}")) };
-        throw new EvolutionException(EvolutionErrorCodes.SemanticViolation, TaviErrorCategory.Validation, operation, $"候选 Scenario 包含 {issues.Count} 个语义问题。", details);
+        throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.SemanticViolation, TaviErrorCategory.Validation, operation, $"候选 Scenario 包含 {issues.Count} 个语义问题。", details);
     }
 
     internal bool ElementMatchesSlot(ScenarioSnapshot snapshot, Element element, SceneSlotRequirement requirement)

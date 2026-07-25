@@ -92,7 +92,7 @@ public sealed class Scenario
         return _data.Scopes.Values.Where(scope => scope.OwnerElementId == elementId).Select(CloneScope).ToArray();
     }
 
-    /// <summary>在 EvolutionSession 写边界内原子应用操作组，失败时恢复完整前态。</summary>
+    /// <summary>在 ScenarioSession 写边界内原子应用操作组，失败时恢复完整前态。</summary>
     internal ScenarioApplyResult Apply(ScenarioChangeSet changeSet)
     {
         ArgumentNullException.ThrowIfNull(changeSet);
@@ -144,6 +144,7 @@ public sealed class Scenario
         SetSceneSlotBindingOperation value => ApplySetSceneSlotBinding(value),
         ClearSceneSlotBindingOperation value => ApplyClearSceneSlotBinding(value),
         UpdateSceneStateOperation value => ApplyUpdateSceneState(value),
+        ClearSettledScenesOperation => ApplyClearSettledScenes(),
         RestoreScenarioSnapshotOperation value => ApplyRestoreSnapshot(value),
         _ => throw Invalid(nameof(Apply), $"不支持的 Scenario 操作类型 {operation.GetType().FullName}。")
     };
@@ -163,6 +164,7 @@ public sealed class Scenario
     {
         const string name = nameof(RemoveElementOperation);
         Element element = GetElementCore(operation.ElementId, name);
+        EnsureElementsNotProcessing([element.Id], name);
         Guid[] ownedScopeIds = _data.Scopes.Values.Where(scope => scope.OwnerElementId == element.Id).Select(scope => scope.Id).ToArray();
         HashSet<Guid> ownedScopes = ownedScopeIds.ToHashSet();
         foreach (Guid aspectId in _data.Aspects.Values.Where(aspect => aspect.ElementId == element.Id || ownedScopes.Contains(aspect.ScopeId)).Select(aspect => aspect.Id).ToArray())
@@ -171,7 +173,7 @@ public sealed class Scenario
             _data.Relations.Remove(relationId);
         foreach (Guid scopeId in ownedScopeIds)
             _data.Scopes.Remove(scopeId);
-        foreach (Scene scene in _data.Scenes.Values)
+        foreach (Scene scene in _data.Scenes.Values.Where(scene => scene.State == SceneState.Binding))
             scene.RemoveElementFromBindings(element.Id);
         _data.Elements.Remove(element.Id);
         return true;
@@ -182,6 +184,7 @@ public sealed class Scenario
         const string name = nameof(UpdateElementOperation);
         EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
         Element element = GetElementCore(operation.ElementId, name);
+        EnsureElementsNotProcessing([element.Id], name);
         if (element.Name == operation.Name && element.Description == operation.Description && element.Type == operation.Type)
             return false;
         element.Update(operation.Name, operation.Description, operation.Type);
@@ -195,6 +198,7 @@ public sealed class Scenario
         EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
         EnsureQuantity(operation.Quantity, name);
         _ = GetElementCore(operation.OwnerElementId, name);
+        EnsureElementsNotProcessing([operation.OwnerElementId], name);
         if (_data.Scopes.ContainsKey(operation.ScopeId))
             throw Duplicate(name, "Scope", operation.ScopeId);
         _data.Scopes.Add(operation.ScopeId, new Scope(operation.ScopeId, operation.Name, operation.Description, operation.Quantity, operation.Type, operation.OwnerElementId));
@@ -205,6 +209,7 @@ public sealed class Scenario
     {
         const string name = nameof(RemoveScopeOperation);
         Scope scope = GetScopeCore(operation.ScopeId, name);
+        EnsureElementsNotProcessing([scope.OwnerElementId], name);
         foreach (Guid aspectId in _data.Aspects.Values.Where(aspect => aspect.ScopeId == scope.Id).Select(aspect => aspect.Id).ToArray())
             _data.Aspects.Remove(aspectId);
         foreach (Guid relationId in _data.Relations.Values.Where(relation => relation.ScopeId == scope.Id).Select(relation => relation.Id).ToArray())
@@ -219,6 +224,7 @@ public sealed class Scenario
         EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
         EnsureQuantity(operation.Quantity, name);
         Scope scope = GetScopeCore(operation.ScopeId, name);
+        EnsureElementsNotProcessing([scope.OwnerElementId], name);
         if (scope.Name == operation.Name && scope.Description == operation.Description && scope.Quantity == operation.Quantity && scope.Type == operation.Type)
             return false;
         scope.Update(operation.Name, operation.Description, operation.Quantity, operation.Type);
@@ -232,7 +238,8 @@ public sealed class Scenario
         EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
         EnsureQuantity(operation.Quantity, name);
         _ = GetElementCore(operation.ElementId, name);
-        _ = GetScopeCore(operation.ScopeId, name);
+        Scope scope = GetScopeCore(operation.ScopeId, name);
+        EnsureElementsNotProcessing([operation.ElementId, scope.OwnerElementId], name);
         if (_data.Aspects.ContainsKey(operation.AspectId))
             throw Duplicate(name, "Aspect", operation.AspectId);
         _data.Aspects.Add(operation.AspectId, new Aspect(operation.AspectId, operation.Name, operation.Description, operation.Quantity, operation.Type, operation.ElementId, operation.ScopeId));
@@ -243,6 +250,7 @@ public sealed class Scenario
     {
         const string name = nameof(RemoveAspectOperation);
         Aspect aspect = GetAspectCore(operation.AspectId, name);
+        EnsureElementsNotProcessing([aspect.ElementId, GetScopeCore(aspect.ScopeId, name).OwnerElementId], name);
         _data.Aspects.Remove(aspect.Id);
         return true;
     }
@@ -253,6 +261,7 @@ public sealed class Scenario
         EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
         EnsureQuantity(operation.Quantity, name);
         Aspect aspect = GetAspectCore(operation.AspectId, name);
+        EnsureElementsNotProcessing([aspect.ElementId, GetScopeCore(aspect.ScopeId, name).OwnerElementId], name);
         if (aspect.Name == operation.Name && aspect.Description == operation.Description && aspect.Quantity == operation.Quantity && aspect.Type == operation.Type)
             return false;
         aspect.Update(operation.Name, operation.Description, operation.Quantity, operation.Type);
@@ -267,7 +276,8 @@ public sealed class Scenario
         EnsureQuantity(operation.Quantity, name);
         _ = GetElementCore(operation.SourceElementId, name);
         _ = GetElementCore(operation.TargetElementId, name);
-        _ = GetScopeCore(operation.ScopeId, name);
+        Scope scope = GetScopeCore(operation.ScopeId, name);
+        EnsureElementsNotProcessing([operation.SourceElementId, operation.TargetElementId, scope.OwnerElementId], name);
         if (_data.Relations.ContainsKey(operation.RelationId))
             throw Duplicate(name, "Relation", operation.RelationId);
         _data.Relations.Add(operation.RelationId, new Relation(operation.RelationId, operation.Name, operation.Description, operation.Quantity, operation.Type, operation.SourceElementId, operation.TargetElementId, operation.ScopeId));
@@ -278,6 +288,7 @@ public sealed class Scenario
     {
         const string name = nameof(RemoveRelationOperation);
         Relation relation = GetRelationCore(operation.RelationId, name);
+        EnsureElementsNotProcessing([relation.SourceElementId, relation.TargetElementId, GetScopeCore(relation.ScopeId, name).OwnerElementId], name);
         _data.Relations.Remove(relation.Id);
         return true;
     }
@@ -288,6 +299,7 @@ public sealed class Scenario
         EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
         EnsureQuantity(operation.Quantity, name);
         Relation relation = GetRelationCore(operation.RelationId, name);
+        EnsureElementsNotProcessing([relation.SourceElementId, relation.TargetElementId, GetScopeCore(relation.ScopeId, name).OwnerElementId], name);
         if (relation.Name == operation.Name && relation.Description == operation.Description && relation.Quantity == operation.Quantity && relation.Type == operation.Type)
             return false;
         relation.Update(operation.Name, operation.Description, operation.Quantity, operation.Type);
@@ -308,7 +320,7 @@ public sealed class Scenario
         EnsureSettlementOptions(operation.SettlementOptions, name);
         if (_data.Scenes.ContainsKey(operation.SceneId))
             throw Duplicate(name, "Scene", operation.SceneId);
-        _data.Scenes.Add(operation.SceneId, new Scene(operation.SceneId, operation.DefinitionId, operation.ModuleId, operation.ModuleVersion, operation.BasedOnScenarioStateId, operation.Name, operation.Description, operation.SettlementOptions, SceneState.Preparing));
+        _data.Scenes.Add(operation.SceneId, new Scene(operation.SceneId, operation.DefinitionId, operation.ModuleId, operation.ModuleVersion, operation.BasedOnScenarioStateId, operation.Name, operation.Description, operation.SettlementOptions, SceneState.Binding, operation.Slots));
         return true;
     }
 
@@ -316,6 +328,8 @@ public sealed class Scenario
     {
         const string name = nameof(RemoveSceneOperation);
         Scene scene = GetSceneCore(operation.SceneId, name);
+        if (scene.State == SceneState.Processing)
+            throw Invalid(name, $"Scene {scene.Id} 正在处理，结算前不能删除。");
         _data.Scenes.Remove(scene.Id);
         return true;
     }
@@ -324,16 +338,30 @@ public sealed class Scenario
     {
         const string name = nameof(SetSceneSlotBindingOperation);
         ArgumentNullException.ThrowIfNull(operation.Binding);
+        Scene scene = GetSceneCore(operation.SceneId, name);
+        EnsureSceneBindingMutable(scene, name);
+        if (scene.GetSlotSpecifications().Count > 0 && scene.GetSlotSpecifications().All(slot => slot.Id != operation.Binding.SlotId))
+            throw Invalid(name, $"Scene {scene.Id} 不包含槽位 {operation.Binding.SlotId}。");
         foreach (Guid elementId in operation.Binding.ElementIds)
+        {
             _ = GetElementCore(elementId, name);
-        return GetSceneCore(operation.SceneId, name).SetBinding(operation.Binding);
+            Scene? occupied = _data.Scenes.Values.FirstOrDefault(candidate => candidate.Id != scene.Id && candidate.State != SceneState.Settled && candidate.ContainsElement(elementId));
+            if (occupied is not null)
+                throw Invalid(name, $"Element {elementId} 已归属 Scene {occupied.Id}。");
+            SceneSlotBinding? duplicateSlot = scene.GetBindings().FirstOrDefault(binding => binding.SlotId != operation.Binding.SlotId && binding.ElementIds.Contains(elementId));
+            if (duplicateSlot is not null)
+                throw Invalid(name, $"Element {elementId} 已绑定到当前 Scene 的槽位 {duplicateSlot.SlotId}。");
+        }
+        return scene.SetBinding(operation.Binding);
     }
 
     private bool ApplyClearSceneSlotBinding(ClearSceneSlotBindingOperation operation)
     {
         const string name = nameof(ClearSceneSlotBindingOperation);
         EnsureText(operation.SlotId, name, nameof(operation.SlotId));
-        return GetSceneCore(operation.SceneId, name).ClearBinding(operation.SlotId);
+        Scene scene = GetSceneCore(operation.SceneId, name);
+        EnsureSceneBindingMutable(scene, name);
+        return scene.ClearBinding(operation.SlotId);
     }
 
     private bool ApplyUpdateSceneState(UpdateSceneStateOperation operation)
@@ -341,7 +369,19 @@ public sealed class Scenario
         const string name = nameof(UpdateSceneStateOperation);
         if (!Enum.IsDefined(operation.State))
             throw Invalid(name, "SceneState 不是已定义值。");
-        return GetSceneCore(operation.SceneId, name).UpdateState(operation.State);
+        Scene scene = GetSceneCore(operation.SceneId, name);
+        bool validTransition = scene.State == SceneState.Binding && operation.State == SceneState.Processing || scene.State == SceneState.Processing && operation.State == SceneState.Settled;
+        if (!validTransition)
+            throw Invalid(name, $"Scene {scene.Id} 不能从 {scene.State} 转换为 {operation.State}。");
+        return scene.UpdateState(operation.State);
+    }
+
+    private bool ApplyClearSettledScenes()
+    {
+        Guid[] settledIds = _data.Scenes.Values.Where(scene => scene.State == SceneState.Settled).Select(scene => scene.Id).ToArray();
+        foreach (Guid sceneId in settledIds)
+            _data.Scenes.Remove(sceneId);
+        return settledIds.Length > 0;
     }
 
     private bool ApplyRestoreSnapshot(RestoreScenarioSnapshotOperation operation)
@@ -436,10 +476,13 @@ public sealed class Scenario
             }
             foreach (SceneSlotBinding binding in scene.GetBindings())
             {
-                if (string.IsNullOrWhiteSpace(binding.SlotId) || binding.ElementIds.Any(id => !snapshot.Elements.ContainsKey(id)))
+                if (scene.GetSlotSpecifications().Count > 0 && scene.GetSlotSpecifications().All(slot => slot.Id != binding.SlotId) || scene.State != SceneState.Settled && binding.ElementIds.Any(id => !snapshot.Elements.ContainsKey(id)))
                     errors.Add($"Scene {key} 的槽位 {binding.SlotId} 不合法。");
             }
         }
+        Guid? duplicateActiveBinding = snapshot.Scenes.Values.Where(scene => scene.State != SceneState.Settled).SelectMany(scene => scene.GetBindings().SelectMany(binding => binding.ElementIds.Select(elementId => (scene.Id, elementId)))).GroupBy(value => value.elementId).Where(group => group.Select(value => value.Id).Distinct().Count() > 1 || group.Count() > 1).Select(group => (Guid?)group.Key).FirstOrDefault();
+        if (duplicateActiveBinding.HasValue)
+            errors.Add($"Element {duplicateActiveBinding.Value} 同时绑定到多个活动槽位。");
         if (errors.Count > 0)
             throw InvalidSnapshot(errors);
     }
@@ -449,6 +492,8 @@ public sealed class Scenario
         ScenarioModuleReference[] copied = modules.ToArray();
         if (copied.Any(module => module is null || string.IsNullOrWhiteSpace(module.Id) || string.IsNullOrWhiteSpace(module.Version)))
             errors.Add("Scenario Module 引用不能为 null、空标识或空版本。");
+        if (copied.Where(module => module is not null).Any(module => module.Parameters.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null)))
+            errors.Add("Scenario Module 冻结参数不能包含空键或 null 值。");
         if (copied.Where(module => module is not null).GroupBy(module => module.Id, StringComparer.Ordinal).Any(group => group.Count() > 1))
             errors.Add("Scenario Module 引用不能包含重复标识。");
     }
@@ -465,7 +510,7 @@ public sealed class Scenario
         Scenes = source.Scenes.ToDictionary(pair => pair.Key, pair => CloneScene(pair.Value))
     };
 
-    private static ScenarioModuleReference CloneModule(ScenarioModuleReference source) => new(source.Id, source.Version);
+    private static ScenarioModuleReference CloneModule(ScenarioModuleReference source) => new(source.Id, source.Version, source.Parameters);
 
     private static Element CloneElement(Element source) => new(source.Id, source.Name, source.Description, source.Type);
 
@@ -475,7 +520,7 @@ public sealed class Scenario
 
     private static Scope CloneScope(Scope source) => new(source.Id, source.Name, source.Description, source.Quantity, source.Type, source.OwnerElementId);
 
-    private static Scene CloneScene(Scene source) => new(source.Id, source.DefinitionId, source.ModuleId, source.ModuleVersion, source.BasedOnScenarioStateId, source.Name, source.Description, source.SettlementOptions, source.State, source.GetBindings());
+    private static Scene CloneScene(Scene source) => new(source.Id, source.DefinitionId, source.ModuleId, source.ModuleVersion, source.BasedOnScenarioStateId, source.Name, source.Description, source.SettlementOptions, source.State, source.GetSlotSpecifications(), source.GetBindings(), source.DefinitionFrozen);
 
     private static void EnsureId(Guid id, string operation)
     {
@@ -516,6 +561,20 @@ public sealed class Scenario
     }
 
     private static bool IsSettlementOptionsValid(SceneSettlementOptions options) => options != SceneSettlementOptions.None && (options & ~(SceneSettlementOptions.Rules | SceneSettlementOptions.Writing)) == 0;
+
+    private static void EnsureSceneBindingMutable(Scene scene, string operation)
+    {
+        if (scene.State != SceneState.Binding)
+            throw Invalid(operation, $"Scene {scene.Id} 当前处于 {scene.State}，不能修改槽位绑定。");
+    }
+
+    private void EnsureElementsNotProcessing(IEnumerable<Guid> elementIds, string operation)
+    {
+        HashSet<Guid> targets = elementIds.ToHashSet();
+        Scene? processingScene = _data.Scenes.Values.FirstOrDefault(scene => scene.State == SceneState.Processing && scene.GetBindings().SelectMany(binding => binding.ElementIds).Any(targets.Contains));
+        if (processingScene is not null)
+            throw Invalid(operation, $"Scene {processingScene.Id} 正在处理相关 Element，结算前不能修改其局部结构。");
+    }
 
     private static ScenarioException Invalid(string operation, string message) => new(ScenarioErrorCodes.InvalidArgument, TaviErrorCategory.Validation, operation, message);
 

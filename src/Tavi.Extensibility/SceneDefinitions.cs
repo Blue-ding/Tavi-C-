@@ -46,7 +46,7 @@ public sealed record SceneSlotDefinition
     public SceneSlotRequirement Requirement { get; init; } = new();
 }
 
-/// <summary>描述 Module 可以提供并由 Evolution 实例化为 Scene 的功能定义。</summary>
+/// <summary>描述 Module 可以提供并由 ScenarioSession 显式实例化为 Scene 的功能定义。</summary>
 public sealed record SceneDefinition
 {
     /// <summary>获取 SceneDefinition 稳定键。</summary>

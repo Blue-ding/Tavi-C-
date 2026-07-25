@@ -18,7 +18,7 @@ public sealed class JsonFileScenarioStoreTests
             Guid sceneId = Guid.NewGuid();
             var snapshot = new ScenarioSnapshot { SourceWorldStateId = Guid.NewGuid(), Modules = [new ScenarioModuleReference("character", "1.0.0")] };
             snapshot.Elements.Add(elementId, new Element(elementId, "Alice", "", new ElementType("character:character")));
-            snapshot.Scenes.Add(sceneId, new Scene(sceneId, new SceneDefinitionType("character:test"), "character", "1.0.0", snapshot.Id, "Test", "", SceneSettlementOptions.Writing, SceneState.AwaitingWriting, [new SceneSlotBinding("actor", [elementId])]));
+            snapshot.Scenes.Add(sceneId, new Scene(sceneId, new SceneDefinitionType("character:test"), "character", "1.0.0", snapshot.Id, "Test", "", SceneSettlementOptions.Writing, SceneState.Processing, [new SceneSlotSpecification("actor", "Actor", "", 1, 1, ["character:character"])], [new SceneSlotBinding("actor", [elementId])]));
             using var store = new JsonFileScenarioStore(directory);
 
             await store.SaveAsync("default", snapshot);
@@ -26,7 +26,8 @@ public sealed class JsonFileScenarioStoreTests
 
             Assert.Equal(snapshot.Id, loaded.Id);
             Assert.Equal(elementId, loaded.Scenes[sceneId].FindBinding("actor")!.ElementIds.Single());
-            Assert.Equal(SceneState.AwaitingWriting, loaded.Scenes[sceneId].State);
+            Assert.Equal(SceneState.Processing, loaded.Scenes[sceneId].State);
+            Assert.Equal("actor", Assert.Single(loaded.Scenes[sceneId].GetSlotSpecifications()).Id);
         }
         finally
         {

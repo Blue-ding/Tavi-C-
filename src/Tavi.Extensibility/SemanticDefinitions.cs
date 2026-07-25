@@ -108,7 +108,7 @@ public sealed record RelationTypeDefinition
     public IReadOnlySet<SemanticKey> Tags { get; init; } = new HashSet<SemanticKey>();
 }
 
-/// <summary>描述一种由 Evolution 在完整候选 Scenario 上统一执行的声明式语义约束。</summary>
+/// <summary>描述一种由 ScenarioSession 在完整候选 Scenario 上统一执行的声明式语义约束。</summary>
 public sealed record SemanticConstraintDefinition
 {
     /// <summary>获取约束稳定键。</summary>

@@ -1,14 +1,14 @@
 using Tavi.Domain.Scenario;
 using RuntimeScenario = Tavi.Domain.Scenario.Scenario;
 
-namespace Tavi.Application.Evolution;
+namespace Tavi.Application.Scenario;
 
-/// <summary>提供始终通过 EvolutionSession 同步边界读取最新 Scenario 的查询。</summary>
+/// <summary>提供始终通过 ScenarioSession 同步边界读取最新 Scenario 的查询。</summary>
 public sealed class ScenarioQueries
 {
-    private readonly EvolutionSession _session;
+    private readonly ScenarioSession _session;
 
-    internal ScenarioQueries(EvolutionSession session) => _session = session;
+    internal ScenarioQueries(ScenarioSession session) => _session = session;
 
     /// <summary>创建当前 Scenario 的独立完整快照。</summary>
     public ScenarioSnapshot CreateSnapshot() => _session.ExecuteQuery(scenario => scenario.CreateSnapshot());

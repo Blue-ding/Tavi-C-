@@ -13,7 +13,7 @@ internal static class ScenarioSaveMapper
         {
             Id = snapshot.Id,
             SourceWorldStateId = snapshot.SourceWorldStateId,
-            Modules = snapshot.Modules.Select(value => new ScenarioModuleSaveDataV1 { Id = value.Id, Version = value.Version }).ToList(),
+            Modules = snapshot.Modules.Select(value => new ScenarioModuleSaveDataV1 { Id = value.Id, Version = value.Version, Parameters = new Dictionary<string, string>(value.Parameters, StringComparer.Ordinal) }).ToList(),
             Elements = snapshot.Elements.Values.Select(value => new ScenarioElementSaveDataV1 { Id = value.Id, Name = value.Name, Description = value.Description, Type = value.Type.Value }).ToList(),
             Scopes = snapshot.Scopes.Values.Select(value => new ScenarioScopeSaveDataV1 { Id = value.Id, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Type = value.Type.Value, OwnerElementId = value.OwnerElementId }).ToList(),
             Aspects = snapshot.Aspects.Values.Select(value => new ScenarioAspectSaveDataV1 { Id = value.Id, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Type = value.Type.Value, ElementId = value.ElementId, ScopeId = value.ScopeId }).ToList(),
@@ -29,7 +29,9 @@ internal static class ScenarioSaveMapper
                 Description = value.Description,
                 SettlementOptions = (int)value.SettlementOptions,
                 State = value.State.ToString(),
-                Bindings = value.GetBindings().Select(binding => new ScenarioSceneBindingSaveDataV1 { SlotId = binding.SlotId, ElementIds = binding.ElementIds.ToList() }).ToList()
+                DefinitionFrozen = value.DefinitionFrozen,
+                Bindings = value.GetBindings().Select(binding => new ScenarioSceneBindingSaveDataV1 { SlotId = binding.SlotId, ElementIds = binding.ElementIds.ToList() }).ToList(),
+                Slots = value.GetSlotSpecifications().Select(slot => new ScenarioSceneSlotSaveDataV1 { Id = slot.Id, Name = slot.Name, Description = slot.Description, Minimum = slot.Minimum, Maximum = slot.Maximum, ElementTypes = slot.ElementTypes.ToList(), RequiredAspectGroups = slot.RequiredAspectGroups.ToList() }).ToList()
             }).ToList()
         };
     }
@@ -44,7 +46,7 @@ internal static class ScenarioSaveMapper
         {
             if (value is null)
                 throw new InvalidDataException("Module 存档项不能为 null。");
-            snapshot.Modules.Add(new ScenarioModuleReference(RequireText(value.Id, "Module.Id"), RequireText(value.Version, "Module.Version")));
+            snapshot.Modules.Add(new ScenarioModuleReference(RequireText(value.Id, "Module.Id"), RequireText(value.Version, "Module.Version"), value.Parameters ?? new Dictionary<string, string>()));
         }
         foreach (ScenarioElementSaveDataV1 value in data.Elements)
         {
@@ -69,12 +71,20 @@ internal static class ScenarioSaveMapper
         foreach (ScenarioSceneSaveDataV1 value in data.Scenes)
         {
             RequireItem(value, "Scene");
-            if (!Enum.TryParse(value.State, false, out SceneState state) || !Enum.IsDefined(state))
-                throw new InvalidDataException($"Scene.State“{value.State}”无效。");
+            SceneState state = value.State switch
+            {
+                "Preparing" or "Ready" => SceneState.Binding,
+                "AwaitingWriting" => SceneState.Processing,
+                "Settled" => SceneState.Settled,
+                "Cancelled" => throw new InvalidDataException("旧版 Cancelled Scene 没有无歧义迁移路径，请先使用旧版本删除该 Scene。"),
+                _ when Enum.TryParse(value.State, false, out SceneState parsed) && Enum.IsDefined(parsed) => parsed,
+                _ => throw new InvalidDataException($"Scene.State“{value.State}”无效。")
+            };
             if (value.Bindings is null)
                 throw new InvalidDataException("Scene.Bindings 不能为 null。");
             SceneSlotBinding[] bindings = value.Bindings.Select(MapBinding).ToArray();
-            var scene = new Scene(value.Id, Parse(value.DefinitionId, "Scene.DefinitionId", text => new SceneDefinitionType(text)), RequireText(value.ModuleId, "Scene.ModuleId"), RequireText(value.ModuleVersion, "Scene.ModuleVersion"), value.BasedOnScenarioStateId, RequireText(value.Name, "Scene.Name"), RequireValue(value.Description, "Scene.Description"), (SceneSettlementOptions)value.SettlementOptions, state, bindings);
+            SceneSlotSpecification[] slots = (value.Slots ?? []).Select(MapSlot).ToArray();
+            var scene = new Scene(value.Id, Parse(value.DefinitionId, "Scene.DefinitionId", text => new SceneDefinitionType(text)), RequireText(value.ModuleId, "Scene.ModuleId"), RequireText(value.ModuleVersion, "Scene.ModuleVersion"), value.BasedOnScenarioStateId, RequireText(value.Name, "Scene.Name"), RequireValue(value.Description, "Scene.Description"), (SceneSettlementOptions)value.SettlementOptions, state, slots, bindings, value.DefinitionFrozen);
             Add(snapshot.Scenes, scene.Id, scene, "Scene");
         }
         _ = RuntimeScenario.Create(snapshot);
@@ -105,6 +115,13 @@ internal static class ScenarioSaveMapper
         if (binding is null)
             throw new InvalidDataException("Scene.Binding 存档项不能为 null。");
         return new SceneSlotBinding(RequireText(binding.SlotId, "Scene.Binding.SlotId"), binding.ElementIds ?? throw new InvalidDataException("Scene.Binding.ElementIds 不能为 null。"));
+    }
+
+    private static SceneSlotSpecification MapSlot(ScenarioSceneSlotSaveDataV1 slot)
+    {
+        if (slot is null)
+            throw new InvalidDataException("Scene.Slot 存档项不能为 null。");
+        return new SceneSlotSpecification(RequireText(slot.Id, "Scene.Slot.Id"), RequireText(slot.Name, "Scene.Slot.Name"), RequireValue(slot.Description, "Scene.Slot.Description"), slot.Minimum, slot.Maximum, slot.ElementTypes ?? throw new InvalidDataException("Scene.Slot.ElementTypes 不能为 null。"), slot.RequiredAspectGroups ?? throw new InvalidDataException("Scene.Slot.RequiredAspectGroups 不能为 null。"));
     }
 
     private static void RequireItem(object? value, string entity)

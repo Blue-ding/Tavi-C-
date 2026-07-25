@@ -1,14 +1,14 @@
 using System.Text.Json;
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Evolution;
+namespace Tavi.Application.Scenario;
 
 /// <summary>从标准 Module 目录读取 Manifest、声明式语义和静态 SceneDefinition。</summary>
 public static class ModulePackageLoader
 {
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
 
-    /// <summary>读取并转换指定 Module 目录；缺少必需文件或语法无效时抛出 EvolutionException。</summary>
+    /// <summary>读取并转换指定 Module 目录；缺少必需文件或语法无效时抛出 ScenarioApplicationException。</summary>
     public static ModulePackageDefinition Load(string directory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
@@ -30,7 +30,7 @@ public static class ModulePackageLoader
                 SourceDirectory = fullDirectory
             };
         }
-        catch (EvolutionException)
+        catch (ScenarioApplicationException)
         {
             throw;
         }
@@ -71,7 +71,18 @@ public static class ModulePackageLoader
             Name = Required(raw.Name, "module.name"),
             Description = raw.Description ?? string.Empty,
             Entrypoint = string.IsNullOrWhiteSpace(raw.Entrypoint) ? null : raw.Entrypoint,
-            Dependencies = raw.Dependencies.Select(dependency => new ModuleDependency { Id = new ModuleId(Required(dependency.Id, "dependency.id")), MinimumVersion = new ModuleVersion(Required(dependency.MinimumVersion, "dependency.minimumVersion")) }).ToArray()
+            Dependencies = raw.Dependencies.Select(dependency => new ModuleDependency { Id = new ModuleId(Required(dependency.Id, "dependency.id")), MinimumVersion = new ModuleVersion(Required(dependency.MinimumVersion, "dependency.minimumVersion")) }).ToArray(),
+            Parameters = raw.Parameters.Select(parameter => new ModuleParameterDefinition
+            {
+                Key = Required(parameter.Key, "parameter.key"),
+                Name = Required(parameter.Name, "parameter.name"),
+                Description = parameter.Description ?? string.Empty,
+                Type = Enum.TryParse(parameter.Type, true, out ModuleParameterType type) ? type : throw Invalid(nameof(Load), $"Module 参数 {parameter.Key} 的类型 {parameter.Type} 无效。"),
+                DefaultValue = Required(parameter.DefaultValue, "parameter.defaultValue"),
+                AllowedValues = parameter.AllowedValues.ToArray(),
+                Minimum = parameter.Minimum,
+                Maximum = parameter.Maximum
+            }).ToArray()
         };
     }
 
@@ -143,7 +154,7 @@ public static class ModulePackageLoader
 
     private static string Required(string? value, string path) => string.IsNullOrWhiteSpace(value) ? throw Invalid(nameof(Load), $"{path} 不能为空。") : value;
 
-    private static EvolutionException Invalid(string operation, string message, Exception? innerException = null) => new(EvolutionErrorCodes.InvalidModule, TaviErrorCategory.Configuration, operation, message, innerException: innerException);
+    private static ScenarioApplicationException Invalid(string operation, string message, Exception? innerException = null) => new(ScenarioApplicationErrorCodes.InvalidModule, TaviErrorCategory.Configuration, operation, message, innerException: innerException);
 
     private sealed class RawManifest
     {
@@ -154,12 +165,25 @@ public static class ModulePackageLoader
         public string? Description { get; set; }
         public string? Entrypoint { get; set; }
         public List<RawDependency> Dependencies { get; set; } = [];
+        public List<RawParameter> Parameters { get; set; } = [];
     }
 
     private sealed class RawDependency
     {
         public string? Id { get; set; }
         public string? MinimumVersion { get; set; }
+    }
+
+    private sealed class RawParameter
+    {
+        public string? Key { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public string? Type { get; set; }
+        public string? DefaultValue { get; set; }
+        public List<string> AllowedValues { get; set; } = [];
+        public double? Minimum { get; set; }
+        public double? Maximum { get; set; }
     }
 
     private sealed class RawSemantics

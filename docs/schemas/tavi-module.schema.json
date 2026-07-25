@@ -60,6 +60,47 @@
           }
         }
       }
+    },
+    "parameters": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "name", "type", "defaultValue"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "enum": ["boolean", "integer", "number", "string"]
+          },
+          "defaultValue": {
+            "type": "string"
+          },
+          "allowedValues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "minimum": {
+            "type": "number"
+          },
+          "maximum": {
+            "type": "number"
+          }
+        }
+      }
     }
   }
 }

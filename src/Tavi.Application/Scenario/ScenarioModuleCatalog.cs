@@ -1,9 +1,9 @@
 using Tavi.Extensibility;
 
-namespace Tavi.Application.Evolution;
+namespace Tavi.Application.Scenario;
 
 /// <summary>保存经过统一校验的声明式 Module 和可选 Plugin 能力。</summary>
-public sealed class EvolutionModuleCatalog
+public sealed class ScenarioModuleCatalog
 {
     private readonly Dictionary<ModuleId, ModulePackageDefinition> _modules;
     private readonly Dictionary<SemanticKey, ElementTypeDefinition> _elementTypes;
@@ -14,7 +14,7 @@ public sealed class EvolutionModuleCatalog
     private readonly Dictionary<SemanticKey, SceneDefinition> _scenes;
     private readonly PluginRegistrar _plugins;
 
-    private EvolutionModuleCatalog(IEnumerable<ModulePackageDefinition> packages)
+    private ScenarioModuleCatalog(IEnumerable<ModulePackageDefinition> packages)
     {
         ModulePackageDefinition[] copied = packages.Select(ExtensibilityCopies.Package).ToArray();
         _modules = Unique(copied, package => package.Manifest.Id, "Module");
@@ -29,10 +29,10 @@ public sealed class EvolutionModuleCatalog
     }
 
     /// <summary>校验并创建 Module Catalog；Catalog 创建后声明式定义不可替换。</summary>
-    public static EvolutionModuleCatalog Create(IEnumerable<ModulePackageDefinition> packages)
+    public static ScenarioModuleCatalog Create(IEnumerable<ModulePackageDefinition> packages)
     {
         ArgumentNullException.ThrowIfNull(packages);
-        return new EvolutionModuleCatalog(packages);
+        return new ScenarioModuleCatalog(packages);
     }
 
     /// <summary>获取按 Module 标识稳定排序的 Manifest。</summary>
@@ -91,6 +91,17 @@ public sealed class EvolutionModuleCatalog
 
     private void ValidateDefinitions(ModulePackageDefinition package)
     {
+        if (package.Manifest.Parameters.GroupBy(parameter => parameter.Key, StringComparer.Ordinal).Any(group => group.Count() > 1))
+            throw Invalid(nameof(Create), $"Module {package.Manifest.Id} 包含重复参数键。");
+        foreach (ModuleParameterDefinition parameter in package.Manifest.Parameters)
+        {
+            if (string.IsNullOrWhiteSpace(parameter.Key) || !char.IsAsciiLetterLower(parameter.Key[0]) || parameter.Key.Any(character => !char.IsAsciiLetterLower(character) && !char.IsDigit(character) && character is not '.' and not '_' and not '-'))
+                throw Invalid(nameof(Create), $"Module {package.Manifest.Id} 的参数键 {parameter.Key} 无效。");
+            if (string.IsNullOrWhiteSpace(parameter.Name) || parameter.Description is null || parameter.DefaultValue is null || parameter.Minimum > parameter.Maximum || parameter.AllowedValues.Distinct(StringComparer.Ordinal).Count() != parameter.AllowedValues.Count)
+                throw Invalid(nameof(Create), $"Module 参数 {package.Manifest.Id}:{parameter.Key} 定义无效。");
+            if (parameter.Type is ModuleParameterType.Boolean or ModuleParameterType.String && (parameter.Minimum.HasValue || parameter.Maximum.HasValue))
+                throw Invalid(nameof(Create), $"非数值 Module 参数 {package.Manifest.Id}:{parameter.Key} 不能声明数值范围。");
+        }
         foreach (AspectTypeDefinition aspect in package.Semantics.AspectTypes)
         {
             EnsureRange(aspect.MinimumQuantity, aspect.MaximumQuantity, aspect.Key);
@@ -164,7 +175,7 @@ public sealed class EvolutionModuleCatalog
         return 0;
     }
 
-    private static EvolutionException Invalid(string operation, string message) => new(EvolutionErrorCodes.InvalidModule, TaviErrorCategory.Configuration, operation, message);
+    private static ScenarioApplicationException Invalid(string operation, string message) => new(ScenarioApplicationErrorCodes.InvalidModule, TaviErrorCategory.Configuration, operation, message);
 
     private sealed class PluginRegistrar
     {

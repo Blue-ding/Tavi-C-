@@ -6,24 +6,27 @@ public sealed record SceneDefinitionContext
     /// <summary>获取与真实 Scenario 隔离的只读视图。</summary>
     public required IScenarioView Scenario { get; init; }
 
-    /// <summary>获取由 Evolution 分配的可复现随机种子。</summary>
+    /// <summary>获取由显式调用方提供的可复现随机种子。</summary>
     public required long RandomSeed { get; init; }
+
+    /// <summary>获取当前 Provider 所属 Module 在 ScenarioSession 创建时冻结的规范参数。</summary>
+    public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>提供规则结算 Scene 时使用的不可变上下文。</summary>
-public sealed record RuleSettlementContext
+public sealed record SceneSettlementContext
 {
-    /// <summary>获取与真实 Scenario 隔离的只读视图。</summary>
-    public required IScenarioView Scenario { get; init; }
-
-    /// <summary>获取待结算的 Scene。</summary>
-    public required ScenarioSceneView Scene { get; init; }
+    /// <summary>获取与真实 Scenario 隔离且只包含冻结 Scene 内部实体的局部视图。</summary>
+    public required SceneContextView Context { get; init; }
 
     /// <summary>获取对应 SceneDefinition。</summary>
     public required SceneDefinition Definition { get; init; }
 
-    /// <summary>获取由 Evolution 分配的可复现随机种子。</summary>
+    /// <summary>获取由显式调用方提供的可复现随机种子。</summary>
     public required long RandomSeed { get; init; }
+
+    /// <summary>获取规则结算器所属 Module 在 ScenarioSession 创建时冻结的规范参数。</summary>
+    public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>由 Plugin 实现，用于依据当前 Scenario 提供动态 SceneDefinition。</summary>
@@ -46,7 +49,7 @@ public interface ISceneRuleSettler
     IReadOnlySet<SemanticKey> Definitions { get; }
 
     /// <summary>根据独立上下文产生 Scenario 修改提案；实现不得直接修改 Scenario。</summary>
-    ValueTask<ScenarioChangeProposal> SettleAsync(RuleSettlementContext context, CancellationToken cancellationToken);
+    ValueTask<SceneSettlementProposal> SettleAsync(SceneSettlementContext context, CancellationToken cancellationToken);
 }
 
 /// <summary>定义 Plugin 向宿主注册可选能力时可使用的受限入口。</summary>

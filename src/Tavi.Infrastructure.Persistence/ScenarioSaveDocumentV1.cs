@@ -51,6 +51,9 @@ internal sealed class ScenarioModuleSaveDataV1
 
     /// <summary>获取或设置 Module 版本。</summary>
     public string Version { get; set; } = string.Empty;
+
+    /// <summary>获取或设置 ScenarioSession 创建时冻结的 Module 参数。</summary>
+    public Dictionary<string, string> Parameters { get; set; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>表示 V1 Scenario 存档中的 Element。</summary>
@@ -174,8 +177,14 @@ internal sealed class ScenarioSceneSaveDataV1
     /// <summary>获取或设置 SceneState 文本。</summary>
     public string State { get; set; } = string.Empty;
 
+    /// <summary>获取或设置存档是否包含完整冻结槽位定义；旧存档默认为 false。</summary>
+    public bool DefinitionFrozen { get; set; }
+
     /// <summary>获取或设置全部槽位绑定。</summary>
     public List<ScenarioSceneBindingSaveDataV1> Bindings { get; set; } = [];
+
+    /// <summary>获取或设置 Scene 创建时冻结的槽位要求；旧存档缺失时为空。</summary>
+    public List<ScenarioSceneSlotSaveDataV1> Slots { get; set; } = [];
 }
 
 /// <summary>表示 V1 Scenario 存档中的 Scene 槽位绑定。</summary>
@@ -186,4 +195,23 @@ internal sealed class ScenarioSceneBindingSaveDataV1
 
     /// <summary>获取或设置按绑定顺序排列的 Element 标识。</summary>
     public List<Guid> ElementIds { get; set; } = [];
+}
+
+/// <summary>表示 V1 Scenario 存档中随 Scene 冻结的槽位要求。</summary>
+internal sealed class ScenarioSceneSlotSaveDataV1
+{
+    /// <summary>获取或设置稳定槽位标识。</summary>
+    public string Id { get; set; } = string.Empty;
+    /// <summary>获取或设置显示名称。</summary>
+    public string Name { get; set; } = string.Empty;
+    /// <summary>获取或设置说明。</summary>
+    public string Description { get; set; } = string.Empty;
+    /// <summary>获取或设置最少 Element 数。</summary>
+    public int Minimum { get; set; }
+    /// <summary>获取或设置最多 Element 数。</summary>
+    public int? Maximum { get; set; }
+    /// <summary>获取或设置允许的 ElementType 键。</summary>
+    public List<string> ElementTypes { get; set; } = [];
+    /// <summary>获取或设置必须具备的 AspectGroup 键。</summary>
+    public List<string> RequiredAspectGroups { get; set; } = [];
 }

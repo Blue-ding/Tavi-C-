@@ -7,7 +7,7 @@ public abstract record ScenarioOperation;
 /// <param name="ElementId">Element 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Type">开放类型。</param>
 public sealed record AddElementOperation(Guid ElementId, string Name, string Description, ElementType Type) : ScenarioOperation;
 
-/// <summary>删除 Element 及其结构依赖，并从 Scene 槽位解绑。</summary>
+/// <summary>删除 Element 及其结构依赖；Binding Scene 会解绑该 Element，Settled Scene 保留历史绑定。</summary>
 /// <param name="ElementId">目标 Element 标识。</param>
 public sealed record RemoveElementOperation(Guid ElementId) : ScenarioOperation;
 
@@ -52,8 +52,8 @@ public sealed record RemoveRelationOperation(Guid RelationId) : ScenarioOperatio
 public sealed record UpdateRelationOperation(Guid RelationId, string Name, string Description, double Quantity, RelationType Type) : ScenarioOperation;
 
 /// <summary>添加由 SceneDefinition 实例化的 Scene。</summary>
-/// <param name="SceneId">Scene 标识。</param><param name="DefinitionId">定义键。</param><param name="ModuleId">Module 标识。</param><param name="ModuleVersion">Module 版本。</param><param name="BasedOnScenarioStateId">定义依据的 StateId。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="SettlementOptions">结算能力。</param>
-public sealed record AddSceneOperation(Guid SceneId, SceneDefinitionType DefinitionId, string ModuleId, string ModuleVersion, Guid BasedOnScenarioStateId, string Name, string Description, SceneSettlementOptions SettlementOptions) : ScenarioOperation;
+/// <param name="SceneId">Scene 标识。</param><param name="DefinitionId">定义键。</param><param name="ModuleId">Module 标识。</param><param name="ModuleVersion">Module 版本。</param><param name="BasedOnScenarioStateId">定义依据的 StateId。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="SettlementOptions">结算能力。</param><param name="Slots">创建时冻结的槽位要求。</param>
+public sealed record AddSceneOperation(Guid SceneId, SceneDefinitionType DefinitionId, string ModuleId, string ModuleVersion, Guid BasedOnScenarioStateId, string Name, string Description, SceneSettlementOptions SettlementOptions, IReadOnlyList<SceneSlotSpecification>? Slots = null) : ScenarioOperation;
 
 /// <summary>删除 Scene。</summary>
 /// <param name="SceneId">目标 Scene 标识。</param>
@@ -70,6 +70,9 @@ public sealed record ClearSceneSlotBindingOperation(Guid SceneId, string SlotId)
 /// <summary>更新 Scene 功能生命周期状态。</summary>
 /// <param name="SceneId">目标 Scene。</param><param name="State">新状态。</param>
 public sealed record UpdateSceneStateOperation(Guid SceneId, SceneState State) : ScenarioOperation;
+
+/// <summary>删除 Scenario 中全部已结算 Scene；该操作不影响 Element 或 EARS 数据。</summary>
+public sealed record ClearSettledScenesOperation : ScenarioOperation;
 
 internal sealed record RestoreScenarioSnapshotOperation(ScenarioSnapshot Snapshot) : ScenarioOperation;
 

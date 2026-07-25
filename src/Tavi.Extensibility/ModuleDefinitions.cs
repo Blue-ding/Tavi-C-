@@ -1,5 +1,39 @@
 namespace Tavi.Extensibility;
 
+/// <summary>指定 Module 参数接受的稳定标量类型；参数不得改变持久化数据结构或既有数据解释。</summary>
+public enum ModuleParameterType
+{
+    /// <summary>布尔值，规范文本为 true 或 false。</summary>
+    Boolean,
+    /// <summary>使用不变区域格式表示的整数。</summary>
+    Integer,
+    /// <summary>使用不变区域格式表示的有限浮点数。</summary>
+    Number,
+    /// <summary>不包含结构语义的普通文本。</summary>
+    String
+}
+
+/// <summary>声明一个只影响 Module 运行行为且会随 ScenarioSession 冻结的配置参数。</summary>
+public sealed record ModuleParameterDefinition
+{
+    /// <summary>获取 Module 内稳定的小写参数键。</summary>
+    public required string Key { get; init; }
+    /// <summary>获取面向玩家的名称。</summary>
+    public required string Name { get; init; }
+    /// <summary>获取参数说明。</summary>
+    public string Description { get; init; } = string.Empty;
+    /// <summary>获取参数标量类型。</summary>
+    public required ModuleParameterType Type { get; init; }
+    /// <summary>获取使用该类型规范格式表示的默认值。</summary>
+    public required string DefaultValue { get; init; }
+    /// <summary>获取可选的规范值白名单；空集合表示不限制。</summary>
+    public IReadOnlyList<string> AllowedValues { get; init; } = [];
+    /// <summary>获取数值最小值；非数值参数必须为 null。</summary>
+    public double? Minimum { get; init; }
+    /// <summary>获取数值最大值；非数值参数必须为 null。</summary>
+    public double? Maximum { get; init; }
+}
+
 /// <summary>声明一个 Module 对另一个 Module 的兼容版本依赖。</summary>
 public sealed record ModuleDependency
 {
@@ -30,6 +64,9 @@ public sealed record ModuleManifest
 
     /// <summary>获取按声明顺序排列的 Module 依赖。</summary>
     public IReadOnlyList<ModuleDependency> Dependencies { get; init; } = [];
+
+    /// <summary>获取会在 ScenarioSession 创建时冻结的行为参数定义。</summary>
+    public IReadOnlyList<ModuleParameterDefinition> Parameters { get; init; } = [];
 
     /// <summary>获取可选 Plugin 程序集入口类型；纯声明式 Module 返回 null。</summary>
     public string? Entrypoint { get; init; }

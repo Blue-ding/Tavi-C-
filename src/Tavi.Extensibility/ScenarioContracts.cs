@@ -49,57 +49,79 @@ public interface IScenarioView
     IReadOnlyCollection<ScenarioSceneView> Scenes { get; }
 }
 
-/// <summary>描述 Plugin 希望由 Evolution 校验并提交的一项 Scenario 修改意图。</summary>
-public abstract record ScenarioOperationIntent
+/// <summary>表示冻结 Scene 的局部只读视图；其中只包含已绑定 Element 及完全位于局部边界内的 EARS 数据。</summary>
+public sealed record SceneContextView
 {
-    private ScenarioOperationIntent() { }
+    /// <summary>获取创建该局部视图时的 Scenario StateId。</summary>
+    public required Guid ScenarioStateId { get; init; }
 
-    /// <summary>建议添加 Element。</summary>
-    public sealed record AddElement(Guid Id, string Name, string Description, SemanticKey Type) : ScenarioOperationIntent;
+    /// <summary>获取正在处理的 Scene。</summary>
+    public required ScenarioSceneView Scene { get; init; }
 
-    /// <summary>建议删除 Element 及其结构依赖。</summary>
-    public sealed record RemoveElement(Guid Id) : ScenarioOperationIntent;
+    /// <summary>获取处理开始时冻结的内部 Element。</summary>
+    public IReadOnlyCollection<ScenarioElementView> Elements { get; init; } = [];
 
-    /// <summary>建议更新 Element 的可变语义属性。</summary>
-    public sealed record UpdateElement(Guid Id, string Name, string Description, SemanticKey Type) : ScenarioOperationIntent;
+    /// <summary>获取由内部 Element 持有的 Scope。</summary>
+    public IReadOnlyCollection<ScenarioScopeView> Scopes { get; init; } = [];
 
-    /// <summary>建议添加 Scope。</summary>
-    public sealed record AddScope(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid OwnerElementId) : ScenarioOperationIntent;
+    /// <summary>获取目标和所属 Scope 均位于局部边界内的 Aspect。</summary>
+    public IReadOnlyCollection<ScenarioAspectView> Aspects { get; init; } = [];
 
-    /// <summary>建议删除 Scope 及其中断言。</summary>
-    public sealed record RemoveScope(Guid Id) : ScenarioOperationIntent;
-
-    /// <summary>建议更新 Scope 的可变语义属性。</summary>
-    public sealed record UpdateScope(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : ScenarioOperationIntent;
-
-    /// <summary>建议添加 Aspect。</summary>
-    public sealed record AddAspect(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid ElementId, Guid ScopeId) : ScenarioOperationIntent;
-
-    /// <summary>建议删除 Aspect。</summary>
-    public sealed record RemoveAspect(Guid Id) : ScenarioOperationIntent;
-
-    /// <summary>建议更新 Aspect 的可变语义属性。</summary>
-    public sealed record UpdateAspect(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : ScenarioOperationIntent;
-
-    /// <summary>建议添加 Relation。</summary>
-    public sealed record AddRelation(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId) : ScenarioOperationIntent;
-
-    /// <summary>建议删除 Relation。</summary>
-    public sealed record RemoveRelation(Guid Id) : ScenarioOperationIntent;
-
-    /// <summary>建议更新 Relation 的可变语义属性。</summary>
-    public sealed record UpdateRelation(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : ScenarioOperationIntent;
+    /// <summary>获取两个端点和所属 Scope 均位于局部边界内的 Relation。</summary>
+    public IReadOnlyCollection<ScenarioRelationView> Relations { get; init; } = [];
 }
 
-/// <summary>表示 Plugin 对 Scenario 的完整结构化修改提案。</summary>
-public sealed record ScenarioChangeProposal
+/// <summary>描述 Module 在冻结 Scene 局部边界内提出的一项结构化结算意图。</summary>
+public abstract record SceneOperationIntent
+{
+    private SceneOperationIntent() { }
+
+    /// <summary>建议创建新的内部 Element；新 Element 可以被同一提案中的后续操作引用。</summary>
+    public sealed record AddElement(Guid Id, string Name, string Description, SemanticKey Type) : SceneOperationIntent;
+
+    /// <summary>建议删除一个既有或本提案新建的内部 Element及其局部结构依赖。</summary>
+    public sealed record RemoveElement(Guid Id) : SceneOperationIntent;
+
+    /// <summary>建议更新内部 Element 的可变语义属性。</summary>
+    public sealed record UpdateElement(Guid Id, string Name, string Description, SemanticKey Type) : SceneOperationIntent;
+
+    /// <summary>建议为内部 Element 添加 Scope。</summary>
+    public sealed record AddScope(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid OwnerElementId) : SceneOperationIntent;
+
+    /// <summary>建议删除 Scope 及其中断言。</summary>
+    public sealed record RemoveScope(Guid Id) : SceneOperationIntent;
+
+    /// <summary>建议更新 Scope 的可变语义属性。</summary>
+    public sealed record UpdateScope(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : SceneOperationIntent;
+
+    /// <summary>建议添加 Aspect。</summary>
+    public sealed record AddAspect(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid ElementId, Guid ScopeId) : SceneOperationIntent;
+
+    /// <summary>建议删除 Aspect。</summary>
+    public sealed record RemoveAspect(Guid Id) : SceneOperationIntent;
+
+    /// <summary>建议更新 Aspect 的可变语义属性。</summary>
+    public sealed record UpdateAspect(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : SceneOperationIntent;
+
+    /// <summary>建议添加端点和所属 Scope 均位于 Scene 局部边界内的 Relation。</summary>
+    public sealed record AddRelation(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId) : SceneOperationIntent;
+
+    /// <summary>建议删除 Relation。</summary>
+    public sealed record RemoveRelation(Guid Id) : SceneOperationIntent;
+
+    /// <summary>建议更新 Relation 的可变语义属性。</summary>
+    public sealed record UpdateRelation(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : SceneOperationIntent;
+}
+
+/// <summary>表示 Module 对一个冻结 Scene 的完整局部结算提案。</summary>
+public sealed record SceneSettlementProposal
 {
     /// <summary>获取产生该提案时依据的 Scenario StateId。</summary>
     public required Guid ExpectedScenarioStateId { get; init; }
 
-    /// <summary>获取按执行顺序排列的修改意图。</summary>
-    public IReadOnlyList<ScenarioOperationIntent> Operations { get; init; } = [];
+    /// <summary>获取按执行顺序排列且受 Scene 局部边界限制的修改意图。</summary>
+    public IReadOnlyList<SceneOperationIntent> Operations { get; init; } = [];
 
-    /// <summary>获取供诊断、作者或玩家理解的理由；Evolution 不解析该文本。</summary>
+    /// <summary>获取供诊断、作者或玩家理解的理由；ScenarioSession 不解析该文本。</summary>
     public string Rationale { get; init; } = string.Empty;
 }

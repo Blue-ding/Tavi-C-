@@ -1,28 +1,24 @@
-# Tavi Module 与 Plugin 接入规范
+# Tavi Module、Scenario 与 Extension 接入规范
 
-## 目标与边界
+## 责任边界
 
-Module 是具有稳定身份、版本和依赖关系的纵向语义包。Plugin 是可选代码载体，用于实现声明式格式不适合表达的动态行为。一个 Module 可以完全由 JSON 构成；Plugin 可以为一个 Module 注册多项相互独立的能力。
+Module 是带稳定身份、版本、依赖和可选行为参数的纵向语义包。Plugin 是由受信宿主显式构造的代码载体。`Tavi.Extensibility` 只公开稳定 SDK；`Tavi.Application.Extension` 管理启停、参数和冻结快照；`Tavi.Application.Scenario` 管理静态、玩家显式驱动的 Scenario 与 Scene。
+
+当前基础设施不包含自动演化、时间周期、自动选择、Writing 流程或前端。未来的 Evolution 应建立在 `IScenarioService` 之上，而不是把调度能力焊入 Module 或 ScenarioSession。
 
 依赖方向固定如下：
 
 ```text
 Tavi.Abstractions
   ↑
-Tavi.Extensibility
-
-Tavi.Abstractions
-  ↑
-Tavi.Domain
-
-Tavi.Domain + Tavi.Extensibility
-  ↑
-Tavi.Application
+Tavi.Domain       Tavi.Extensibility
+        ↑          ↑
+        Tavi.Application
 ```
 
-`Tavi.Domain.Scenario` 不加载 Module、不解析 JSON，也不调用 Plugin。`Tavi.Application.Evolution` 负责把声明式定义和 Plugin 提案适配为 Scenario 操作，并在完整候选状态上统一校验。
+`Tavi.Domain.Scenario` 不加载 Module、不解析 JSON，也不调用 Plugin。Application 在隔离候选状态上执行 Module 语义校验后才提交真实 Scenario。
 
-## 标准目录
+## Module 包
 
 ```text
 Modules/MyModule/
@@ -32,118 +28,78 @@ Modules/MyModule/
   README.md
 ```
 
-`module.json` 必需。`semantics.json` 和 `scenes.json` 可省略，省略时视为空定义。JSON Schema 位于 `docs/schemas`。
+`module.json` 必需，其他声明文件可省略。Schema 位于 `docs/schemas`。Module ID、版本、语义键、依赖和跨 Module AspectGroup 扩展规则保持严格校验。
 
-## 身份和版本
+纯声明式 Module 不设置 `entrypoint`。Loader 只读取入口文本，不根据 Manifest 自动执行程序集；受信宿主必须显式构造 `ITaviPlugin` 并交给 ExtensionSession。
 
-- Module ID 必须以小写 ASCII 字母开头，只能包含小写字母、数字、`-` 和 `_`。
-- Module 版本使用严格的 `major.minor.patch`，首版不支持预发布或构建后缀。
-- 语义键使用大小写敏感的 `module-id:local-name`。
-- ElementType、ScopeType、AspectGroup、AspectType、RelationType、Constraint 和 SceneDefinition 必须由声明它们的 Module 命名空间拥有。
-- Module 可以向其他 Module 的 AspectGroup 添加成员，但目标 Group 必须声明 `extensible: true`。
+## Extension 与参数
 
-## Manifest
+`ExtensionService` 加载 Module 包和 `IExtensionSettingsStore`，`ExtensionSession` 提供启用、禁用、依赖检查和参数修改。`Freeze()` 产生供新 ScenarioSession 使用的 `FrozenExtensionSnapshot`。
 
-```json
-{
-  "id": "alchemy",
-  "version": "1.0.0",
-  "schemaVersion": 1,
-  "name": "Alchemy",
-  "description": "炼金语义与能力。",
-  "dependencies": [
-    {
-      "id": "character",
-      "minimumVersion": "1.0.0"
-    }
-  ],
-  "entrypoint": "Alchemy.Plugin.AlchemyPlugin, Alchemy.Plugin"
-}
-```
+冻结后修改设置只会令 `RestartRequired` 变为 true，既有快照和 ScenarioSession 不改变。宿主应警告玩家重启并重新加载存档。
 
-纯声明式 Module 不设置 `entrypoint`。当前 Loader 读取并验证入口声明，但不会自动加载任意程序集；代码 Plugin 由受信宿主构造后调用 `EvolutionModuleCatalog.RegisterPlugin` 注册。这样避免仅凭存档或 JSON 执行不受信代码。
+Module 参数只允许影响 SceneDefinition 可用性、规则选择、展示或其他运行行为。参数不得改变：
 
-## 声明式语义
+- JSON 存档结构；
+- 稳定类型或语义键身份；
+- 既有 EARS 数据的解释；
+- Module 版本兼容性；
+- 全局语义约束是否能解释既有存档。
 
-首版支持：
+上述变化必须通过 Module 版本和显式迁移完成，不能作为玩家参数。参数是 boolean、integer、number 或 string 标量，默认值和覆盖值使用规范字符串保存。
 
-- Element、Scope、Aspect 和 Relation 类型；
-- AspectGroup；
-- 类型标签；
-- Scope Owner、Aspect Subject、Relation Source/Target 类型限制；
-- Aspect/Relation Quantity 范围；
-- Owned Scope 基数约束；
-- 指定 Scope 中 AspectGroup 的基数约束。
+## SceneDefinition 权限
 
-约束只在整个 `ScenarioChangeSet` 已经作用于隔离投影后执行。Module 不得依赖单项 Operation 的中间状态，否则无法原子创建需要多个 EARS 对象的语义实体。
+`ISceneDefinitionProvider` 可以读取完整、隔离的 `IScenarioView`，据此判断当前可以发生什么并返回动态 SceneDefinition。它不能修改 Scenario、创建 Scene 或保存上下文引用。
 
-自然语言字段仅供玩家、作者、诊断或语言模型使用。程序不得解析 `name`、`description` 或 `message` 执行规则。
+静态 Definition 来自 `scenes.json`。ScenarioSession 在玩家显式命令下实例化 Scene，并把 Definition 的槽位要求冻结到 Scene 存档中。因此后续绑定和处理不依赖调用方再次提交可伪造或过期的 Definition。
 
-## SceneDefinition
-
-SceneDefinition 描述一个可填入 Element 并产生演绎的功能模板。静态定义放在 `scenes.json`；依赖当前 Scenario 的动态定义由 `ISceneDefinitionProvider` 返回。
-
-槽位可以声明：
-
-- 最小和最大 Element 数；
-- 允许的 ElementType；
-- Element 必须具有的 AspectGroup。
-
-`settlement` 可以包含：
-
-- `rules`：由 `ISceneRuleSettler` 产生确定性的 `ScenarioChangeProposal`；
-- `writing`：允许进入独立 Writing 演绎路径。
-
-规则结算与 Writing 必须使用不同入口。Writing 结果不会调用规则结算器，也不要求满足原 SceneDefinition 的预期后置目标；它只需要满足 Scenario 结构不变量和当前激活 Module 的全局语义约束。
-
-## Plugin 能力
-
-Plugin 实现 `ITaviPlugin` 并通过 `IPluginRegistrar` 注册细粒度能力：
-
-- `ISceneDefinitionProvider`
-- `ISceneRuleSettler`
-- `IWritingContextContributor`
-- `IWritingInteractionPolicy`
-- `IWrittenSceneOutcomeContributor`
-
-Writing 相关接口目前只是稳定扩展契约，Evolution 尚未连接 `Tavi.Application.Writing`。
-
-Plugin 只能接收 `IScenarioView` 和不可变上下文，并返回定义、选项或 `ScenarioChangeProposal`。禁止：
-
-- 保存上下文对象引用；
-- 获取真实 Scenario；
-- 直接修改 EARS；
-- 自行提交事务；
-- 持有 EvolutionSession 或 WritingSession；
-- 通过解析自然语言偷偷产生领域变化。
-
-## Module 缺失与存档
-
-Scenario 存档记录创建和解释当前状态所需的 Module ID 与版本。加载时如果 Catalog 缺少完全兼容版本，EvolutionSession 拒绝进入可写状态。底层 Scenario JSON Store 仍能无语义猜测地读取结构化数据，便于诊断和未来迁移。
-
-未知类型不会被静默删除。`core:none` 是唯一无需 Module 注册的开放类型。
-
-## 声明式还是代码
-
-优先使用声明式定义处理稳定类型、局部约束、基数和简单槽位。以下需求应使用代码 Plugin：
-
-- 依赖非局部图查询动态生成 SceneDefinition；
-- 复杂推理、搜索或可复现随机策略；
-- 无法由标准 ScenarioOperationIntent 表达的选择过程；
-- Writing 上下文、玩家互动规则或结果解释。
-
-不要把 JSON 扩展成包含循环、任意表达式、反射或脚本执行的通用编程语言。需要程序行为时，应使用受版本控制的 Plugin 接口。
-
-## 推荐拆分
-
-一个 Module 包可以注册多个小型能力类，但不推荐一个类同时承担全部行为。例如：
+## Scene 生命周期
 
 ```text
-CharacterSceneProvider
-CharacterRuleSettler
-CharacterWritingContextContributor
-CharacterInteractionPolicy
-CharacterWrittenOutcomeContributor
+Binding → Processing → Settled
 ```
 
-没有相关能力时不注册对应接口。基础 `Modules/Character` 因为只声明角色语义，所以完全不包含 C# Plugin。
+- `Binding`：允许不完整绑定并持久化；可以绑定、解绑、重新绑定或删除 Scene。
+- `Processing`：槽位已经完整并被冻结；不能修改绑定、删除 Scene或从外部修改其局部图。
+- `Settled`：局部结果已经原子提交；活动 Element 归属释放，但 Scene 保留冻结绑定作为历史。
+
+同一 Element 同时只能出现在一个未结算 Scene 的一个槽位中。该不变量由 Domain 强制，前端可以据此把已占用 Element 从桌面可用区域移入 Scene。
+
+删除 Binding Scene 会释放其绑定。Processing Scene 不能删除。Settled Scene 可单独删除，也可由 `ClearSettledScenes` 批量清理。
+
+通用 `IScenarioService.Apply` 只接受 EARS 操作。Scene 创建、绑定、状态转换、结算和清理必须使用专用方法，避免调用方绕过生命周期与局部权限边界。
+
+旧 V1 存档中的 `Preparing`/`Ready` 会迁移为 Binding，`AwaitingWriting` 会迁移为 Processing。旧存档没有保存完整槽位定义，因此旧 Binding Scene 不能重新进入 Processing，应删除并从当前 Definition 重建；旧 `Cancelled` Scene 没有无歧义迁移路径并会产生明确读取错误。
+
+## 局部结算
+
+Module 的全局读取能力止于 Definition 阶段。`ISceneRuleSettler` 只收到 `SceneContextView`，其中包含处理开始时冻结的 Element，以及完全位于局部边界内的 Scope、Aspect 和 Relation。
+
+结算提案使用 `SceneSettlementProposal` 和 `SceneOperationIntent`：
+
+- 可以更新或删除绑定的内部 Element；
+- 可以修改内部 Element 所拥有的局部 EARS 数据；
+- 可以创建新 Element，并在同一提案中为它创建 Scope、Aspect 和 Relation；
+- 新 Relation 的两个端点和所属 Scope 必须位于当前局部边界；
+- 不能根据 Definition 阶段看到的全局 ID 修改未绑定既有 Element。
+
+Application 会逐项模拟局部 ID 集合，再把提案转换为 Domain 操作。随后先在隔离 Scenario 投影上执行完整结构和 Module 语义校验，最后把 Scene 结算与结果作为一个原子提交写入真实 Scenario。
+
+删除内部 Element 引发的结构级联属于该内部 Element 的结算结果。Settled Scene 的历史绑定允许引用已经从活动 Scenario 删除的 Element ID。
+
+## World 边界
+
+`ScenarioWorldBridge.Import` 从确定的 WorldSnapshot 复制 EARS 身份和数据，并记录来源 WorldStateId。Module 不参与导入。
+
+`ScenarioWorldBridge.CreateProposal` 比较来源 World 和 Scenario，产生 `ScenarioWorldProposal`。该方法不会提交 World；宿主必须展示、审阅，并以 `ExpectedWorldStateId` 作为并发条件交给 WorldSession。
+
+## Writing 扩展点
+
+当前只提供基础边界：
+
+- `BeginSceneProcessing` 冻结 Scene；
+- `GetProcessingContext` 返回局部只读上下文；
+- `SettleScene` 接受局部结构化结果。
+
+未来 WritingSession 应使用这些接口，不能获得真实 Scenario 或绕过局部校验。故事生成、互动、取消和异常恢复策略不在当前实现范围内。
