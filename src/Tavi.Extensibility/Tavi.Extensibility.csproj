@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Tavi.Extensibility</RootNamespace>
+    <AssemblyName>Tavi.Extensibility</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tavi.Abstractions\Tavi.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

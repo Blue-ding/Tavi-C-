@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Domain", "src\Tavi.Dom
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Application", "src\Tavi.Application\Tavi.Application.csproj", "{D2830CB7-A507-45BA-952D-CF97694B8560}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Extensibility", "src\Tavi.Extensibility\Tavi.Extensibility.csproj", "{E7ABBC4F-8B85-49AA-A202-1F823C934120}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Infrastructure.OpenAI", "src\Tavi.Infrastructure.OpenAI\Tavi.Infrastructure.OpenAI.csproj", "{C927B0F2-D33E-4228-8526-4BBCA36F76F4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Infrastructure.Persistence", "src\Tavi.Infrastructure.Persistence\Tavi.Infrastructure.Persistence.csproj", "{89029873-CA48-448C-91E0-A4D93BAA25B6}"
@@ -46,6 +48,10 @@ Global
 		{D2830CB7-A507-45BA-952D-CF97694B8560}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D2830CB7-A507-45BA-952D-CF97694B8560}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D2830CB7-A507-45BA-952D-CF97694B8560}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E7ABBC4F-8B85-49AA-A202-1F823C934120}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E7ABBC4F-8B85-49AA-A202-1F823C934120}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E7ABBC4F-8B85-49AA-A202-1F823C934120}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E7ABBC4F-8B85-49AA-A202-1F823C934120}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C927B0F2-D33E-4228-8526-4BBCA36F76F4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C927B0F2-D33E-4228-8526-4BBCA36F76F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C927B0F2-D33E-4228-8526-4BBCA36F76F4}.Release|Any CPU.ActiveCfg = Release|Any CPU

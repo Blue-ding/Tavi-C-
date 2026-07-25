@@ -1,5 +1,7 @@
 # Tavi
 
+Module 与 Plugin 的声明格式、能力接口和推荐实践见 [Module 接入规范](docs/modules.md)。
+
 Tavi 正在从 Unity C# 代码包迁移为独立的 .NET 后端。当前入口是命令行程序，核心代码不依赖具体前端。
 
 ## 目录

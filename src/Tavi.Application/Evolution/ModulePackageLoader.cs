@@ -1,0 +1,250 @@
+using System.Text.Json;
+using Tavi.Extensibility;
+
+namespace Tavi.Application.Evolution;
+
+/// <summary>从标准 Module 目录读取 Manifest、声明式语义和静态 SceneDefinition。</summary>
+public static class ModulePackageLoader
+{
+    private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>读取并转换指定 Module 目录；缺少必需文件或语法无效时抛出 EvolutionException。</summary>
+    public static ModulePackageDefinition Load(string directory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        string fullDirectory = Path.GetFullPath(directory);
+        string manifestPath = Path.Combine(fullDirectory, "module.json");
+        string semanticsPath = Path.Combine(fullDirectory, "semantics.json");
+        string scenesPath = Path.Combine(fullDirectory, "scenes.json");
+        try
+        {
+            RawManifest manifest = ReadRequired<RawManifest>(manifestPath);
+            RawSemantics semantics = File.Exists(semanticsPath) ? ReadRequired<RawSemantics>(semanticsPath) : new RawSemantics();
+            RawScenes scenes = File.Exists(scenesPath) ? ReadRequired<RawScenes>(scenesPath) : new RawScenes();
+            ModuleManifest convertedManifest = ConvertManifest(manifest);
+            return new ModulePackageDefinition
+            {
+                Manifest = convertedManifest,
+                Semantics = ConvertSemantics(semantics),
+                Scenes = scenes.Scenes.Select(scene => ConvertScene(scene, convertedManifest)).ToArray(),
+                SourceDirectory = fullDirectory
+            };
+        }
+        catch (EvolutionException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException)
+        {
+            throw Invalid(nameof(Load), $"无法加载 Module 目录 {fullDirectory}：{exception.Message}", exception);
+        }
+    }
+
+    /// <summary>按目录名称稳定排序并读取父目录中的全部直接子 Module。</summary>
+    public static IReadOnlyList<ModulePackageDefinition> LoadAll(string modulesDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(modulesDirectory);
+        string fullDirectory = Path.GetFullPath(modulesDirectory);
+        if (!Directory.Exists(fullDirectory))
+            throw Invalid(nameof(LoadAll), $"Module 根目录不存在：{fullDirectory}。");
+        return Directory.GetDirectories(fullDirectory).OrderBy(path => path, StringComparer.Ordinal).Where(path => File.Exists(Path.Combine(path, "module.json"))).Select(Load).ToArray();
+    }
+
+    private static T ReadRequired<T>(string path)
+    {
+        if (!File.Exists(path))
+            throw Invalid(nameof(Load), $"缺少必需声明文件 {path}。");
+        return JsonSerializer.Deserialize<T>(File.ReadAllText(path), Options) ?? throw Invalid(nameof(Load), $"声明文件 {path} 不能反序列化为空对象。");
+    }
+
+    private static ModuleManifest ConvertManifest(RawManifest raw)
+    {
+        var id = new ModuleId(Required(raw.Id, "module.id"));
+        var version = new ModuleVersion(Required(raw.Version, "module.version"));
+        if (raw.SchemaVersion != 1)
+            throw Invalid(nameof(Load), $"Module {id} 使用不支持的 SchemaVersion {raw.SchemaVersion}。");
+        return new ModuleManifest
+        {
+            Id = id,
+            Version = version,
+            SchemaVersion = raw.SchemaVersion,
+            Name = Required(raw.Name, "module.name"),
+            Description = raw.Description ?? string.Empty,
+            Entrypoint = string.IsNullOrWhiteSpace(raw.Entrypoint) ? null : raw.Entrypoint,
+            Dependencies = raw.Dependencies.Select(dependency => new ModuleDependency { Id = new ModuleId(Required(dependency.Id, "dependency.id")), MinimumVersion = new ModuleVersion(Required(dependency.MinimumVersion, "dependency.minimumVersion")) }).ToArray()
+        };
+    }
+
+    private static SemanticModuleDefinition ConvertSemantics(RawSemantics raw) => new()
+    {
+        ElementTypes = raw.ElementTypes.Select(value => new ElementTypeDefinition { Key = Key(value.Key), Name = Required(value.Name, "elementType.name"), Description = value.Description ?? string.Empty, Tags = Keys(value.Tags) }).ToArray(),
+        ScopeTypes = raw.ScopeTypes.Select(value => new ScopeTypeDefinition { Key = Key(value.Key), Name = Required(value.Name, "scopeType.name"), Description = value.Description ?? string.Empty, OwnerElementTypes = Keys(value.OwnerElementTypes), Tags = Keys(value.Tags) }).ToArray(),
+        AspectGroups = raw.AspectGroups.Select(value => new AspectGroupDefinition { Key = Key(value.Key), Name = Required(value.Name, "aspectGroup.name"), Extensible = value.Extensible }).ToArray(),
+        AspectTypes = raw.AspectTypes.Select(value => new AspectTypeDefinition { Key = Key(value.Key), Name = Required(value.Name, "aspectType.name"), Group = string.IsNullOrWhiteSpace(value.Group) ? null : Key(value.Group), SubjectElementTypes = Keys(value.SubjectElementTypes), MinimumQuantity = value.MinimumQuantity, MaximumQuantity = value.MaximumQuantity, Tags = Keys(value.Tags) }).ToArray(),
+        RelationTypes = raw.RelationTypes.Select(value => new RelationTypeDefinition { Key = Key(value.Key), Name = Required(value.Name, "relationType.name"), SourceElementTypes = Keys(value.SourceElementTypes), TargetElementTypes = Keys(value.TargetElementTypes), MinimumQuantity = value.MinimumQuantity, MaximumQuantity = value.MaximumQuantity, Tags = Keys(value.Tags) }).ToArray(),
+        Constraints = raw.Constraints.Select(ConvertConstraint).ToArray()
+    };
+
+    private static SemanticConstraintDefinition ConvertConstraint(RawConstraint value) => new()
+    {
+        Key = Key(value.Key),
+        Kind = value.Kind switch
+        {
+            "ownedScopeCardinality" => SemanticConstraintKind.OwnedScopeCardinality,
+            "aspectGroupCardinality" => SemanticConstraintKind.AspectGroupCardinality,
+            _ => throw Invalid(nameof(Load), $"不支持的语义约束种类 {value.Kind}。")
+        },
+        SubjectElementType = Key(value.SubjectElementType),
+        ScopeType = Key(value.ScopeType),
+        AspectGroup = string.IsNullOrWhiteSpace(value.AspectGroup) ? null : Key(value.AspectGroup),
+        Minimum = value.Minimum,
+        Maximum = value.Maximum,
+        AspectMustTargetScopeOwner = value.AspectMustTargetScopeOwner,
+        Message = value.Message ?? string.Empty
+    };
+
+    private static SceneDefinition ConvertScene(RawScene raw, ModuleManifest manifest) => new()
+    {
+        Id = Key(raw.Id),
+        Module = manifest.Id,
+        ModuleVersion = manifest.Version,
+        Name = Required(raw.Name, "scene.name"),
+        Description = raw.Description ?? string.Empty,
+        SettlementCapabilities = ConvertCapabilities(raw.Settlement),
+        Slots = raw.Slots.Select(slot => new SceneSlotDefinition
+        {
+            Id = Required(slot.Id, "scene.slot.id"),
+            Name = Required(slot.Name, "scene.slot.name"),
+            Description = slot.Description ?? string.Empty,
+            Minimum = slot.Minimum,
+            Maximum = slot.Maximum,
+            Requirement = new SceneSlotRequirement { ElementTypes = Keys(slot.ElementTypes), RequiredAspectGroups = Keys(slot.RequiredAspectGroups) }
+        }).ToArray()
+    };
+
+    private static SceneSettlementCapabilities ConvertCapabilities(IEnumerable<string> values)
+    {
+        SceneSettlementCapabilities result = SceneSettlementCapabilities.None;
+        foreach (string value in values)
+        {
+            result |= value switch
+            {
+                "rules" => SceneSettlementCapabilities.Rules,
+                "writing" => SceneSettlementCapabilities.Writing,
+                _ => throw Invalid(nameof(Load), $"不支持的 Scene 结算能力 {value}。")
+            };
+        }
+        return result;
+    }
+
+    private static HashSet<SemanticKey> Keys(IEnumerable<string> values) => values.Select(Key).ToHashSet();
+
+    private static SemanticKey Key(string? value) => new(Required(value, "semantic.key"));
+
+    private static string Required(string? value, string path) => string.IsNullOrWhiteSpace(value) ? throw Invalid(nameof(Load), $"{path} 不能为空。") : value;
+
+    private static EvolutionException Invalid(string operation, string message, Exception? innerException = null) => new(EvolutionErrorCodes.InvalidModule, TaviErrorCategory.Configuration, operation, message, innerException: innerException);
+
+    private sealed class RawManifest
+    {
+        public string? Id { get; set; }
+        public string? Version { get; set; }
+        public int SchemaVersion { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public string? Entrypoint { get; set; }
+        public List<RawDependency> Dependencies { get; set; } = [];
+    }
+
+    private sealed class RawDependency
+    {
+        public string? Id { get; set; }
+        public string? MinimumVersion { get; set; }
+    }
+
+    private sealed class RawSemantics
+    {
+        public List<RawElementType> ElementTypes { get; set; } = [];
+        public List<RawScopeType> ScopeTypes { get; set; } = [];
+        public List<RawAspectGroup> AspectGroups { get; set; } = [];
+        public List<RawAspectType> AspectTypes { get; set; } = [];
+        public List<RawRelationType> RelationTypes { get; set; } = [];
+        public List<RawConstraint> Constraints { get; set; } = [];
+    }
+
+    private abstract class RawType
+    {
+        public string? Key { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public List<string> Tags { get; set; } = [];
+    }
+
+    private sealed class RawElementType : RawType;
+
+    private sealed class RawScopeType : RawType
+    {
+        public List<string> OwnerElementTypes { get; set; } = [];
+    }
+
+    private sealed class RawAspectGroup
+    {
+        public string? Key { get; set; }
+        public string? Name { get; set; }
+        public bool Extensible { get; set; }
+    }
+
+    private sealed class RawAspectType : RawType
+    {
+        public string? Group { get; set; }
+        public List<string> SubjectElementTypes { get; set; } = [];
+        public double? MinimumQuantity { get; set; }
+        public double? MaximumQuantity { get; set; }
+    }
+
+    private sealed class RawRelationType : RawType
+    {
+        public List<string> SourceElementTypes { get; set; } = [];
+        public List<string> TargetElementTypes { get; set; } = [];
+        public double? MinimumQuantity { get; set; }
+        public double? MaximumQuantity { get; set; }
+    }
+
+    private sealed class RawConstraint
+    {
+        public string? Key { get; set; }
+        public string? Kind { get; set; }
+        public string? SubjectElementType { get; set; }
+        public string? ScopeType { get; set; }
+        public string? AspectGroup { get; set; }
+        public int Minimum { get; set; }
+        public int? Maximum { get; set; }
+        public bool AspectMustTargetScopeOwner { get; set; }
+        public string? Message { get; set; }
+    }
+
+    private sealed class RawScenes
+    {
+        public List<RawScene> Scenes { get; set; } = [];
+    }
+
+    private sealed class RawScene
+    {
+        public string? Id { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public List<string> Settlement { get; set; } = [];
+        public List<RawSlot> Slots { get; set; } = [];
+    }
+
+    private sealed class RawSlot
+    {
+        public string? Id { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public int Minimum { get; set; }
+        public int? Maximum { get; set; }
+        public List<string> ElementTypes { get; set; } = [];
+        public List<string> RequiredAspectGroups { get; set; } = [];
+    }
+}

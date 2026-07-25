@@ -9,6 +9,12 @@ public static class StorageErrorCodes
     /// <summary>写入 World 存档失败。</summary>
     public const string WorldWriteFailed = "TAVI.STORAGE.WORLD.WRITE_FAILED";
 
+    /// <summary>读取 Scenario 存档失败。</summary>
+    public const string ScenarioReadFailed = "TAVI.STORAGE.SCENARIO.READ_FAILED";
+
+    /// <summary>写入 Scenario 存档失败。</summary>
+    public const string ScenarioWriteFailed = "TAVI.STORAGE.SCENARIO.WRITE_FAILED";
+
     /// <summary>读取手稿存储失败。</summary>
     public const string ManuscriptReadFailed = "TAVI.STORAGE.MANUSCRIPT.READ_FAILED";
 

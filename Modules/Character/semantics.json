@@ -1,0 +1,87 @@
+{
+  "$schema": "../../docs/schemas/tavi-semantics.schema.json",
+  "elementTypes": [
+    {
+      "key": "character:character",
+      "name": "角色",
+      "description": "能够作为行为主体参与演绎的 Scenario Element。",
+      "tags": [
+        "character:actor"
+      ]
+    }
+  ],
+  "scopeTypes": [
+    {
+      "key": "character:identity",
+      "name": "角色身份",
+      "description": "保存角色自身稳定身份断言的 Scope。",
+      "ownerElementTypes": [
+        "character:character"
+      ]
+    }
+  ],
+  "aspectGroups": [
+    {
+      "key": "character:gender",
+      "name": "性别",
+      "extensible": true
+    }
+  ],
+  "aspectTypes": [
+    {
+      "key": "character:gender.female",
+      "name": "女性",
+      "group": "character:gender",
+      "subjectElementTypes": [
+        "character:character"
+      ]
+    },
+    {
+      "key": "character:gender.male",
+      "name": "男性",
+      "group": "character:gender",
+      "subjectElementTypes": [
+        "character:character"
+      ]
+    },
+    {
+      "key": "character:gender.nonbinary",
+      "name": "非二元性别",
+      "group": "character:gender",
+      "subjectElementTypes": [
+        "character:character"
+      ]
+    },
+    {
+      "key": "character:gender.unspecified",
+      "name": "未指定性别",
+      "group": "character:gender",
+      "subjectElementTypes": [
+        "character:character"
+      ]
+    }
+  ],
+  "relationTypes": [],
+  "constraints": [
+    {
+      "key": "character:requires-identity",
+      "kind": "ownedScopeCardinality",
+      "subjectElementType": "character:character",
+      "scopeType": "character:identity",
+      "minimum": 1,
+      "maximum": 1,
+      "message": "每个角色必须恰好持有一个角色身份 Scope。"
+    },
+    {
+      "key": "character:requires-gender",
+      "kind": "aspectGroupCardinality",
+      "subjectElementType": "character:character",
+      "scopeType": "character:identity",
+      "aspectGroup": "character:gender",
+      "minimum": 1,
+      "maximum": 1,
+      "aspectMustTargetScopeOwner": true,
+      "message": "每个角色的身份 Scope 必须恰好包含一个指向角色自身的性别 Aspect。"
+    }
+  ]
+}

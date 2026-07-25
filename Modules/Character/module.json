@@ -1,0 +1,9 @@
+{
+  "$schema": "../../docs/schemas/tavi-module.schema.json",
+  "id": "character",
+  "version": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Character",
+  "description": "为 Scenario 声明角色、身份 Scope 与必要性别 Aspect 语义。",
+  "dependencies": []
+}

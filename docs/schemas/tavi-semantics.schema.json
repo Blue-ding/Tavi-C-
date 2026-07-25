@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tavi.local/schemas/tavi-semantics.schema.json",
+  "title": "Tavi Declarative Scenario Semantics",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "elementTypes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/elementType"
+      }
+    },
+    "scopeTypes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scopeType"
+      }
+    },
+    "aspectGroups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/aspectGroup"
+      }
+    },
+    "aspectTypes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/aspectType"
+      }
+    },
+    "relationTypes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relationType"
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/constraint"
+      }
+    }
+  },
+  "$defs": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*:.+$"
+    },
+    "keys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/key"
+      }
+    },
+    "baseType": {
+      "type": "object",
+      "required": [
+        "key",
+        "name"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "tags": {
+          "$ref": "#/$defs/keys"
+        }
+      }
+    },
+    "elementType": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseType"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": true,
+            "name": true,
+            "description": true,
+            "tags": true
+          }
+        }
+      ]
+    },
+    "scopeType": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseType"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": true,
+            "name": true,
+            "description": true,
+            "tags": true,
+            "ownerElementTypes": {
+              "$ref": "#/$defs/keys"
+            }
+          }
+        }
+      ]
+    },
+    "aspectGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "name",
+        "extensible"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extensible": {
+          "type": "boolean"
+        }
+      }
+    },
+    "aspectType": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseType"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": true,
+            "name": true,
+            "description": true,
+            "tags": true,
+            "group": {
+              "$ref": "#/$defs/key"
+            },
+            "subjectElementTypes": {
+              "$ref": "#/$defs/keys"
+            },
+            "minimumQuantity": {
+              "type": "number"
+            },
+            "maximumQuantity": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    },
+    "relationType": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseType"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": true,
+            "name": true,
+            "description": true,
+            "tags": true,
+            "sourceElementTypes": {
+              "$ref": "#/$defs/keys"
+            },
+            "targetElementTypes": {
+              "$ref": "#/$defs/keys"
+            },
+            "minimumQuantity": {
+              "type": "number"
+            },
+            "maximumQuantity": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "kind",
+        "subjectElementType",
+        "scopeType",
+        "minimum"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "kind": {
+          "enum": [
+            "ownedScopeCardinality",
+            "aspectGroupCardinality"
+          ]
+        },
+        "subjectElementType": {
+          "$ref": "#/$defs/key"
+        },
+        "scopeType": {
+          "$ref": "#/$defs/key"
+        },
+        "aspectGroup": {
+          "$ref": "#/$defs/key"
+        },
+        "minimum": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maximum": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "aspectMustTargetScopeOwner": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
