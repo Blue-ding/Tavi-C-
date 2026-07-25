@@ -50,7 +50,7 @@ cd ../..
 dotnet run --project src/Tavi.Host
 ```
 
-随后访问 `http://127.0.0.1:5178`。Host 默认加载本地 `Tavi/Saves/default` 存档；可使用 `TAVI_SAVE_DIRECTORY` 覆盖存档目录。前端支持 Element、Scope、Aspect 和 Relation 插件式断言图的观察与编辑，以及撤销、重做、手动保存和自动保存状态反馈。每个 Aspect 或 Relation 唯一属于一个 Scope，开放类型与 Quantity 的具体语义由 Module 提供。配置语言模型后，还可以从顶部工具栏打开 Guidance，通过对话生成、逐项审阅并原子提交世界提案。
+随后访问 `http://127.0.0.1:5178`。Host 默认加载本地 `Tavi/Saves/default` 存档；可使用 `TAVI_SAVE_DIRECTORY` 覆盖存档目录。前端支持 Element、Scope、Aspect 和 Relation 插件式断言图的观察与编辑，以及撤销、重做、手动保存和自动保存状态反馈。规则化 Scope、Aspect 与 Relation 的语义由 Module Type Definition 提供，Quantity 必须是整数；自由 Name/Description 只用于不会进入 Scenario 或 Evolution 的 World Local 语义。配置语言模型后，还可以从顶部工具栏打开 Guidance，通过对话生成、逐项审阅并原子提交世界提案。
 
 ## Windows 桌面应用
 

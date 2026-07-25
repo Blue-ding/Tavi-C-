@@ -52,23 +52,23 @@ public abstract record WorldAuthoringIntent
     /// <summary>建议更新 Element。</summary>
     public sealed record UpdateElement(Guid Id, string Name, string Description, SemanticKey Type) : WorldAuthoringIntent;
     /// <summary>建议添加 Scope。</summary>
-    public sealed record AddScope(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid OwnerElementId) : WorldAuthoringIntent;
+    public sealed record AddScope(Guid Id, int Quantity, SemanticKey Type, Guid OwnerElementId) : WorldAuthoringIntent;
     /// <summary>建议删除 Scope。</summary>
     public sealed record RemoveScope(Guid Id) : WorldAuthoringIntent;
     /// <summary>建议更新 Scope。</summary>
-    public sealed record UpdateScope(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : WorldAuthoringIntent;
+    public sealed record UpdateScope(Guid Id, int Quantity, SemanticKey Type) : WorldAuthoringIntent;
     /// <summary>建议添加 Aspect。</summary>
-    public sealed record AddAspect(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid ElementId, Guid ScopeId) : WorldAuthoringIntent;
+    public sealed record AddAspect(Guid Id, int Quantity, SemanticKey Type, Guid ElementId, Guid ScopeId) : WorldAuthoringIntent;
     /// <summary>建议删除 Aspect。</summary>
     public sealed record RemoveAspect(Guid Id) : WorldAuthoringIntent;
     /// <summary>建议更新 Aspect。</summary>
-    public sealed record UpdateAspect(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : WorldAuthoringIntent;
+    public sealed record UpdateAspect(Guid Id, int Quantity, SemanticKey Type) : WorldAuthoringIntent;
     /// <summary>建议添加 Relation。</summary>
-    public sealed record AddRelation(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId) : WorldAuthoringIntent;
+    public sealed record AddRelation(Guid Id, int Quantity, SemanticKey Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId) : WorldAuthoringIntent;
     /// <summary>建议删除 Relation。</summary>
     public sealed record RemoveRelation(Guid Id) : WorldAuthoringIntent;
     /// <summary>建议更新 Relation。</summary>
-    public sealed record UpdateRelation(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : WorldAuthoringIntent;
+    public sealed record UpdateRelation(Guid Id, int Quantity, SemanticKey Type) : WorldAuthoringIntent;
 }
 
 /// <summary>表示 Module 产生的原子 World 创作提案。</summary>

@@ -17,4 +17,10 @@ public sealed record WorldSnapshot
 
     /// <summary>获取或设置按标识索引的全部断言域。</summary>
     public Dictionary<Guid, Scope> Scopes { get; set; } = new();
+
+    /// <summary>获取或设置按标识索引的全部 LocalAspect。</summary>
+    public Dictionary<Guid, LocalAspect> LocalAspects { get; set; } = new();
+
+    /// <summary>获取或设置按标识索引的全部 LocalRelation。</summary>
+    public Dictionary<Guid, LocalRelation> LocalRelations { get; set; } = new();
 }

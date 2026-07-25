@@ -23,19 +23,19 @@ public sealed class ScenarioQueries
     public Aspect GetAspect(Guid id) => _session.ExecuteQuery(scenario => scenario.GetAspect(id));
 
     /// <summary>获取全部独立 Aspect 副本。</summary>
-    public IReadOnlyList<Aspect> GetAspects() => _session.ExecuteQuery(scenario => scenario.GetAspects().OrderBy(value => value.Name, StringComparer.Ordinal).ThenBy(value => value.Id).ToArray());
+    public IReadOnlyList<Aspect> GetAspects() => _session.ExecuteQuery(scenario => scenario.GetAspects().OrderBy(value => value.Type.Value, StringComparer.Ordinal).ThenBy(value => value.Id).ToArray());
 
     /// <summary>根据标识获取独立 Relation 副本。</summary>
     public Relation GetRelation(Guid id) => _session.ExecuteQuery(scenario => scenario.GetRelation(id));
 
     /// <summary>获取全部独立 Relation 副本。</summary>
-    public IReadOnlyList<Relation> GetRelations() => _session.ExecuteQuery(scenario => scenario.GetRelations().OrderBy(value => value.Name, StringComparer.Ordinal).ThenBy(value => value.Id).ToArray());
+    public IReadOnlyList<Relation> GetRelations() => _session.ExecuteQuery(scenario => scenario.GetRelations().OrderBy(value => value.Type.Value, StringComparer.Ordinal).ThenBy(value => value.Id).ToArray());
 
     /// <summary>根据标识获取独立 Scope 副本。</summary>
     public Scope GetScope(Guid id) => _session.ExecuteQuery(scenario => scenario.GetScope(id));
 
     /// <summary>获取全部独立 Scope 副本。</summary>
-    public IReadOnlyList<Scope> GetScopes() => _session.ExecuteQuery(scenario => scenario.GetScopes().OrderBy(value => value.Name, StringComparer.Ordinal).ThenBy(value => value.Id).ToArray());
+    public IReadOnlyList<Scope> GetScopes() => _session.ExecuteQuery(scenario => scenario.GetScopes().OrderBy(value => value.Type.Value, StringComparer.Ordinal).ThenBy(value => value.Id).ToArray());
 
     /// <summary>根据标识获取独立 Scene 副本。</summary>
     public Scene GetScene(Guid id) => _session.ExecuteQuery(scenario => scenario.GetScene(id));

@@ -17,7 +17,7 @@ public sealed record ScenarioWorldProposal
 /// <summary>在 World 和 Scenario 之间执行无 Module 行为的结构复制与差异编译。</summary>
 public static class ScenarioWorldBridge
 {
-    /// <summary>把完整 World 快照复制为不含 Scene 的初始 Scenario，并冻结所需 Module 引用。</summary>
+    /// <summary>把 World 的规则化 EARS 投影为不含 Scene 的初始 Scenario；Local 事实留在 World 中。</summary>
     public static ScenarioDomain.ScenarioSnapshot Import(WorldSnapshot world, ModuleCatalog catalog, IReadOnlyDictionary<Tavi.Extensibility.ModuleId, IReadOnlyDictionary<string, string>>? parameters = null)
     {
         ArgumentNullException.ThrowIfNull(world);
@@ -27,9 +27,9 @@ public static class ScenarioWorldBridge
             SourceWorldStateId = world.Id,
             Modules = catalog.Modules.Select(module => new ScenarioDomain.ScenarioModuleReference(module.Id.Value, module.Version.Value, parameters?.GetValueOrDefault(module.Id))).ToList(),
             Elements = world.Elements.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Element(pair.Value.Id, pair.Value.Name, pair.Value.Description, new ScenarioDomain.ElementType(pair.Value.Type.Value))),
-            Scopes = world.Scopes.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Scope(pair.Value.Id, pair.Value.Name, pair.Value.Description, pair.Value.Quantity, new ScenarioDomain.ScopeType(pair.Value.Type.Value), pair.Value.OwnerElementId)),
-            Aspects = world.Aspects.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Aspect(pair.Value.Id, pair.Value.Name, pair.Value.Description, pair.Value.Quantity, new ScenarioDomain.AspectType(pair.Value.Type.Value), pair.Value.ElementId, pair.Value.ScopeId)),
-            Relations = world.Relations.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Relation(pair.Value.Id, pair.Value.Name, pair.Value.Description, pair.Value.Quantity, new ScenarioDomain.RelationType(pair.Value.Type.Value), pair.Value.SourceElementId, pair.Value.TargetElementId, pair.Value.ScopeId))
+            Scopes = world.Scopes.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Scope(pair.Value.Id, pair.Value.Quantity, new ScenarioDomain.ScopeType(pair.Value.Type.Value), pair.Value.OwnerElementId)),
+            Aspects = world.Aspects.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Aspect(pair.Value.Id, pair.Value.Quantity, new ScenarioDomain.AspectType(pair.Value.Type.Value), pair.Value.ElementId, pair.Value.ScopeId)),
+            Relations = world.Relations.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Relation(pair.Value.Id, pair.Value.Quantity, new ScenarioDomain.RelationType(pair.Value.Type.Value), pair.Value.SourceElementId, pair.Value.TargetElementId, pair.Value.ScopeId))
         };
     }
 
@@ -87,15 +87,11 @@ public static class ScenarioWorldBridge
         {
             if (!world.Scopes.TryGetValue(value.Id, out WorldDomain.Scope? current))
             {
-                operations.Add(new WorldDomain.AddScopeOperation(value.Id, value.Name, value.Description, value.Quantity, new WorldDomain.ScopeType(value.Type.Value), value.OwnerElementId));
+                operations.Add(new WorldDomain.AddScopeOperation(value.Id, value.Quantity, new WorldDomain.ScopeType(value.Type.Value), value.OwnerElementId));
                 continue;
             }
             if (current.OwnerElementId != value.OwnerElementId)
                 throw Structural(nameof(ScenarioDomain.Scope), value.Id);
-            if (current.Name != value.Name)
-                operations.Add(new UpdateScopeNameOperation(value.Id, value.Name));
-            if (current.Description != value.Description)
-                operations.Add(new UpdateScopeDescriptionOperation(value.Id, value.Description));
             if (current.Quantity != value.Quantity)
                 operations.Add(new UpdateScopeQuantityOperation(value.Id, value.Quantity));
             if (current.Type.Value != value.Type.Value)
@@ -109,15 +105,11 @@ public static class ScenarioWorldBridge
         {
             if (!world.Aspects.TryGetValue(value.Id, out WorldDomain.Aspect? current))
             {
-                operations.Add(new WorldDomain.AddAspectOperation(value.Id, value.Name, value.Description, value.Quantity, new WorldDomain.AspectType(value.Type.Value), value.ElementId, value.ScopeId));
+                operations.Add(new WorldDomain.AddAspectOperation(value.Id, value.Quantity, new WorldDomain.AspectType(value.Type.Value), value.ElementId, value.ScopeId));
                 continue;
             }
             if (current.ElementId != value.ElementId || current.ScopeId != value.ScopeId)
                 throw Structural(nameof(ScenarioDomain.Aspect), value.Id);
-            if (current.Name != value.Name)
-                operations.Add(new UpdateAspectNameOperation(value.Id, value.Name));
-            if (current.Description != value.Description)
-                operations.Add(new UpdateAspectDescriptionOperation(value.Id, value.Description));
             if (current.Quantity != value.Quantity)
                 operations.Add(new UpdateAspectQuantityOperation(value.Id, value.Quantity));
             if (current.Type.Value != value.Type.Value)
@@ -131,15 +123,11 @@ public static class ScenarioWorldBridge
         {
             if (!world.Relations.TryGetValue(value.Id, out WorldDomain.Relation? current))
             {
-                operations.Add(new WorldDomain.AddRelationOperation(value.Id, value.Name, value.Description, value.Quantity, new WorldDomain.RelationType(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId));
+                operations.Add(new WorldDomain.AddRelationOperation(value.Id, value.Quantity, new WorldDomain.RelationType(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId));
                 continue;
             }
             if (current.SourceElementId != value.SourceElementId || current.TargetElementId != value.TargetElementId || current.ScopeId != value.ScopeId)
                 throw Structural(nameof(ScenarioDomain.Relation), value.Id);
-            if (current.Name != value.Name)
-                operations.Add(new UpdateRelationNameOperation(value.Id, value.Name));
-            if (current.Description != value.Description)
-                operations.Add(new UpdateRelationDescriptionOperation(value.Id, value.Description));
             if (current.Quantity != value.Quantity)
                 operations.Add(new UpdateRelationQuantityOperation(value.Id, value.Quantity));
             if (current.Type.Value != value.Type.Value)

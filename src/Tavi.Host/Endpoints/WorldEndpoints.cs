@@ -32,6 +32,12 @@ internal static class WorldEndpoints
         world.MapPost("/relations", AddRelationAsync);
         world.MapPatch("/relations/{relationId:guid}", UpdateRelationAsync);
         world.MapDelete("/relations/{relationId:guid}", RemoveRelationAsync);
+        world.MapPost("/local-aspects", AddLocalAspectAsync);
+        world.MapPatch("/local-aspects/{localAspectId:guid}", UpdateLocalAspectAsync);
+        world.MapDelete("/local-aspects/{localAspectId:guid}", RemoveLocalAspectAsync);
+        world.MapPost("/local-relations", AddLocalRelationAsync);
+        world.MapPatch("/local-relations/{localRelationId:guid}", UpdateLocalRelationAsync);
+        world.MapDelete("/local-relations/{localRelationId:guid}", RemoveLocalRelationAsync);
         world.MapPost("/undo", UndoAsync);
         world.MapPost("/redo", RedoAsync);
         world.MapPost("/save", SaveAsync);
@@ -76,16 +82,12 @@ internal static class WorldEndpoints
 
     private static Task<WorldStagingResultViewModel> RemoveElementAsync(Guid elementId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveElementOperation(elementId), expectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> AddScopeAsync(AddScopeRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddScope(request.Name, request.Description, request.Quantity, new ScopeType(request.Type), request.OwnerElementId), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddScopeAsync(AddScopeRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddScope(request.Quantity, new ScopeType(request.Type), request.OwnerElementId), request.ExpectedStateId), cancellationToken);
 
     private static Task<WorldStagingResultViewModel> UpdateScopeAsync(Guid scopeId, UpdateScopeRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
-        var operations = new List<WorldOperation>(4);
-        if (request.Name is not null)
-            operations.Add(new UpdateScopeNameOperation(scopeId, request.Name));
-        if (request.Description is not null)
-            operations.Add(new UpdateScopeDescriptionOperation(scopeId, request.Description));
+        var operations = new List<WorldOperation>(2);
         if (request.Quantity.HasValue)
             operations.Add(new UpdateScopeQuantityOperation(scopeId, request.Quantity.Value));
         if (request.Type is not null)
@@ -95,16 +97,12 @@ internal static class WorldEndpoints
 
     private static Task<WorldStagingResultViewModel> RemoveScopeAsync(Guid scopeId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveScopeOperation(scopeId), expectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> AddAspectAsync(AddAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddAspect(request.Name, request.Description, request.Quantity, new AspectType(request.Type), request.ElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddAspectAsync(AddAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddAspect(request.Quantity, new AspectType(request.Type), request.ElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
 
     private static Task<WorldStagingResultViewModel> UpdateAspectAsync(Guid aspectId, UpdateAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
-        var operations = new List<WorldOperation>(4);
-        if (request.Name is not null)
-            operations.Add(new UpdateAspectNameOperation(aspectId, request.Name));
-        if (request.Description is not null)
-            operations.Add(new UpdateAspectDescriptionOperation(aspectId, request.Description));
+        var operations = new List<WorldOperation>(2);
         if (request.Quantity.HasValue)
             operations.Add(new UpdateAspectQuantityOperation(aspectId, request.Quantity.Value));
         if (request.Type is not null)
@@ -114,16 +112,12 @@ internal static class WorldEndpoints
 
     private static Task<WorldStagingResultViewModel> RemoveAspectAsync(Guid aspectId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveAspectOperation(aspectId), expectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> AddRelationAsync(AddRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddRelation(request.Name, request.Description, request.Quantity, new RelationType(request.Type), request.SourceElementId, request.TargetElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddRelationAsync(AddRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddRelation(request.Quantity, new RelationType(request.Type), request.SourceElementId, request.TargetElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
 
     private static Task<WorldStagingResultViewModel> UpdateRelationAsync(Guid relationId, UpdateRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
-        var operations = new List<WorldOperation>(4);
-        if (request.Name is not null)
-            operations.Add(new UpdateRelationNameOperation(relationId, request.Name));
-        if (request.Description is not null)
-            operations.Add(new UpdateRelationDescriptionOperation(relationId, request.Description));
+        var operations = new List<WorldOperation>(2);
         if (request.Quantity.HasValue)
             operations.Add(new UpdateRelationQuantityOperation(relationId, request.Quantity.Value));
         if (request.Type is not null)
@@ -132,6 +126,34 @@ internal static class WorldEndpoints
     }, cancellationToken);
 
     private static Task<WorldStagingResultViewModel> RemoveRelationAsync(Guid relationId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveRelationOperation(relationId), expectedStateId), cancellationToken);
+
+    private static Task<WorldStagingResultViewModel> AddLocalAspectAsync(AddLocalAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddLocalAspect(request.Name, request.Description, request.Quantity, request.ElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
+
+    private static Task<WorldStagingResultViewModel> UpdateLocalAspectAsync(Guid localAspectId, UpdateLocalAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
+    {
+        RequireExpectedState(session, request.ExpectedStateId);
+        if (!session.CreateStagingSnapshot().ProjectedWorld.LocalAspects.TryGetValue(localAspectId, out LocalAspect? current))
+            throw new ArgumentException($"不存在 LocalAspect {localAspectId}。", nameof(localAspectId));
+        if (request.Name is null && request.Description is null && !request.Quantity.HasValue)
+            throw new ArgumentException("更新请求至少需要包含一个可修改属性。");
+        return Stage(session, [new UpdateLocalAspectOperation(localAspectId, request.Name ?? current.Name, request.Description ?? current.Description, request.Quantity ?? current.Quantity)]);
+    }, cancellationToken);
+
+    private static Task<WorldStagingResultViewModel> RemoveLocalAspectAsync(Guid localAspectId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveLocalAspectOperation(localAspectId), expectedStateId), cancellationToken);
+
+    private static Task<WorldStagingResultViewModel> AddLocalRelationAsync(AddLocalRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, WorldOperations.AddLocalRelation(request.Name, request.Description, request.Quantity, request.SourceElementId, request.TargetElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
+
+    private static Task<WorldStagingResultViewModel> UpdateLocalRelationAsync(Guid localRelationId, UpdateLocalRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
+    {
+        RequireExpectedState(session, request.ExpectedStateId);
+        if (!session.CreateStagingSnapshot().ProjectedWorld.LocalRelations.TryGetValue(localRelationId, out LocalRelation? current))
+            throw new ArgumentException($"不存在 LocalRelation {localRelationId}。", nameof(localRelationId));
+        if (request.Name is null && request.Description is null && !request.Quantity.HasValue)
+            throw new ArgumentException("更新请求至少需要包含一个可修改属性。");
+        return Stage(session, [new UpdateLocalRelationOperation(localRelationId, request.Name ?? current.Name, request.Description ?? current.Description, request.Quantity ?? current.Quantity)]);
+    }, cancellationToken);
+
+    private static Task<WorldStagingResultViewModel> RemoveLocalRelationAsync(Guid localRelationId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => Stage(session, new RemoveLocalRelationOperation(localRelationId), expectedStateId), cancellationToken);
 
     private static Task<WorldCommitViewModel> CommitStagedAsync(CommitStagedRequest request, WorldRuntime runtime, GuidanceRuntime guidance, CancellationToken cancellationToken)
     {

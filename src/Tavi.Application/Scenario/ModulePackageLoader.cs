@@ -220,16 +220,16 @@ public static class ModulePackageLoader
     {
         public string? Group { get; set; }
         public List<string> SubjectElementTypes { get; set; } = [];
-        public double? MinimumQuantity { get; set; }
-        public double? MaximumQuantity { get; set; }
+        public int? MinimumQuantity { get; set; }
+        public int? MaximumQuantity { get; set; }
     }
 
     private sealed class RawRelationType : RawType
     {
         public List<string> SourceElementTypes { get; set; } = [];
         public List<string> TargetElementTypes { get; set; } = [];
-        public double? MinimumQuantity { get; set; }
-        public double? MaximumQuantity { get; set; }
+        public int? MinimumQuantity { get; set; }
+        public int? MaximumQuantity { get; set; }
     }
 
     private sealed class RawConstraint

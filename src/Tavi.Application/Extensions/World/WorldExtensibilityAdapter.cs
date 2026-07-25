@@ -42,27 +42,21 @@ public static class WorldExtensibilityAdapter
                 operations.Add(new UpdateElementDescriptionOperation(value.Id, value.Description));
                 operations.Add(new UpdateElementTypeOperation(value.Id, new ElementType(value.Type.Value)));
                 break;
-            case WorldAuthoringIntent.AddScope value: operations.Add(new AddScopeOperation(value.Id, value.Name, value.Description, value.Quantity, new ScopeType(value.Type.Value), value.OwnerElementId)); break;
+            case WorldAuthoringIntent.AddScope value: operations.Add(new AddScopeOperation(value.Id, value.Quantity, new ScopeType(value.Type.Value), value.OwnerElementId)); break;
             case WorldAuthoringIntent.RemoveScope value: operations.Add(new RemoveScopeOperation(value.Id)); break;
             case WorldAuthoringIntent.UpdateScope value:
-                operations.Add(new UpdateScopeNameOperation(value.Id, value.Name));
-                operations.Add(new UpdateScopeDescriptionOperation(value.Id, value.Description));
                 operations.Add(new UpdateScopeQuantityOperation(value.Id, value.Quantity));
                 operations.Add(new UpdateScopeTypeOperation(value.Id, new ScopeType(value.Type.Value)));
                 break;
-            case WorldAuthoringIntent.AddAspect value: operations.Add(new AddAspectOperation(value.Id, value.Name, value.Description, value.Quantity, new AspectType(value.Type.Value), value.ElementId, value.ScopeId)); break;
+            case WorldAuthoringIntent.AddAspect value: operations.Add(new AddAspectOperation(value.Id, value.Quantity, new AspectType(value.Type.Value), value.ElementId, value.ScopeId)); break;
             case WorldAuthoringIntent.RemoveAspect value: operations.Add(new RemoveAspectOperation(value.Id)); break;
             case WorldAuthoringIntent.UpdateAspect value:
-                operations.Add(new UpdateAspectNameOperation(value.Id, value.Name));
-                operations.Add(new UpdateAspectDescriptionOperation(value.Id, value.Description));
                 operations.Add(new UpdateAspectQuantityOperation(value.Id, value.Quantity));
                 operations.Add(new UpdateAspectTypeOperation(value.Id, new AspectType(value.Type.Value)));
                 break;
-            case WorldAuthoringIntent.AddRelation value: operations.Add(new AddRelationOperation(value.Id, value.Name, value.Description, value.Quantity, new RelationType(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId)); break;
+            case WorldAuthoringIntent.AddRelation value: operations.Add(new AddRelationOperation(value.Id, value.Quantity, new RelationType(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId)); break;
             case WorldAuthoringIntent.RemoveRelation value: operations.Add(new RemoveRelationOperation(value.Id)); break;
             case WorldAuthoringIntent.UpdateRelation value:
-                operations.Add(new UpdateRelationNameOperation(value.Id, value.Name));
-                operations.Add(new UpdateRelationDescriptionOperation(value.Id, value.Description));
                 operations.Add(new UpdateRelationQuantityOperation(value.Id, value.Quantity));
                 operations.Add(new UpdateRelationTypeOperation(value.Id, new RelationType(value.Type.Value)));
                 break;
@@ -76,9 +70,9 @@ public static class WorldExtensibilityAdapter
         {
             StateId = snapshot.Id;
             Elements = Array.AsReadOnly(snapshot.Elements.Values.Select(value => new ElementView(value.Id, value.Name, value.Description, new SemanticKey(value.Type.Value))).ToArray());
-            Scopes = Array.AsReadOnly(snapshot.Scopes.Values.Select(value => new ScopeView(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.OwnerElementId)).ToArray());
-            Aspects = Array.AsReadOnly(snapshot.Aspects.Values.Select(value => new AspectView(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.ElementId, value.ScopeId)).ToArray());
-            Relations = Array.AsReadOnly(snapshot.Relations.Values.Select(value => new RelationView(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId)).ToArray());
+            Scopes = Array.AsReadOnly(snapshot.Scopes.Values.Select(value => new ScopeView(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.OwnerElementId)).ToArray());
+            Aspects = Array.AsReadOnly(snapshot.Aspects.Values.Select(value => new AspectView(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.ElementId, value.ScopeId)).ToArray());
+            Relations = Array.AsReadOnly(snapshot.Relations.Values.Select(value => new RelationView(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId)).ToArray());
         }
 
         public Guid StateId { get; }

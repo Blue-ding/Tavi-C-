@@ -1,17 +1,5 @@
 namespace Tavi.Extensibility;
 
-/// <summary>提供给 Plugin 的只读 Scenario Element 数据。</summary>
-/// <param name="Id">Element 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Type">开放类型。</param>
-
-/// <summary>提供给 Plugin 的只读 Scenario Aspect 数据。</summary>
-/// <param name="Id">Aspect 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="ElementId">目标 Element。</param><param name="ScopeId">唯一 Scope。</param>
-
-/// <summary>提供给 Plugin 的只读 Scenario Relation 数据。</summary>
-/// <param name="Id">Relation 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="SourceElementId">来源 Element。</param><param name="TargetElementId">目标 Element。</param><param name="ScopeId">唯一 Scope。</param>
-
-/// <summary>提供给 Plugin 的只读 Scenario Scope 数据。</summary>
-/// <param name="Id">Scope 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="OwnerElementId">Owner Element。</param>
-
 /// <summary>提供给 Plugin 的只读 Scene 槽位绑定数据。</summary>
 /// <param name="SlotId">槽位标识。</param><param name="ElementIds">按绑定顺序排列的 Element 标识。</param>
 public sealed record SceneSlotBindingView(string SlotId, IReadOnlyList<Guid> ElementIds);
@@ -82,31 +70,31 @@ public abstract record SceneOperationIntent
     public sealed record UpdateElement(Guid Id, string Name, string Description, SemanticKey Type) : SceneOperationIntent;
 
     /// <summary>建议为内部 Element 添加 Scope。</summary>
-    public sealed record AddScope(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid OwnerElementId) : SceneOperationIntent;
+    public sealed record AddScope(Guid Id, int Quantity, SemanticKey Type, Guid OwnerElementId) : SceneOperationIntent;
 
     /// <summary>建议删除 Scope 及其中断言。</summary>
     public sealed record RemoveScope(Guid Id) : SceneOperationIntent;
 
     /// <summary>建议更新 Scope 的可变语义属性。</summary>
-    public sealed record UpdateScope(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : SceneOperationIntent;
+    public sealed record UpdateScope(Guid Id, int Quantity, SemanticKey Type) : SceneOperationIntent;
 
     /// <summary>建议添加 Aspect。</summary>
-    public sealed record AddAspect(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid ElementId, Guid ScopeId) : SceneOperationIntent;
+    public sealed record AddAspect(Guid Id, int Quantity, SemanticKey Type, Guid ElementId, Guid ScopeId) : SceneOperationIntent;
 
     /// <summary>建议删除 Aspect。</summary>
     public sealed record RemoveAspect(Guid Id) : SceneOperationIntent;
 
     /// <summary>建议更新 Aspect 的可变语义属性。</summary>
-    public sealed record UpdateAspect(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : SceneOperationIntent;
+    public sealed record UpdateAspect(Guid Id, int Quantity, SemanticKey Type) : SceneOperationIntent;
 
     /// <summary>建议添加端点和所属 Scope 均位于 Scene 局部边界内的 Relation。</summary>
-    public sealed record AddRelation(Guid Id, string Name, string Description, double Quantity, SemanticKey Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId) : SceneOperationIntent;
+    public sealed record AddRelation(Guid Id, int Quantity, SemanticKey Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId) : SceneOperationIntent;
 
     /// <summary>建议删除 Relation。</summary>
     public sealed record RemoveRelation(Guid Id) : SceneOperationIntent;
 
     /// <summary>建议更新 Relation 的可变语义属性。</summary>
-    public sealed record UpdateRelation(Guid Id, string Name, string Description, double Quantity, SemanticKey Type) : SceneOperationIntent;
+    public sealed record UpdateRelation(Guid Id, int Quantity, SemanticKey Type) : SceneOperationIntent;
 }
 
 /// <summary>表示 Module 对一个冻结 Scene 的完整局部结算提案。</summary>

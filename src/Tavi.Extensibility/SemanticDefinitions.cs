@@ -86,10 +86,10 @@ public sealed record AspectTypeDefinition
     public IReadOnlySet<SemanticKey> SubjectElementTypes { get; init; } = new HashSet<SemanticKey>();
 
     /// <summary>获取 Quantity 允许的最小值；不限制时为 null。</summary>
-    public double? MinimumQuantity { get; init; }
+    public int? MinimumQuantity { get; init; }
 
     /// <summary>获取 Quantity 允许的最大值；不限制时为 null。</summary>
-    public double? MaximumQuantity { get; init; }
+    public int? MaximumQuantity { get; init; }
 
     /// <summary>获取供其他声明引用的稳定分类标签。</summary>
     public IReadOnlySet<SemanticKey> Tags { get; init; } = new HashSet<SemanticKey>();
@@ -117,10 +117,10 @@ public sealed record RelationTypeDefinition
     public IReadOnlySet<SemanticKey> TargetElementTypes { get; init; } = new HashSet<SemanticKey>();
 
     /// <summary>获取 Quantity 允许的最小值；不限制时为 null。</summary>
-    public double? MinimumQuantity { get; init; }
+    public int? MinimumQuantity { get; init; }
 
     /// <summary>获取 Quantity 允许的最大值；不限制时为 null。</summary>
-    public double? MaximumQuantity { get; init; }
+    public int? MaximumQuantity { get; init; }
 
     /// <summary>获取供其他声明引用的稳定分类标签。</summary>
     public IReadOnlySet<SemanticKey> Tags { get; init; } = new HashSet<SemanticKey>();

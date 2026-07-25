@@ -279,9 +279,12 @@ function ProposalChange({ change, selected, world, proposedElements, proposedSco
     detail = <>Scope · {elementReferenceName(change.owner, world, proposedElements)} 持有 · {change.rationale}</>
   else if (change.kind === 'AddAspect')
     detail = <>{elementReferenceName(change.element, world, proposedElements)} · {scopeReferenceName(change.scope, world, proposedScopes)} · {change.rationale}</>
+  else if (change.kind === 'AddLocalAspect')
+    detail = <>LocalAspect · {elementReferenceName(change.element, world, proposedElements)} · {scopeReferenceName(change.scope, world, proposedScopes)} · {change.rationale}</>
   else
     detail = <>{elementReferenceName(change.source, world, proposedElements)} <ArrowRight size={10} /> {elementReferenceName(change.target, world, proposedElements)} · {scopeReferenceName(change.scope, world, proposedScopes)} · {change.rationale}</>
-  return <button className={`proposal-change ${change.kind.toLowerCase()}${selected ? ' selected' : ''}`} onClick={onToggle}><span className="proposal-check">{selected && <Check size={13} />}</span><span className="anchor-icon relation"><GitBranch size={14} /></span><span><strong>{change.name}</strong><small>{detail}</small></span></button>
+  const label = change.kind === 'AddScope' || change.kind === 'AddAspect' || change.kind === 'AddRelation' ? change.type : change.name
+  return <button className={`proposal-change ${change.kind.toLowerCase()}${selected ? ' selected' : ''}`} onClick={onToggle}><span className="proposal-check">{selected && <Check size={13} />}</span><span className="anchor-icon relation"><GitBranch size={14} /></span><span><strong>{label}</strong><small>{detail}</small></span></button>
 }
 
 function proposalDependencies(change: ProposalChangeViewModel): { kind: 'element' | 'scope'; id: string }[] {
@@ -289,7 +292,7 @@ function proposalDependencies(change: ProposalChangeViewModel): { kind: 'element
     return []
   if (change.kind === 'AddScope')
     return change.owner.kind === 'Proposed' ? [{ kind: 'element', id: change.owner.elementId }] : []
-  const elementReferences = change.kind === 'AddAspect' ? [change.element] : [change.source, change.target]
+  const elementReferences = change.kind === 'AddAspect' || change.kind === 'AddLocalAspect' ? [change.element] : [change.source, change.target]
   return [
     ...elementReferences.filter((reference): reference is ProposalElementReferenceViewModel & { kind: 'Proposed' } => reference.kind === 'Proposed').map(reference => ({ kind: 'element' as const, id: reference.elementId })),
     ...(change.scope.kind === 'Proposed' ? [{ kind: 'scope' as const, id: change.scope.scopeId }] : []),
@@ -301,7 +304,7 @@ function elementReferenceName(reference: ProposalElementReferenceViewModel, worl
 }
 
 function scopeReferenceName(reference: ProposalScopeReferenceViewModel, world: WorldGraphViewModel, proposedScopes: Map<string, Extract<ProposalChangeViewModel, { kind: 'AddScope' }>>) {
-  return reference.kind === 'Existing' ? world.scopes.find(scope => scope.id === reference.scopeId)?.name ?? '现有 Scope' : proposedScopes.get(reference.scopeId)?.name ?? '提议 Scope'
+  return reference.kind === 'Existing' ? world.scopes.find(scope => scope.id === reference.scopeId)?.type ?? '现有 Scope' : proposedScopes.get(reference.scopeId)?.type ?? '提议 Scope'
 }
 
 function stateLabel(state: GuidanceSnapshotViewModel['state']) {

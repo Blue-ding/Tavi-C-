@@ -13,8 +13,10 @@ namespace Tavi.Host.ViewModels;
 /// <param name="Aspects">全部一元断言。</param>
 /// <param name="Relations">全部有向二元断言。</param>
 /// <param name="Scopes">全部断言域。</param>
+/// <param name="LocalAspects">全部 World 本地一元语义。</param>
+/// <param name="LocalRelations">全部 World 本地关系语义。</param>
 /// <param name="StagedChanges">全部暂存日志项。</param>
-public sealed record WorldGraphViewModel(Guid StateId, long StagingRevision, bool IsDirty, bool CanUndo, bool CanRedo, string Health, IReadOnlyList<ElementViewModel> Elements, IReadOnlyList<AspectViewModel> Aspects, IReadOnlyList<RelationViewModel> Relations, IReadOnlyList<ScopeViewModel> Scopes, IReadOnlyList<WorldStagedChangeViewModel> StagedChanges);
+public sealed record WorldGraphViewModel(Guid StateId, long StagingRevision, bool IsDirty, bool CanUndo, bool CanRedo, string Health, IReadOnlyList<ElementViewModel> Elements, IReadOnlyList<AspectViewModel> Aspects, IReadOnlyList<RelationViewModel> Relations, IReadOnlyList<ScopeViewModel> Scopes, IReadOnlyList<LocalAspectViewModel> LocalAspects, IReadOnlyList<LocalRelationViewModel> LocalRelations, IReadOnlyList<WorldStagedChangeViewModel> StagedChanges);
 
 /// <summary>表示一项不可变的 World 暂存日志记录。</summary>
 /// <param name="Id">暂存项标识。</param>
@@ -72,33 +74,35 @@ public sealed record ElementViewModel(Guid Id, string Name, string Description, 
 
 /// <summary>表示唯一属于一个 Scope 的一元断言。</summary>
 /// <param name="Id">Aspect 标识。</param>
-/// <param name="Name">Aspect 名称。</param>
-/// <param name="Description">Aspect 说明。</param>
-/// <param name="Quantity">由对应 Module 解释的有限强度。</param>
+/// <param name="Quantity">由对应 Module 解释的整数数量。</param>
 /// <param name="Type">开放 AspectType 文本。</param>
 /// <param name="ElementId">目标 Element 标识。</param>
 /// <param name="ScopeId">唯一所属 Scope 标识。</param>
-public sealed record AspectViewModel(Guid Id, string Name, string Description, double Quantity, string Type, Guid ElementId, Guid ScopeId);
+public sealed record AspectViewModel(Guid Id, int Quantity, string Type, Guid ElementId, Guid ScopeId);
 
 /// <summary>表示唯一属于一个 Scope 的有向二元断言。</summary>
 /// <param name="Id">Relation 标识。</param>
-/// <param name="Name">Relation 名称。</param>
-/// <param name="Description">Relation 说明。</param>
-/// <param name="Quantity">由对应 Module 解释的有限强度。</param>
+/// <param name="Quantity">由对应 Module 解释的整数数量。</param>
 /// <param name="Type">开放 RelationType 文本。</param>
 /// <param name="SourceElementId">来源 Element 标识。</param>
 /// <param name="TargetElementId">目标 Element 标识。</param>
 /// <param name="ScopeId">唯一所属 Scope 标识。</param>
-public sealed record RelationViewModel(Guid Id, string Name, string Description, double Quantity, string Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId);
+public sealed record RelationViewModel(Guid Id, int Quantity, string Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId);
 
 /// <summary>表示由一个 Element 持有的独立断言域。</summary>
 /// <param name="Id">Scope 标识。</param>
-/// <param name="Name">Scope 名称。</param>
-/// <param name="Description">Scope 说明。</param>
-/// <param name="Quantity">由对应 Module 解释的有限强度。</param>
+/// <param name="Quantity">由对应 Module 解释的整数数量。</param>
 /// <param name="Type">开放 ScopeType 文本。</param>
 /// <param name="OwnerElementId">Owner Element 标识。</param>
-public sealed record ScopeViewModel(Guid Id, string Name, string Description, double Quantity, string Type, Guid OwnerElementId);
+public sealed record ScopeViewModel(Guid Id, int Quantity, string Type, Guid OwnerElementId);
+
+/// <summary>表示仅存在于 World 且不参与 Evolution 的本地一元语义。</summary>
+/// <param name="Id">LocalAspect 标识。</param><param name="Name">自由名称。</param><param name="Description">自由说明。</param><param name="Quantity">整数数量。</param><param name="ElementId">目标 Element 标识。</param><param name="ScopeId">所属 Scope 标识。</param>
+public sealed record LocalAspectViewModel(Guid Id, string Name, string Description, int Quantity, Guid ElementId, Guid ScopeId);
+
+/// <summary>表示仅存在于 World 且不参与 Evolution 的本地关系语义。</summary>
+/// <param name="Id">LocalRelation 标识。</param><param name="Name">自由名称。</param><param name="Description">自由说明。</param><param name="Quantity">整数数量。</param><param name="SourceElementId">来源 Element 标识。</param><param name="TargetElementId">目标 Element 标识。</param><param name="ScopeId">所属 Scope 标识。</param>
+public sealed record LocalRelationViewModel(Guid Id, string Name, string Description, int Quantity, Guid SourceElementId, Guid TargetElementId, Guid ScopeId);
 
 /// <summary>表示一次世界提交的展示层结果。</summary>
 /// <param name="CommitId">提交标识；未产生修改时为空标识。</param>
@@ -133,57 +137,61 @@ public sealed record UpdateElementRequest(Guid ExpectedStateId, string? Name, st
 
 /// <summary>表示添加 Scope 的请求。</summary>
 /// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param>
-/// <param name="Name">Scope 名称。</param>
-/// <param name="Description">Scope 说明。</param>
-/// <param name="Quantity">由对应 Module 解释的有限强度。</param>
+/// <param name="Quantity">由对应 Module 解释的整数数量。</param>
 /// <param name="Type">开放 ScopeType 文本。</param>
 /// <param name="OwnerElementId">Owner Element 标识。</param>
-public sealed record AddScopeRequest(Guid ExpectedStateId, string Name, string Description, double Quantity, string Type, Guid OwnerElementId);
+public sealed record AddScopeRequest(Guid ExpectedStateId, int Quantity, string Type, Guid OwnerElementId);
 
 /// <summary>表示更新 Scope 非结构字段的请求；null 属性保持不变。</summary>
 /// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param>
-/// <param name="Name">可选的新名称。</param>
-/// <param name="Description">可选的新说明。</param>
-/// <param name="Quantity">可选的新有限强度。</param>
+/// <param name="Quantity">可选的新整数数量。</param>
 /// <param name="Type">可选的新开放类型文本。</param>
-public sealed record UpdateScopeRequest(Guid ExpectedStateId, string? Name, string? Description, double? Quantity, string? Type);
+public sealed record UpdateScopeRequest(Guid ExpectedStateId, int? Quantity, string? Type);
 
 /// <summary>表示添加 Aspect 的请求。</summary>
 /// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param>
-/// <param name="Name">Aspect 名称。</param>
-/// <param name="Description">Aspect 说明。</param>
-/// <param name="Quantity">由对应 Module 解释的有限强度。</param>
+/// <param name="Quantity">由对应 Module 解释的整数数量。</param>
 /// <param name="Type">开放 AspectType 文本。</param>
 /// <param name="ElementId">目标 Element 标识。</param>
 /// <param name="ScopeId">唯一所属 Scope 标识。</param>
-public sealed record AddAspectRequest(Guid ExpectedStateId, string Name, string Description, double Quantity, string Type, Guid ElementId, Guid ScopeId);
+public sealed record AddAspectRequest(Guid ExpectedStateId, int Quantity, string Type, Guid ElementId, Guid ScopeId);
 
 /// <summary>表示更新 Aspect 非结构字段的请求；null 属性保持不变。</summary>
 /// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param>
-/// <param name="Name">可选的新名称。</param>
-/// <param name="Description">可选的新说明。</param>
-/// <param name="Quantity">可选的新有限强度。</param>
+/// <param name="Quantity">可选的新整数数量。</param>
 /// <param name="Type">可选的新开放类型文本。</param>
-public sealed record UpdateAspectRequest(Guid ExpectedStateId, string? Name, string? Description, double? Quantity, string? Type);
+public sealed record UpdateAspectRequest(Guid ExpectedStateId, int? Quantity, string? Type);
 
 /// <summary>表示添加 Relation 的请求。</summary>
 /// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param>
-/// <param name="Name">Relation 名称。</param>
-/// <param name="Description">Relation 说明。</param>
-/// <param name="Quantity">由对应 Module 解释的有限强度。</param>
+/// <param name="Quantity">由对应 Module 解释的整数数量。</param>
 /// <param name="Type">开放 RelationType 文本。</param>
 /// <param name="SourceElementId">来源 Element 标识。</param>
 /// <param name="TargetElementId">目标 Element 标识。</param>
 /// <param name="ScopeId">唯一所属 Scope 标识。</param>
-public sealed record AddRelationRequest(Guid ExpectedStateId, string Name, string Description, double Quantity, string Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId);
+public sealed record AddRelationRequest(Guid ExpectedStateId, int Quantity, string Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId);
 
 /// <summary>表示更新 Relation 非结构字段的请求；null 属性保持不变。</summary>
 /// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param>
-/// <param name="Name">可选的新名称。</param>
-/// <param name="Description">可选的新说明。</param>
-/// <param name="Quantity">可选的新有限强度。</param>
+/// <param name="Quantity">可选的新整数数量。</param>
 /// <param name="Type">可选的新开放类型文本。</param>
-public sealed record UpdateRelationRequest(Guid ExpectedStateId, string? Name, string? Description, double? Quantity, string? Type);
+public sealed record UpdateRelationRequest(Guid ExpectedStateId, int? Quantity, string? Type);
+
+/// <summary>表示添加 LocalAspect 的请求。</summary>
+/// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param><param name="Name">自由名称。</param><param name="Description">自由说明。</param><param name="Quantity">整数数量。</param><param name="ElementId">目标 Element 标识。</param><param name="ScopeId">所属 Scope 标识。</param>
+public sealed record AddLocalAspectRequest(Guid ExpectedStateId, string Name, string Description, int Quantity, Guid ElementId, Guid ScopeId);
+
+/// <summary>表示更新 LocalAspect 文本与数量的请求；null 属性保持不变。</summary>
+/// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param><param name="Name">可选的新名称。</param><param name="Description">可选的新说明。</param><param name="Quantity">可选的新整数数量。</param>
+public sealed record UpdateLocalAspectRequest(Guid ExpectedStateId, string? Name, string? Description, int? Quantity);
+
+/// <summary>表示添加 LocalRelation 的请求。</summary>
+/// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param><param name="Name">自由名称。</param><param name="Description">自由说明。</param><param name="Quantity">整数数量。</param><param name="SourceElementId">来源 Element 标识。</param><param name="TargetElementId">目标 Element 标识。</param><param name="ScopeId">所属 Scope 标识。</param>
+public sealed record AddLocalRelationRequest(Guid ExpectedStateId, string Name, string Description, int Quantity, Guid SourceElementId, Guid TargetElementId, Guid ScopeId);
+
+/// <summary>表示更新 LocalRelation 文本与数量的请求；null 属性保持不变。</summary>
+/// <param name="ExpectedStateId">调用方观察到的真实 World 状态标识。</param><param name="Name">可选的新名称。</param><param name="Description">可选的新说明。</param><param name="Quantity">可选的新整数数量。</param>
+public sealed record UpdateLocalRelationRequest(Guid ExpectedStateId, string? Name, string? Description, int? Quantity);
 
 /// <summary>表示依赖当前 World 状态的操作请求。</summary>
 /// <param name="ExpectedStateId">调用方观察到的 World 状态标识。</param>

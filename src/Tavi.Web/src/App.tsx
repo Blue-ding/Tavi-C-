@@ -9,7 +9,7 @@ import type { AspectViewModel, ElementViewModel, FeaturePolicy, LanguageModelSet
 type ScopeFilter = 'all' | string
 type Dialog = 'element' | 'scope' | 'aspect' | 'relation' | null
 
-const emptyWorld: WorldGraphViewModel = { stateId: '', stagingRevision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', elements: [], aspects: [], relations: [], scopes: [], stagedChanges: [] }
+const emptyWorld: WorldGraphViewModel = { stateId: '', stagingRevision: 0, isDirty: false, canUndo: false, canRedo: false, health: 'Healthy', elements: [], aspects: [], relations: [], scopes: [], localAspects: [], localRelations: [], stagedChanges: [] }
 const emptyTypeLibrary: WorldTypeLibraryViewModel = { elementTypes: [], scopeTypes: [], aspectTypes: [], relationTypes: [] }
 
 interface RelationshipBundleData extends Record<string, unknown> {
@@ -112,7 +112,7 @@ function RelationshipBundle({ id, sourceX, sourceY, targetX, targetY, markerStar
                   setHovered(false)
                 }}
               >
-                <span><strong>{relation.name}</strong><small>{data?.nodeNames[relation.sourceElementId] ?? '未知节点'} → {data?.nodeNames[relation.targetElementId] ?? '未知节点'}</small></span>
+                <span><strong>{relation.type}</strong><small>{data?.nodeNames[relation.sourceElementId] ?? '未知节点'} → {data?.nodeNames[relation.targetElementId] ?? '未知节点'}</small></span>
                 <i>{relation.type}</i>
               </button>
             ))}
@@ -417,7 +417,7 @@ function App() {
             <GitBranch size={15} />
             <select value={scope} onChange={event => setScope(event.target.value)}>
               <option value="all">全部 Scope</option>
-              {world.scopes.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.type}</option>)}
+              {world.scopes.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.type}</option>)}
             </select>
             <ChevronDown size={14} />
           </label>
@@ -457,9 +457,9 @@ function App() {
                 <span><strong>{element.name}</strong><small>Element · {element.type}</small></span>
               </button>
             ))}
-            {world.scopes.map(candidate => <button key={candidate.id} className={selection?.kind === 'scope' && selection.id === candidate.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'scope', id: candidate.id }); setShowInspector(true) }}><span className="anchor-icon relation"><Layers3 size={15} /></span><span><strong>{candidate.name}</strong><small>Scope · {candidate.type}</small></span></button>)}
-            {world.aspects.map(aspect => <button key={aspect.id} className={selection?.kind === 'aspect' && selection.id === aspect.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'aspect', id: aspect.id }); setShowInspector(true) }}><span className="anchor-icon item"><Sparkles size={15} /></span><span><strong>{aspect.name}</strong><small>Aspect · {aspect.type}</small></span></button>)}
-            {world.relations.map(relation => <button key={relation.id} className={selection?.kind === 'relation' && selection.id === relation.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'relation', id: relation.id }); setShowInspector(true) }}><span className="anchor-icon relation"><GitBranch size={15} /></span><span><strong>{relation.name}</strong><small>Relation · {relation.type}</small></span></button>)}
+            {world.scopes.map(candidate => <button key={candidate.id} className={selection?.kind === 'scope' && selection.id === candidate.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'scope', id: candidate.id }); setShowInspector(true) }}><span className="anchor-icon relation"><Layers3 size={15} /></span><span><strong>{candidate.type}</strong><small>Scope · Quantity {candidate.quantity}</small></span></button>)}
+            {world.aspects.map(aspect => <button key={aspect.id} className={selection?.kind === 'aspect' && selection.id === aspect.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'aspect', id: aspect.id }); setShowInspector(true) }}><span className="anchor-icon item"><Sparkles size={15} /></span><span><strong>{aspect.type}</strong><small>Aspect · Quantity {aspect.quantity}</small></span></button>)}
+            {world.relations.map(relation => <button key={relation.id} className={selection?.kind === 'relation' && selection.id === relation.id ? 'active' : ''} onClick={() => { setSelection({ kind: 'relation', id: relation.id }); setShowInspector(true) }}><span className="anchor-icon relation"><GitBranch size={15} /></span><span><strong>{relation.type}</strong><small>Relation · Quantity {relation.quantity}</small></span></button>)}
             {!world.elements.length && <div className="empty-list">世界尚无 Element。<br />从一次添加开始。</div>}
           </div>
         </aside>
@@ -688,76 +688,64 @@ function ElementInspector({ element, types, world, working, perform, onRemoved }
 }
 
 function ScopeInspector({ scope, types, world, working, perform, onRemoved }: { scope: ScopeViewModel; types: WorldTypeDefinitionViewModel[]; world: WorldGraphViewModel; working: boolean; perform: (operation: () => Promise<unknown>) => Promise<boolean>; onRemoved: () => void }) {
-  const [name, setName] = useState(scope.name)
-  const [description, setDescription] = useState(scope.description)
   const [quantity, setQuantity] = useState(scope.quantity)
   const [type, setType] = useState(scope.type)
-  useEffect(() => { setName(scope.name); setDescription(scope.description); setQuantity(scope.quantity); setType(scope.type) }, [scope])
-  const changed = name !== scope.name || description !== scope.description || quantity !== scope.quantity || type !== scope.type
+  useEffect(() => { setQuantity(scope.quantity); setType(scope.type) }, [scope])
+  const changed = quantity !== scope.quantity || type !== scope.type
   async function save(event: FormEvent) {
     event.preventDefault()
-    const changes: { name?: string; description?: string; quantity?: number; type?: string } = {}
-    if (name !== scope.name) changes.name = name
-    if (description !== scope.description) changes.description = description
+    const changes: { quantity?: number; type?: string } = {}
     if (quantity !== scope.quantity) changes.quantity = quantity
     if (type !== scope.type) changes.type = type
     await perform(() => worldApi.updateScope(scope.id, world.stateId, changes))
   }
   async function remove() {
     const impact = world.aspects.filter(aspect => aspect.scopeId === scope.id).length + world.relations.filter(relation => relation.scopeId === scope.id).length
-    if (!window.confirm(`确定删除 Scope“${scope.name}”及其中 ${impact} 项断言吗？`))
+    if (!window.confirm(`确定删除 Scope“${scope.type}”及其中 ${impact} 项断言吗？`))
       return
     if (await perform(() => worldApi.removeScope(scope.id, world.stateId)))
       onRemoved()
   }
-  return <form className="property-form" onSubmit={save}><div className="entity-chip relation"><Layers3 size={15} />Scope</div><label>名称<input required value={name} onChange={event => setName(event.target.value)} /></label><label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} /></label><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="ScopeType" value={type} types={types} onChange={setType} /><p className="field-hint">Owner：{world.elements.find(element => element.id === scope.ownerElementId)?.name ?? scope.ownerElementId}。Owner 是结构字段，需要更改时请删除后重建。</p><div className="form-spacer" /><button className="primary-action" disabled={!changed || working || !Number.isFinite(quantity)}><Check size={16} />应用修改</button><button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除 Scope</button><small className="entity-id">ID · {scope.id}</small></form>
+  return <form className="property-form" onSubmit={save}><div className="entity-chip relation"><Layers3 size={15} />Scope</div><label>Quantity<input required type="number" step="1" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="ScopeType" value={type} types={types} onChange={setType} /><p className="field-hint">Owner：{world.elements.find(element => element.id === scope.ownerElementId)?.name ?? scope.ownerElementId}。Owner 是结构字段，需要更改时请删除后重建。</p><div className="form-spacer" /><button className="primary-action" disabled={!changed || working || !Number.isInteger(quantity)}><Check size={16} />应用修改</button><button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除 Scope</button><small className="entity-id">ID · {scope.id}</small></form>
 }
 
 function AspectInspector({ aspect, types, world, working, perform, onRemoved }: { aspect: AspectViewModel; types: WorldTypeDefinitionViewModel[]; world: WorldGraphViewModel; working: boolean; perform: (operation: () => Promise<unknown>) => Promise<boolean>; onRemoved: () => void }) {
-  const [name, setName] = useState(aspect.name)
-  const [description, setDescription] = useState(aspect.description)
   const [quantity, setQuantity] = useState(aspect.quantity)
   const [type, setType] = useState(aspect.type)
-  useEffect(() => { setName(aspect.name); setDescription(aspect.description); setQuantity(aspect.quantity); setType(aspect.type) }, [aspect])
-  const changed = name !== aspect.name || description !== aspect.description || quantity !== aspect.quantity || type !== aspect.type
+  useEffect(() => { setQuantity(aspect.quantity); setType(aspect.type) }, [aspect])
+  const changed = quantity !== aspect.quantity || type !== aspect.type
   async function save(event: FormEvent) {
     event.preventDefault()
-    const changes: { name?: string; description?: string; quantity?: number; type?: string } = {}
-    if (name !== aspect.name) changes.name = name
-    if (description !== aspect.description) changes.description = description
+    const changes: { quantity?: number; type?: string } = {}
     if (quantity !== aspect.quantity) changes.quantity = quantity
     if (type !== aspect.type) changes.type = type
     await perform(() => worldApi.updateAspect(aspect.id, world.stateId, changes))
   }
   async function remove() {
-    if (window.confirm(`确定删除 Aspect“${aspect.name}”吗？`) && await perform(() => worldApi.removeAspect(aspect.id, world.stateId)))
+    if (window.confirm(`确定删除 Aspect“${aspect.type}”吗？`) && await perform(() => worldApi.removeAspect(aspect.id, world.stateId)))
       onRemoved()
   }
-  return <form className="property-form" onSubmit={save}><div className="entity-chip item"><Sparkles size={15} />Aspect</div><label>名称<input required value={name} onChange={event => setName(event.target.value)} /></label><label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} /></label><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="AspectType" value={type} types={types} onChange={setType} /><p className="field-hint">Element：{world.elements.find(element => element.id === aspect.elementId)?.name ?? aspect.elementId}<br />Scope：{world.scopes.find(scope => scope.id === aspect.scopeId)?.name ?? aspect.scopeId}<br />引用是结构字段，需要更改时请删除后重建。</p><div className="form-spacer" /><button className="primary-action" disabled={!changed || working || !Number.isFinite(quantity)}><Check size={16} />应用修改</button><button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除 Aspect</button><small className="entity-id">ID · {aspect.id}</small></form>
+  return <form className="property-form" onSubmit={save}><div className="entity-chip item"><Sparkles size={15} />Aspect</div><label>Quantity<input required type="number" step="1" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="AspectType" value={type} types={types} onChange={setType} /><p className="field-hint">Element：{world.elements.find(element => element.id === aspect.elementId)?.name ?? aspect.elementId}<br />Scope：{world.scopes.find(scope => scope.id === aspect.scopeId)?.type ?? aspect.scopeId}<br />引用是结构字段，需要更改时请删除后重建。</p><div className="form-spacer" /><button className="primary-action" disabled={!changed || working || !Number.isInteger(quantity)}><Check size={16} />应用修改</button><button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除 Aspect</button><small className="entity-id">ID · {aspect.id}</small></form>
 }
 
 function RelationInspector({ relation, types, world, working, perform, onRemoved }: { relation: RelationViewModel; types: WorldTypeDefinitionViewModel[]; world: WorldGraphViewModel; working: boolean; perform: (operation: () => Promise<unknown>) => Promise<boolean>; onRemoved: () => void }) {
-  const [name, setName] = useState(relation.name)
-  const [description, setDescription] = useState(relation.description)
   const [quantity, setQuantity] = useState(relation.quantity)
   const [type, setType] = useState(relation.type)
-  useEffect(() => { setName(relation.name); setDescription(relation.description); setQuantity(relation.quantity); setType(relation.type) }, [relation])
+  useEffect(() => { setQuantity(relation.quantity); setType(relation.type) }, [relation])
   const source = world.elements.find(element => element.id === relation.sourceElementId)
   const target = world.elements.find(element => element.id === relation.targetElementId)
   const relationScope = world.scopes.find(scope => scope.id === relation.scopeId)
 
   async function save(event: FormEvent) {
     event.preventDefault()
-    const changes: { name?: string; description?: string; quantity?: number; type?: string } = {}
-    if (name !== relation.name) changes.name = name
-    if (description !== relation.description) changes.description = description
+    const changes: { quantity?: number; type?: string } = {}
     if (quantity !== relation.quantity) changes.quantity = quantity
     if (type !== relation.type) changes.type = type
     await perform(() => worldApi.updateRelation(relation.id, world.stateId, changes))
   }
 
   async function remove() {
-    if (!window.confirm(`确定删除关系“${relation.name}”吗？此操作可通过撤销恢复。`))
+    if (!window.confirm(`确定删除关系“${relation.type}”吗？此操作可通过撤销恢复。`))
       return
     if (await perform(() => worldApi.removeRelation(relation.id, world.stateId)))
       onRemoved()
@@ -766,14 +754,12 @@ function RelationInspector({ relation, types, world, working, perform, onRemoved
   return (
     <form className="property-form" onSubmit={save}>
       <div className="entity-chip relation"><GitBranch size={15} />Relation</div>
-      <label>名称<input required value={name} onChange={event => setName(event.target.value)} /></label>
-      <label>描述<textarea rows={5} value={description} onChange={event => setDescription(event.target.value)} /></label>
-      <label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label>
+      <label>Quantity<input required type="number" step="1" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label>
       <TypeField label="RelationType" value={type} types={types} onChange={setType} />
       <div className="relation-route"><span>{source?.name ?? '未知'}</span><GitBranch size={15} /><span>{target?.name ?? '未知'}</span></div>
-      <p className="field-hint">Scope：{relationScope?.name ?? relation.scopeId}。端点和 Scope 属于结构信息，需要更改时请删除后重建。</p>
+      <p className="field-hint">Scope：{relationScope?.type ?? relation.scopeId}。端点和 Scope 属于结构信息，需要更改时请删除后重建。</p>
       <div className="form-spacer" />
-      <button className="primary-action" disabled={(name === relation.name && description === relation.description && quantity === relation.quantity && type === relation.type) || working || !Number.isFinite(quantity)}><Check size={16} />应用修改</button>
+      <button className="primary-action" disabled={(quantity === relation.quantity && type === relation.type) || working || !Number.isInteger(quantity)}><Check size={16} />应用修改</button>
       <button className="danger-action" type="button" disabled={working} onClick={() => void remove()}><Trash2 size={16} />删除关系</button>
       <small className="entity-id">ID · {relation.id}</small>
     </form>
@@ -793,48 +779,42 @@ function ElementDialog({ stateId, types, working, close, submit }: { stateId: st
 }
 
 function ScopeDialog({ world, types, working, close, submit }: { world: WorldGraphViewModel; types: WorldTypeDefinitionViewModel[]; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
   const [quantity, setQuantity] = useState(1)
-  const [type, setType] = useState('core:none')
+  const [type, setType] = useState(types[0]?.key ?? '')
   const [ownerElementId, setOwnerElementId] = useState(world.elements[0]?.id ?? '')
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (await submit(() => worldApi.addScope(world.stateId, name, description, quantity, type, ownerElementId)))
+    if (await submit(() => worldApi.addScope(world.stateId, quantity, type, ownerElementId)))
       close()
   }
-  return <Modal title="添加 Scope" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} /></label><label>Owner Element<select required value={ownerElementId} onChange={event => setOwnerElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="ScopeType" value={type} types={types} onChange={setType} /><label>描述<textarea rows={4} value={description} onChange={event => setDescription(event.target.value)} /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !ownerElementId || !Number.isFinite(quantity)}><Layers3 size={16} />添加 Scope</button></div></form></Modal>
+  return <Modal title="添加 Scope" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>Owner Element<select autoFocus required value={ownerElementId} onChange={event => setOwnerElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><label>Quantity<input required type="number" step="1" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="ScopeType" value={type} types={types} onChange={setType} /><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !ownerElementId || !type || !Number.isInteger(quantity)}><Layers3 size={16} />添加 Scope</button></div></form></Modal>
 }
 
 function AspectDialog({ world, types, working, close, submit }: { world: WorldGraphViewModel; types: WorldTypeDefinitionViewModel[]; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
   const [quantity, setQuantity] = useState(1)
-  const [type, setType] = useState('core:none')
+  const [type, setType] = useState(types[0]?.key ?? '')
   const [elementId, setElementId] = useState(world.elements[0]?.id ?? '')
   const [scopeId, setScopeId] = useState(world.scopes[0]?.id ?? '')
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (await submit(() => worldApi.addAspect(world.stateId, name, description, quantity, type, elementId, scopeId)))
+    if (await submit(() => worldApi.addAspect(world.stateId, quantity, type, elementId, scopeId)))
       close()
   }
-  return <Modal title="添加 Aspect" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} /></label><div className="form-columns"><label>Element<select required value={elementId} onChange={event => setElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><label>Scope<select required value={scopeId} onChange={event => setScopeId(event.target.value)}>{world.scopes.map(scope => <option key={scope.id} value={scope.id}>{scope.name}</option>)}</select></label></div><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="AspectType" value={type} types={types} onChange={setType} /><label>描述<textarea rows={4} value={description} onChange={event => setDescription(event.target.value)} /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !elementId || !scopeId || !Number.isFinite(quantity)}><Sparkles size={16} />添加 Aspect</button></div></form></Modal>
+  return <Modal title="添加 Aspect" close={close}><form className="modal-form" onSubmit={handleSubmit}><div className="form-columns"><label>Element<select autoFocus required value={elementId} onChange={event => setElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><label>Scope<select required value={scopeId} onChange={event => setScopeId(event.target.value)}>{world.scopes.map(scope => <option key={scope.id} value={scope.id}>{scope.type}</option>)}</select></label></div><label>Quantity<input required type="number" step="1" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="AspectType" value={type} types={types} onChange={setType} /><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !elementId || !scopeId || !type || !Number.isInteger(quantity)}><Sparkles size={16} />添加 Aspect</button></div></form></Modal>
 }
 
 function RelationDialog({ world, types, working, close, submit }: { world: WorldGraphViewModel; types: WorldTypeDefinitionViewModel[]; working: boolean; close: () => void; submit: (operation: () => Promise<unknown>) => Promise<boolean> }) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
   const [quantity, setQuantity] = useState(1)
-  const [type, setType] = useState('core:none')
+  const [type, setType] = useState(types[0]?.key ?? '')
   const [sourceElementId, setSourceElementId] = useState(world.elements[0]?.id ?? '')
   const [targetElementId, setTargetElementId] = useState(world.elements[1]?.id ?? world.elements[0]?.id ?? '')
   const [scopeId, setScopeId] = useState(world.scopes[0]?.id ?? '')
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (await submit(() => worldApi.addRelation(world.stateId, name, description, quantity, type, sourceElementId, targetElementId, scopeId)))
+    if (await submit(() => worldApi.addRelation(world.stateId, quantity, type, sourceElementId, targetElementId, scopeId)))
       close()
   }
-  return <Modal title="添加 Relation" close={close}><form className="modal-form" onSubmit={handleSubmit}><label>名称<input autoFocus required value={name} onChange={event => setName(event.target.value)} /></label><div className="form-columns"><label>Source Element<select value={sourceElementId} onChange={event => setSourceElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><label>Target Element<select value={targetElementId} onChange={event => setTargetElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label></div><label>Scope<select value={scopeId} onChange={event => setScopeId(event.target.value)}>{world.scopes.map(scope => <option key={scope.id} value={scope.id}>{scope.name}</option>)}</select></label><label>Quantity<input required type="number" step="any" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="RelationType" value={type} types={types} onChange={setType} /><label>描述<textarea rows={4} value={description} onChange={event => setDescription(event.target.value)} /></label><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !sourceElementId || !targetElementId || !scopeId || !Number.isFinite(quantity)}><GitBranch size={16} />添加 Relation</button></div></form></Modal>
+  return <Modal title="添加 Relation" close={close}><form className="modal-form" onSubmit={handleSubmit}><div className="form-columns"><label>Source Element<select autoFocus value={sourceElementId} onChange={event => setSourceElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label><label>Target Element<select value={targetElementId} onChange={event => setTargetElementId(event.target.value)}>{world.elements.map(element => <option key={element.id} value={element.id}>{element.name}</option>)}</select></label></div><label>Scope<select value={scopeId} onChange={event => setScopeId(event.target.value)}>{world.scopes.map(scope => <option key={scope.id} value={scope.id}>{scope.type}</option>)}</select></label><label>Quantity<input required type="number" step="1" value={quantity} onChange={event => setQuantity(event.currentTarget.valueAsNumber)} /></label><TypeField label="RelationType" value={type} types={types} onChange={setType} /><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary-action" disabled={working || !sourceElementId || !targetElementId || !scopeId || !type || !Number.isInteger(quantity)}><GitBranch size={16} />添加 Relation</button></div></form></Modal>
 }
 
 function TypeField({ label, value, types, onChange }: { label: string; value: string; types: WorldTypeDefinitionViewModel[]; onChange: (value: string) => void }) {

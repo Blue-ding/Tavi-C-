@@ -7,8 +7,6 @@ export interface ElementViewModel {
 
 export interface AspectViewModel {
   id: string
-  name: string
-  description: string
   quantity: number
   type: string
   elementId: string
@@ -17,8 +15,6 @@ export interface AspectViewModel {
 
 export interface RelationViewModel {
   id: string
-  name: string
-  description: string
   quantity: number
   type: string
   sourceElementId: string
@@ -28,11 +24,28 @@ export interface RelationViewModel {
 
 export interface ScopeViewModel {
   id: string
-  name: string
-  description: string
   quantity: number
   type: string
   ownerElementId: string
+}
+
+export interface LocalAspectViewModel {
+  id: string
+  name: string
+  description: string
+  quantity: number
+  elementId: string
+  scopeId: string
+}
+
+export interface LocalRelationViewModel {
+  id: string
+  name: string
+  description: string
+  quantity: number
+  sourceElementId: string
+  targetElementId: string
+  scopeId: string
 }
 
 export interface WorldGraphViewModel {
@@ -46,6 +59,8 @@ export interface WorldGraphViewModel {
   aspects: AspectViewModel[]
   relations: RelationViewModel[]
   scopes: ScopeViewModel[]
+  localAspects: LocalAspectViewModel[]
+  localRelations: LocalRelationViewModel[]
   stagedChanges: WorldStagedChangeViewModel[]
 }
 
@@ -163,8 +178,6 @@ export interface ProposeAddScopeViewModel {
   id: string
   rationale: string
   scopeId: string
-  name: string
-  description: string
   quantity: number
   type: string
   owner: ProposalElementReferenceViewModel
@@ -174,8 +187,6 @@ export interface ProposeAddAspectViewModel {
   kind: 'AddAspect'
   id: string
   rationale: string
-  name: string
-  description: string
   quantity: number
   type: string
   element: ProposalElementReferenceViewModel
@@ -186,8 +197,6 @@ export interface ProposeAddRelationViewModel {
   kind: 'AddRelation'
   id: string
   rationale: string
-  name: string
-  description: string
   quantity: number
   type: string
   source: ProposalElementReferenceViewModel
@@ -195,7 +204,30 @@ export interface ProposeAddRelationViewModel {
   scope: ProposalScopeReferenceViewModel
 }
 
-export type ProposalChangeViewModel = ProposeAddElementViewModel | ProposeAddScopeViewModel | ProposeAddAspectViewModel | ProposeAddRelationViewModel
+export interface ProposeAddLocalAspectViewModel {
+  kind: 'AddLocalAspect'
+  id: string
+  rationale: string
+  name: string
+  description: string
+  quantity: number
+  element: ProposalElementReferenceViewModel
+  scope: ProposalScopeReferenceViewModel
+}
+
+export interface ProposeAddLocalRelationViewModel {
+  kind: 'AddLocalRelation'
+  id: string
+  rationale: string
+  name: string
+  description: string
+  quantity: number
+  source: ProposalElementReferenceViewModel
+  target: ProposalElementReferenceViewModel
+  scope: ProposalScopeReferenceViewModel
+}
+
+export type ProposalChangeViewModel = ProposeAddElementViewModel | ProposeAddScopeViewModel | ProposeAddAspectViewModel | ProposeAddRelationViewModel | ProposeAddLocalAspectViewModel | ProposeAddLocalRelationViewModel
 
 export interface WorldProposalViewModel {
   id: string
@@ -336,6 +368,8 @@ export interface ScenarioWorkspaceViewModel {
   aspects: AspectViewModel[]
   relations: RelationViewModel[]
   scopes: ScopeViewModel[]
+  localAspects: LocalAspectViewModel[]
+  localRelations: LocalRelationViewModel[]
   definitions: SceneDefinitionViewModel[]
   scenes: SceneViewModel[]
 }

@@ -22,8 +22,8 @@ public sealed class MagicPlugin : ITaviPlugin, IGuidanceExtension, IWorldAuthori
     private static readonly SemanticKey SpellDefinitionType = new("magic:spell-definition");
     private static readonly SemanticKey ManaType = new("magic:mana.current");
     private static readonly SemanticKey ManaCostType = new("magic:casting-cost.mana");
-    private const string CreateSpellSchema = """{"type":"object","additionalProperties":false,"required":["name","manaCost"],"properties":{"name":{"type":"string","minLength":1},"description":{"type":"string"},"manaCost":{"type":"number","minimum":0}}}""";
-    private const string AwakenCharacterSchema = """{"type":"object","additionalProperties":false,"required":["characterId","initialMana"],"properties":{"characterId":{"type":"string","format":"uuid"},"initialMana":{"type":"number","minimum":0}}}""";
+    private const string CreateSpellSchema = """{"type":"object","additionalProperties":false,"required":["name","manaCost"],"properties":{"name":{"type":"string","minLength":1},"description":{"type":"string"},"manaCost":{"type":"integer","minimum":0}}}""";
+    private const string AwakenCharacterSchema = """{"type":"object","additionalProperties":false,"required":["characterId","initialMana"],"properties":{"characterId":{"type":"string","format":"uuid"},"initialMana":{"type":"integer","minimum":0}}}""";
 
     /// <inheritdoc />
     public ModuleId Module => MagicModule;
@@ -88,10 +88,10 @@ public sealed class MagicPlugin : ITaviPlugin, IGuidanceExtension, IWorldAuthori
         AspectView mana = RequireSingleAspect(context.Context, casterId, ManaType);
         AspectView cost = RequireSingleAspect(context.Context, spellId, ManaCostType);
         double multiplier = ReadMultiplier(context.Parameters);
-        double consumed = cost.Quantity * multiplier;
+        int consumed = RequireInteger(cost.Quantity * multiplier, "mana-cost-multiplier");
         if (mana.Quantity < consumed)
             throw new ModuleArgumentException("TAVI.MAGIC.INSUFFICIENT_MANA", $"施法者当前法力 {mana.Quantity.ToString("R", CultureInfo.InvariantCulture)}，无法支付 {consumed.ToString("R", CultureInfo.InvariantCulture)} 点法力。", "caster");
-        var operation = new SceneOperationIntent.UpdateAspect(mana.Id, mana.Name, mana.Description, mana.Quantity - consumed, mana.Type);
+        var operation = new SceneOperationIntent.UpdateAspect(mana.Id, mana.Quantity - consumed, mana.Type);
         return ValueTask.FromResult(new SceneSettlementProposal { ExpectedScenarioStateId = context.Context.ScenarioStateId, Operations = [operation], Rationale = $"施放 {context.Context.Elements.Single(element => element.Id == spellId).Name}，消耗 {consumed.ToString("R", CultureInfo.InvariantCulture)} 点法力。" });
     }
 
@@ -100,7 +100,7 @@ public sealed class MagicPlugin : ITaviPlugin, IGuidanceExtension, IWorldAuthori
         using JsonDocument document = ParseArguments(request.Arguments);
         string name = RequiredString(document.RootElement, "name");
         string description = OptionalString(document.RootElement, "description");
-        double manaCost = RequiredNumber(document.RootElement, "manaCost");
+        int manaCost = RequiredInteger(document.RootElement, "manaCost");
         if (manaCost < 0)
             throw new ModuleArgumentException("TAVI.MAGIC.MANA_COST_INVALID", "法术的 manaCost 必须大于或等于零。", "manaCost");
         Guid spellId = Guid.NewGuid();
@@ -109,8 +109,8 @@ public sealed class MagicPlugin : ITaviPlugin, IGuidanceExtension, IWorldAuthori
         WorldAuthoringIntent[] intents =
         [
             new WorldAuthoringIntent.AddElement(spellId, name, description, SpellType),
-            new WorldAuthoringIntent.AddScope(scopeId, $"{name} · 法术定义", "保存法术的稳定施放数据。", 1, SpellDefinitionType, spellId),
-            new WorldAuthoringIntent.AddAspect(costId, "基础法力消耗", "", manaCost, ManaCostType, spellId, scopeId)
+            new WorldAuthoringIntent.AddScope(scopeId, 1, SpellDefinitionType, spellId),
+            new WorldAuthoringIntent.AddAspect(costId, manaCost, ManaCostType, spellId, scopeId)
         ];
         return new WorldAuthoringProposal { ExpectedWorldStateId = request.World.StateId, Intents = intents, Rationale = $"创建法术“{name}”，基础法力消耗为 {manaCost.ToString("R", CultureInfo.InvariantCulture)}。" };
     }
@@ -119,7 +119,7 @@ public sealed class MagicPlugin : ITaviPlugin, IGuidanceExtension, IWorldAuthori
     {
         using JsonDocument document = ParseArguments(request.Arguments);
         Guid characterId = RequiredGuid(document.RootElement, "characterId");
-        double initialMana = RequiredNumber(document.RootElement, "initialMana");
+        int initialMana = RequiredInteger(document.RootElement, "initialMana");
         if (initialMana < 0)
             throw new ModuleArgumentException("TAVI.MAGIC.INITIAL_MANA_INVALID", "initialMana 必须大于或等于零。", "initialMana");
         ElementView character = request.World.Elements.SingleOrDefault(value => value.Id == characterId) ?? throw new ModuleArgumentException("TAVI.MAGIC.CHARACTER_NOT_FOUND", $"World 中不存在角色 {characterId}。", "characterId");
@@ -133,8 +133,8 @@ public sealed class MagicPlugin : ITaviPlugin, IGuidanceExtension, IWorldAuthori
         Guid scopeId = scopes.SingleOrDefault()?.Id ?? Guid.NewGuid();
         var intents = new List<WorldAuthoringIntent>();
         if (scopes.Length == 0)
-            intents.Add(new WorldAuthoringIntent.AddScope(scopeId, "魔法状态", "保存角色当前的魔法资源。", 1, ArcaneStateType, characterId));
-        intents.Add(new WorldAuthoringIntent.AddAspect(Guid.NewGuid(), "当前法力", "", initialMana, ManaType, characterId, scopeId));
+            intents.Add(new WorldAuthoringIntent.AddScope(scopeId, 1, ArcaneStateType, characterId));
+        intents.Add(new WorldAuthoringIntent.AddAspect(Guid.NewGuid(), initialMana, ManaType, characterId, scopeId));
         return new WorldAuthoringProposal { ExpectedWorldStateId = request.World.StateId, Intents = intents, Rationale = $"唤醒角色“{character.Name}”，初始法力为 {initialMana.ToString("R", CultureInfo.InvariantCulture)}。" };
     }
 
@@ -165,11 +165,18 @@ public sealed class MagicPlugin : ITaviPlugin, IGuidanceExtension, IWorldAuthori
 
     private static string OptionalString(JsonElement root, string name) => root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
 
-    private static double RequiredNumber(JsonElement root, string name)
+    private static int RequiredInteger(JsonElement root, string name)
     {
-        if (!root.TryGetProperty(name, out JsonElement value) || !value.TryGetDouble(out double number) || !double.IsFinite(number))
-            throw new ModuleArgumentException("TAVI.MAGIC.ARGUMENT_REQUIRED", $"参数 {name} 必须是有限数字。", name);
+        if (!root.TryGetProperty(name, out JsonElement value) || !value.TryGetInt32(out int number))
+            throw new ModuleArgumentException("TAVI.MAGIC.ARGUMENT_REQUIRED", $"参数 {name} 必须是 Int32 整数。", name);
         return number;
+    }
+
+    private static int RequireInteger(double value, string parameterName)
+    {
+        if (!double.IsFinite(value) || value < int.MinValue || value > int.MaxValue || value != Math.Truncate(value))
+            throw new ModuleConfigurationException("TAVI.MAGIC.QUANTITY_NOT_INTEGER", $"{parameterName} 产生了非整数 Quantity {value.ToString("R", CultureInfo.InvariantCulture)}。");
+        return (int)value;
     }
 
     private static Guid RequiredGuid(JsonElement root, string name)

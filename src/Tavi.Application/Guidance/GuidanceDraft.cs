@@ -41,20 +41,20 @@ internal sealed class GuidanceDraft
         }
     }
 
-    internal ProposeAddScope ProposeScope(string rationale, string name, string description, double quantity, ScopeType type, ProposalElementReference owner)
+    internal ProposeAddScope ProposeScope(string rationale, int quantity, ScopeType type, ProposalElementReference owner)
     {
         ArgumentNullException.ThrowIfNull(owner);
         lock (_sync)
         {
             EnsureKnownReference(owner);
-            var change = new ProposeAddScope(NewChangeId(), rationale ?? string.Empty, ProposalScopeId.New(), name, description, quantity, type, owner);
+            var change = new ProposeAddScope(NewChangeId(), rationale ?? string.Empty, ProposalScopeId.New(), quantity, type, owner);
             _scopes.Add(change.ScopeId, change);
             _changes.Add(change);
             return change;
         }
     }
 
-    internal ProposeAddAspect ProposeAspect(string rationale, string name, string description, double quantity, AspectType type, ProposalElementReference element, ProposalScopeReference scope)
+    internal ProposeAddAspect ProposeAspect(string rationale, int quantity, AspectType type, ProposalElementReference element, ProposalScopeReference scope)
     {
         ArgumentNullException.ThrowIfNull(element);
         ArgumentNullException.ThrowIfNull(scope);
@@ -62,13 +62,13 @@ internal sealed class GuidanceDraft
         {
             EnsureKnownReference(element);
             EnsureKnownReference(scope);
-            var change = new ProposeAddAspect(NewChangeId(), rationale ?? string.Empty, name, description, quantity, type, element, scope);
+            var change = new ProposeAddAspect(NewChangeId(), rationale ?? string.Empty, quantity, type, element, scope);
             _changes.Add(change);
             return change;
         }
     }
 
-    internal ProposeAddRelation ProposeRelation(string rationale, string name, string description, double quantity, RelationType type, ProposalElementReference source, ProposalElementReference target, ProposalScopeReference scope)
+    internal ProposeAddRelation ProposeRelation(string rationale, int quantity, RelationType type, ProposalElementReference source, ProposalElementReference target, ProposalScopeReference scope)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
@@ -78,7 +78,37 @@ internal sealed class GuidanceDraft
             EnsureKnownReference(source);
             EnsureKnownReference(target);
             EnsureKnownReference(scope);
-            var change = new ProposeAddRelation(NewChangeId(), rationale ?? string.Empty, name, description, quantity, type, source, target, scope);
+            var change = new ProposeAddRelation(NewChangeId(), rationale ?? string.Empty, quantity, type, source, target, scope);
+            _changes.Add(change);
+            return change;
+        }
+    }
+
+    internal ProposeAddLocalAspect ProposeLocalAspect(string rationale, string name, string description, int quantity, ProposalElementReference element, ProposalScopeReference scope)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        ArgumentNullException.ThrowIfNull(scope);
+        lock (_sync)
+        {
+            EnsureKnownReference(element);
+            EnsureKnownReference(scope);
+            var change = new ProposeAddLocalAspect(NewChangeId(), rationale ?? string.Empty, name, description, quantity, element, scope);
+            _changes.Add(change);
+            return change;
+        }
+    }
+
+    internal ProposeAddLocalRelation ProposeLocalRelation(string rationale, string name, string description, int quantity, ProposalElementReference source, ProposalElementReference target, ProposalScopeReference scope)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(scope);
+        lock (_sync)
+        {
+            EnsureKnownReference(source);
+            EnsureKnownReference(target);
+            EnsureKnownReference(scope);
+            var change = new ProposeAddLocalRelation(NewChangeId(), rationale ?? string.Empty, name, description, quantity, source, target, scope);
             _changes.Add(change);
             return change;
         }

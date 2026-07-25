@@ -81,7 +81,7 @@ public sealed class JsonFileScenarioStore : IScenarioStore, IDisposable
             string savePath = GetSavePath(normalized);
             string backupPath = GetBackupPath(normalized);
             tempPath = Path.Combine(_saveDirectory, $"{normalized}.scenario.{Guid.NewGuid():N}.tmp");
-            var document = new ScenarioSaveDocumentV1 { SavedAtUtc = DateTimeOffset.UtcNow, Scenario = ScenarioSaveMapper.FromDomain(snapshot) };
+            var document = new ScenarioSaveDocumentV2 { SavedAtUtc = DateTimeOffset.UtcNow, Scenario = ScenarioSaveMapper.FromDomain(snapshot) };
             await WriteAsync(tempPath, document, cancellationToken);
             if (!File.Exists(savePath))
                 File.Move(tempPath, savePath);
@@ -116,13 +116,29 @@ public sealed class JsonFileScenarioStore : IScenarioStore, IDisposable
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
         using JsonDocument json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        if (!json.RootElement.TryGetProperty("version", out JsonElement value) || !value.TryGetInt32(out int version) || version != ScenarioSaveDocumentV1.CurrentVersion)
-            throw new InvalidDataException($"Scenario 存档版本无效，当前只支持 {ScenarioSaveDocumentV1.CurrentVersion}。");
-        ScenarioSaveDocumentV1 document = json.RootElement.Deserialize<ScenarioSaveDocumentV1>(_options) ?? throw new InvalidDataException("Scenario 存档内容为空。");
-        return ScenarioSaveMapper.ToDomain(document.Scenario ?? throw new InvalidDataException("Scenario 存档缺少 scenario 数据。"));
+        if (!json.RootElement.TryGetProperty("version", out JsonElement value) || !value.TryGetInt32(out int version))
+            throw new InvalidDataException("Scenario 存档缺少有效 version。");
+        return version switch
+        {
+            ScenarioSaveDocumentV1.CurrentVersion => ReadV1(json.RootElement),
+            ScenarioSaveDocumentV2.CurrentVersion => ReadV2(json.RootElement),
+            _ => throw new InvalidDataException($"不支持 Scenario 存档版本 {version}，当前版本为 {ScenarioSaveDocumentV2.CurrentVersion}。")
+        };
     }
 
-    private async Task WriteAsync(string path, ScenarioSaveDocumentV1 document, CancellationToken cancellationToken)
+    private ScenarioSnapshot ReadV1(JsonElement root)
+    {
+        ScenarioSaveDocumentV1 document = root.Deserialize<ScenarioSaveDocumentV1>(_options) ?? throw new InvalidDataException("Scenario V1 存档内容为空。");
+        return ScenarioSaveMapper.MigrateFromV1(document.Scenario ?? throw new InvalidDataException("Scenario V1 存档缺少 scenario 数据。"));
+    }
+
+    private ScenarioSnapshot ReadV2(JsonElement root)
+    {
+        ScenarioSaveDocumentV2 document = root.Deserialize<ScenarioSaveDocumentV2>(_options) ?? throw new InvalidDataException("Scenario V2 存档内容为空。");
+        return ScenarioSaveMapper.ToDomain(document.Scenario ?? throw new InvalidDataException("Scenario V2 存档缺少 scenario 数据。"));
+    }
+
+    private async Task WriteAsync(string path, ScenarioSaveDocumentV2 document, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough);
         await JsonSerializer.SerializeAsync(stream, document, _options, cancellationToken);

@@ -90,9 +90,11 @@ Application 会逐项模拟局部 ID 集合，再把提案转换为 Domain 操�
 
 ## World 边界
 
-`ScenarioWorldBridge.Import` 从确定的 WorldSnapshot 复制 EARS 身份和数据，并记录来源 WorldStateId。Module 不参与导入。
+`ScenarioWorldBridge.Import` 从确定的 WorldSnapshot 复制规则化 EARS 身份和数据，并记录来源 WorldStateId。World 中没有 Type 的 `LocalAspect` 与 `LocalRelation` 不会进入 Scenario，也不会从 World 中删除；Module 不参与导入。
 
-`ScenarioWorldBridge.CreateProposal` 比较来源 World 和 Scenario，产生 `ScenarioWorldProposal`。该方法不会提交 World；宿主必须展示、审阅，并以 `ExpectedWorldStateId` 作为并发条件交给 WorldSession。
+`ScenarioWorldBridge.CreateProposal` 比较来源 World 的规则化 EARS 和 Scenario，产生 `ScenarioWorldProposal`。该方法不会提交 World；宿主必须展示、审阅，并以 `ExpectedWorldStateId` 作为并发条件交给 WorldSession。Scenario 未包含 Local 语义不构成删除差异。
+
+Scope、Aspect 与 Relation 实例只携带 Type 和整数 Quantity；它们的展示名称与语义说明来自相应 Type Definition。Local 变体只携带自由 Name、Description 和整数 Quantity，不对 Module 或 Evolution 暴露。
 
 ## Writing 扩展点
 

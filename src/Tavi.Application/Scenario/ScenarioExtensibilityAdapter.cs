@@ -82,9 +82,9 @@ internal static class ScenarioExtensibilityAdapter
     }
 
     private static ElementView ToView(DomainScenario.Element value) => new(value.Id, value.Name, value.Description, new SemanticKey(value.Type.Value));
-    private static ScopeView ToView(DomainScenario.Scope value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.OwnerElementId);
-    private static AspectView ToView(DomainScenario.Aspect value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.ElementId, value.ScopeId);
-    private static RelationView ToView(DomainScenario.Relation value) => new(value.Id, value.Name, value.Description, value.Quantity, new SemanticKey(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId);
+    private static ScopeView ToView(DomainScenario.Scope value) => new(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.OwnerElementId);
+    private static AspectView ToView(DomainScenario.Aspect value) => new(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.ElementId, value.ScopeId);
+    private static RelationView ToView(DomainScenario.Relation value) => new(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId);
 
     /// <summary>逐项模拟局部实体集合，确保新建实体可被后续操作引用而既有外部实体永远不可寻址。</summary>
     private sealed class LocalBoundary
@@ -117,13 +117,13 @@ internal static class ScenarioExtensibilityAdapter
             SceneOperationIntent.UpdateElement value => RequireElement(value.Id, new DomainScenario.UpdateElementOperation(value.Id, value.Name, value.Description, new DomainScenario.ElementType(value.Type.Value))),
             SceneOperationIntent.AddScope value => AddScope(value),
             SceneOperationIntent.RemoveScope value => RemoveScope(value),
-            SceneOperationIntent.UpdateScope value => RequireScope(value.Id, new DomainScenario.UpdateScopeOperation(value.Id, value.Name, value.Description, value.Quantity, new DomainScenario.ScopeType(value.Type.Value))),
+            SceneOperationIntent.UpdateScope value => RequireScope(value.Id, new DomainScenario.UpdateScopeOperation(value.Id, value.Quantity, new DomainScenario.ScopeType(value.Type.Value))),
             SceneOperationIntent.AddAspect value => AddAspect(value),
             SceneOperationIntent.RemoveAspect value => RemoveAspect(value),
-            SceneOperationIntent.UpdateAspect value => RequireAspect(value.Id, new DomainScenario.UpdateAspectOperation(value.Id, value.Name, value.Description, value.Quantity, new DomainScenario.AspectType(value.Type.Value))),
+            SceneOperationIntent.UpdateAspect value => RequireAspect(value.Id, new DomainScenario.UpdateAspectOperation(value.Id, value.Quantity, new DomainScenario.AspectType(value.Type.Value))),
             SceneOperationIntent.AddRelation value => AddRelation(value),
             SceneOperationIntent.RemoveRelation value => RemoveRelation(value),
-            SceneOperationIntent.UpdateRelation value => RequireRelation(value.Id, new DomainScenario.UpdateRelationOperation(value.Id, value.Name, value.Description, value.Quantity, new DomainScenario.RelationType(value.Type.Value))),
+            SceneOperationIntent.UpdateRelation value => RequireRelation(value.Id, new DomainScenario.UpdateRelationOperation(value.Id, value.Quantity, new DomainScenario.RelationType(value.Type.Value))),
             _ => throw Invalid($"不支持的 SceneOperationIntent 类型 {operation.GetType().FullName}。")
         };
 
@@ -156,7 +156,7 @@ internal static class ScenarioExtensibilityAdapter
             Require(_elements.Contains(value.OwnerElementId), "Element", value.OwnerElementId);
             EnsureNew(value.Id, _snapshot.Scopes.ContainsKey(value.Id) || !_scopes.Add(value.Id), "Scope");
             _scopeOwners.Add(value.Id, value.OwnerElementId);
-            return new DomainScenario.AddScopeOperation(value.Id, value.Name, value.Description, value.Quantity, new DomainScenario.ScopeType(value.Type.Value), value.OwnerElementId);
+            return new DomainScenario.AddScopeOperation(value.Id, value.Quantity, new DomainScenario.ScopeType(value.Type.Value), value.OwnerElementId);
         }
 
         private DomainScenario.ScenarioOperation RemoveScope(SceneOperationIntent.RemoveScope value)
@@ -180,7 +180,7 @@ internal static class ScenarioExtensibilityAdapter
             Require(_scopes.Contains(value.ScopeId), "Scope", value.ScopeId);
             EnsureNew(value.Id, _snapshot.Aspects.ContainsKey(value.Id) || !_aspects.Add(value.Id), "Aspect");
             _aspectReferences.Add(value.Id, (value.ElementId, value.ScopeId));
-            return new DomainScenario.AddAspectOperation(value.Id, value.Name, value.Description, value.Quantity, new DomainScenario.AspectType(value.Type.Value), value.ElementId, value.ScopeId);
+            return new DomainScenario.AddAspectOperation(value.Id, value.Quantity, new DomainScenario.AspectType(value.Type.Value), value.ElementId, value.ScopeId);
         }
 
         private DomainScenario.ScenarioOperation RemoveAspect(SceneOperationIntent.RemoveAspect value)
@@ -197,7 +197,7 @@ internal static class ScenarioExtensibilityAdapter
             Require(_scopes.Contains(value.ScopeId), "Scope", value.ScopeId);
             EnsureNew(value.Id, _snapshot.Relations.ContainsKey(value.Id) || !_relations.Add(value.Id), "Relation");
             _relationReferences.Add(value.Id, (value.SourceElementId, value.TargetElementId, value.ScopeId));
-            return new DomainScenario.AddRelationOperation(value.Id, value.Name, value.Description, value.Quantity, new DomainScenario.RelationType(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId);
+            return new DomainScenario.AddRelationOperation(value.Id, value.Quantity, new DomainScenario.RelationType(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId);
         }
 
         private DomainScenario.ScenarioOperation RemoveRelation(SceneOperationIntent.RemoveRelation value)

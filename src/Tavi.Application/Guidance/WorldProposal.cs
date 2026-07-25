@@ -52,16 +52,28 @@ public abstract record ProposalScopeReference
 public abstract record ProposalChange(string Id, string Rationale);
 
 /// <summary>提议添加一个临时 Element。</summary>
+/// <param name="Id">修改标识。</param><param name="Rationale">修改理由。</param><param name="ElementId">临时 Element 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Type">规则化类型。</param>
 public sealed record ProposeAddElement(string Id, string Rationale, ProposalElementId ElementId, string Name, string Description, ElementType Type) : ProposalChange(Id, Rationale);
 
 /// <summary>提议添加一个由现有或临时 Element 持有的临时 Scope。</summary>
-public sealed record ProposeAddScope(string Id, string Rationale, ProposalScopeId ScopeId, string Name, string Description, double Quantity, ScopeType Type, ProposalElementReference Owner) : ProposalChange(Id, Rationale);
+/// <param name="Id">修改标识。</param><param name="Rationale">修改理由。</param><param name="ScopeId">临时 Scope 标识。</param><param name="Quantity">整数数量。</param><param name="Type">规则化类型。</param><param name="Owner">Owner Element 引用。</param>
+public sealed record ProposeAddScope(string Id, string Rationale, ProposalScopeId ScopeId, int Quantity, ScopeType Type, ProposalElementReference Owner) : ProposalChange(Id, Rationale);
 
 /// <summary>提议添加一个可引用现有或临时 Element 与 Scope 的 Aspect。</summary>
-public sealed record ProposeAddAspect(string Id, string Rationale, string Name, string Description, double Quantity, AspectType Type, ProposalElementReference Element, ProposalScopeReference Scope) : ProposalChange(Id, Rationale);
+/// <param name="Id">修改标识。</param><param name="Rationale">修改理由。</param><param name="Quantity">整数数量。</param><param name="Type">规则化类型。</param><param name="Element">目标 Element 引用。</param><param name="Scope">所属 Scope 引用。</param>
+public sealed record ProposeAddAspect(string Id, string Rationale, int Quantity, AspectType Type, ProposalElementReference Element, ProposalScopeReference Scope) : ProposalChange(Id, Rationale);
 
 /// <summary>提议添加一个可引用现有或临时 Element 与 Scope 的 Relation。</summary>
-public sealed record ProposeAddRelation(string Id, string Rationale, string Name, string Description, double Quantity, RelationType Type, ProposalElementReference Source, ProposalElementReference Target, ProposalScopeReference Scope) : ProposalChange(Id, Rationale);
+/// <param name="Id">修改标识。</param><param name="Rationale">修改理由。</param><param name="Quantity">整数数量。</param><param name="Type">规则化类型。</param><param name="Source">来源 Element 引用。</param><param name="Target">目标 Element 引用。</param><param name="Scope">所属 Scope 引用。</param>
+public sealed record ProposeAddRelation(string Id, string Rationale, int Quantity, RelationType Type, ProposalElementReference Source, ProposalElementReference Target, ProposalScopeReference Scope) : ProposalChange(Id, Rationale);
+
+/// <summary>提议添加一个仅存在于 World 的本地一元语义。</summary>
+/// <param name="Id">修改标识。</param><param name="Rationale">修改理由。</param><param name="Name">自由名称。</param><param name="Description">自由说明。</param><param name="Quantity">整数数量。</param><param name="Element">目标 Element 引用。</param><param name="Scope">所属 Scope 引用。</param>
+public sealed record ProposeAddLocalAspect(string Id, string Rationale, string Name, string Description, int Quantity, ProposalElementReference Element, ProposalScopeReference Scope) : ProposalChange(Id, Rationale);
+
+/// <summary>提议添加一个仅存在于 World 的本地关系语义。</summary>
+/// <param name="Id">修改标识。</param><param name="Rationale">修改理由。</param><param name="Name">自由名称。</param><param name="Description">自由说明。</param><param name="Quantity">整数数量。</param><param name="Source">来源 Element 引用。</param><param name="Target">目标 Element 引用。</param><param name="Scope">所属 Scope 引用。</param>
+public sealed record ProposeAddLocalRelation(string Id, string Rationale, string Name, string Description, int Quantity, ProposalElementReference Source, ProposalElementReference Target, ProposalScopeReference Scope) : ProposalChange(Id, Rationale);
 
 /// <summary>表示一次 GuidanceSession 在特定时刻产生的独立提案快照。</summary>
 public sealed record WorldProposal

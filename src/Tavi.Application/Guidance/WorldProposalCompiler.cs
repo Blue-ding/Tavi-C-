@@ -4,7 +4,7 @@ using Tavi.Domain.World;
 namespace Tavi.Application.Guidance;
 
 /// <summary>表示 WorldProposal 编译为确定性领域操作后的结果。</summary>
-/// <param name="ChangeSet">按 Element、Scope、Aspect、Relation 依赖顺序排列的操作组。</param>
+/// <param name="ChangeSet">按 Element、Scope、规则断言、本地语义依赖顺序排列的操作组。</param>
 /// <param name="ElementIds">临时 Element 标识到真实标识的映射。</param>
 /// <param name="ScopeIds">临时 Scope 标识到真实标识的映射。</param>
 /// <param name="OperationChangeIds">与 ChangeSet 操作顺序对齐的原始提案修改标识。</param>
@@ -31,14 +31,18 @@ public static class WorldProposalCompiler
         ProposeAddScope[] scopes = proposal.Changes.OfType<ProposeAddScope>().Where(change => accepted.Contains(change.Id)).ToArray();
         ProposeAddAspect[] aspects = proposal.Changes.OfType<ProposeAddAspect>().Where(change => accepted.Contains(change.Id)).ToArray();
         ProposeAddRelation[] relations = proposal.Changes.OfType<ProposeAddRelation>().Where(change => accepted.Contains(change.Id)).ToArray();
+        ProposeAddLocalAspect[] localAspects = proposal.Changes.OfType<ProposeAddLocalAspect>().Where(change => accepted.Contains(change.Id)).ToArray();
+        ProposeAddLocalRelation[] localRelations = proposal.Changes.OfType<ProposeAddLocalRelation>().Where(change => accepted.Contains(change.Id)).ToArray();
         var elementIds = elements.ToDictionary(change => change.ElementId, change => change.ElementId.Value);
         var scopeIds = scopes.ToDictionary(change => change.ScopeId, change => change.ScopeId.Value);
         WorldSnapshot projectedWorld = worldService.CreateStagingSnapshot().ProjectedWorld;
-        var compiled = new List<(WorldOperation Operation, string ChangeId)>(elements.Length + scopes.Length + aspects.Length + relations.Length);
+        var compiled = new List<(WorldOperation Operation, string ChangeId)>(elements.Length + scopes.Length + aspects.Length + relations.Length + localAspects.Length + localRelations.Length);
         compiled.AddRange(elements.Select(change => ((WorldOperation)new AddElementOperation(elementIds[change.ElementId], change.Name, change.Description, change.Type), change.Id)));
-        compiled.AddRange(scopes.Select(change => ((WorldOperation)new AddScopeOperation(scopeIds[change.ScopeId], change.Name, change.Description, change.Quantity, change.Type, ResolveElement(change.Owner, elementIds, projectedWorld)), change.Id)));
-        compiled.AddRange(aspects.Select(change => ((WorldOperation)new AddAspectOperation(Guid.NewGuid(), change.Name, change.Description, change.Quantity, change.Type, ResolveElement(change.Element, elementIds, projectedWorld), ResolveScope(change.Scope, scopeIds, projectedWorld)), change.Id)));
-        compiled.AddRange(relations.Select(change => ((WorldOperation)new AddRelationOperation(Guid.NewGuid(), change.Name, change.Description, change.Quantity, change.Type, ResolveElement(change.Source, elementIds, projectedWorld), ResolveElement(change.Target, elementIds, projectedWorld), ResolveScope(change.Scope, scopeIds, projectedWorld)), change.Id)));
+        compiled.AddRange(scopes.Select(change => ((WorldOperation)new AddScopeOperation(scopeIds[change.ScopeId], change.Quantity, change.Type, ResolveElement(change.Owner, elementIds, projectedWorld)), change.Id)));
+        compiled.AddRange(aspects.Select(change => ((WorldOperation)new AddAspectOperation(Guid.NewGuid(), change.Quantity, change.Type, ResolveElement(change.Element, elementIds, projectedWorld), ResolveScope(change.Scope, scopeIds, projectedWorld)), change.Id)));
+        compiled.AddRange(relations.Select(change => ((WorldOperation)new AddRelationOperation(Guid.NewGuid(), change.Quantity, change.Type, ResolveElement(change.Source, elementIds, projectedWorld), ResolveElement(change.Target, elementIds, projectedWorld), ResolveScope(change.Scope, scopeIds, projectedWorld)), change.Id)));
+        compiled.AddRange(localAspects.Select(change => ((WorldOperation)new AddLocalAspectOperation(Guid.NewGuid(), change.Name, change.Description, change.Quantity, ResolveElement(change.Element, elementIds, projectedWorld), ResolveScope(change.Scope, scopeIds, projectedWorld)), change.Id)));
+        compiled.AddRange(localRelations.Select(change => ((WorldOperation)new AddLocalRelationOperation(Guid.NewGuid(), change.Name, change.Description, change.Quantity, ResolveElement(change.Source, elementIds, projectedWorld), ResolveElement(change.Target, elementIds, projectedWorld), ResolveScope(change.Scope, scopeIds, projectedWorld)), change.Id)));
         return new ProposalCompilationResult(new WorldChangeSet(compiled.Select(item => item.Operation)), elementIds, scopeIds, compiled.Select(item => item.ChangeId).ToArray());
     }
 

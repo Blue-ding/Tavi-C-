@@ -18,7 +18,8 @@ internal sealed class GuidanceSession : IGuidanceService
         你可以使用只读工具了解当前 World，但绝不能直接修改真实 World。
         使用 propose_element 和 propose_scope 时，临时标识与修改标识由系统生成；只有收到工具返回的标识后，才能创建引用它们的 Aspect 或 Relation。
         创建或修改 EARS 内容前必须使用 search_world_types 查询对应类别，并且只能使用工具返回的稳定类型键；不要捏造类型键。
-        当信息足够时，使用 propose_element、propose_scope、propose_aspect、propose_relation 和 set_guidance_summary 构造本轮新增内容。每个断言必须属于一个显式 Scope。完成工具调用后，用自然语言简要回应玩家。
+        找到已注册类型时使用 propose_aspect 或 propose_relation；找不到合适类型时可使用 propose_local_aspect 或 propose_local_relation 保留自由语义。Local 不参与 Evolution，进入 Scenario 时不会被复制。
+        当信息足够时，使用提案工具和 set_guidance_summary 构造本轮新增内容。每个断言与 Local 语义必须属于一个显式 Scope。完成工具调用后，用自然语言简要回应玩家。
         当信息不足时可以直接向玩家提出一个聚焦问题，此时不必创建提案。
         """;
     private const string LogCategory = "GuidanceSession";
@@ -212,7 +213,7 @@ internal sealed class GuidanceSession : IGuidanceService
         try
         {
             ModuleCatalog catalog = _extensions?.Catalog ?? ModuleCatalog.Create([]);
-            var tools = WorldGuidanceTool.CreateTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld, catalog)).ToList();
+            var tools = WorldGuidanceTool.CreateQueryTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld, catalog)).ToList();
             if (_extensions is not null && _authoring is not null)
             {
                 IWorldView worldView = WorldExtensibilityAdapter.ToView(workspace.ProjectedWorld);
@@ -246,6 +247,8 @@ internal sealed class GuidanceSession : IGuidanceService
                     ProposeAddScope scope => scope with { Id = stagedIdsByChangeId[scope.Id].ToString() },
                     ProposeAddAspect aspect => aspect with { Id = stagedIdsByChangeId[aspect.Id].ToString() },
                     ProposeAddRelation relation => relation with { Id = stagedIdsByChangeId[relation.Id].ToString() },
+                    ProposeAddLocalAspect localAspect => localAspect with { Id = stagedIdsByChangeId[localAspect.Id].ToString() },
+                    ProposeAddLocalRelation localRelation => localRelation with { Id = stagedIdsByChangeId[localRelation.Id].ToString() },
                     _ => throw new InvalidOperationException($"不支持的提案类型 {change.GetType().Name}。")
                 }).ToArray();
                 published = proposal with { Changes = Array.AsReadOnly(changes) };

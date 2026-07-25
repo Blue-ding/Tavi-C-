@@ -29,6 +29,8 @@ public sealed record ProposalScopeReferenceViewModel(string Kind, Guid ScopeId);
 [JsonDerivedType(typeof(ProposeAddScopeViewModel), "AddScope")]
 [JsonDerivedType(typeof(ProposeAddAspectViewModel), "AddAspect")]
 [JsonDerivedType(typeof(ProposeAddRelationViewModel), "AddRelation")]
+[JsonDerivedType(typeof(ProposeAddLocalAspectViewModel), "AddLocalAspect")]
+[JsonDerivedType(typeof(ProposeAddLocalRelationViewModel), "AddLocalRelation")]
 public abstract record ProposalChangeViewModel
 {
     /// <summary>获取本轮提案内稳定的修改标识。</summary>
@@ -60,14 +62,8 @@ public sealed record ProposeAddScopeViewModel : ProposalChangeViewModel
     /// <summary>获取提交前使用的临时 Scope 标识。</summary>
     public required Guid ScopeId { get; init; }
 
-    /// <summary>获取 Scope 名称。</summary>
-    public required string Name { get; init; }
-
-    /// <summary>获取 Scope 说明。</summary>
-    public required string Description { get; init; }
-
-    /// <summary>获取由对应 Module 解释的有限强度。</summary>
-    public required double Quantity { get; init; }
+    /// <summary>获取由对应 Module 解释的整数数量。</summary>
+    public required int Quantity { get; init; }
 
     /// <summary>获取开放 ScopeType 文本。</summary>
     public required string Type { get; init; }
@@ -79,14 +75,8 @@ public sealed record ProposeAddScopeViewModel : ProposalChangeViewModel
 /// <summary>表示添加 Aspect 的提案修改。</summary>
 public sealed record ProposeAddAspectViewModel : ProposalChangeViewModel
 {
-    /// <summary>获取 Aspect 名称。</summary>
-    public required string Name { get; init; }
-
-    /// <summary>获取 Aspect 说明。</summary>
-    public required string Description { get; init; }
-
-    /// <summary>获取由对应 Module 解释的有限强度。</summary>
-    public required double Quantity { get; init; }
+    /// <summary>获取由对应 Module 解释的整数数量。</summary>
+    public required int Quantity { get; init; }
 
     /// <summary>获取开放 AspectType 文本。</summary>
     public required string Type { get; init; }
@@ -101,14 +91,8 @@ public sealed record ProposeAddAspectViewModel : ProposalChangeViewModel
 /// <summary>表示添加 Relation 的提案修改。</summary>
 public sealed record ProposeAddRelationViewModel : ProposalChangeViewModel
 {
-    /// <summary>获取 Relation 名称。</summary>
-    public required string Name { get; init; }
-
-    /// <summary>获取 Relation 说明。</summary>
-    public required string Description { get; init; }
-
-    /// <summary>获取由对应 Module 解释的有限强度。</summary>
-    public required double Quantity { get; init; }
+    /// <summary>获取由对应 Module 解释的整数数量。</summary>
+    public required int Quantity { get; init; }
 
     /// <summary>获取开放 RelationType 文本。</summary>
     public required string Type { get; init; }
@@ -120,6 +104,47 @@ public sealed record ProposeAddRelationViewModel : ProposalChangeViewModel
     public required ProposalElementReferenceViewModel Target { get; init; }
 
     /// <summary>获取唯一 Scope 引用。</summary>
+    public required ProposalScopeReferenceViewModel Scope { get; init; }
+}
+
+/// <summary>表示添加 LocalAspect 的提案修改。</summary>
+public sealed record ProposeAddLocalAspectViewModel : ProposalChangeViewModel
+{
+    /// <summary>获取自由语义名称。</summary>
+    public required string Name { get; init; }
+
+    /// <summary>获取自由语义说明。</summary>
+    public required string Description { get; init; }
+
+    /// <summary>获取整数数量。</summary>
+    public required int Quantity { get; init; }
+
+    /// <summary>获取目标 Element 引用。</summary>
+    public required ProposalElementReferenceViewModel Element { get; init; }
+
+    /// <summary>获取所属 Scope 引用。</summary>
+    public required ProposalScopeReferenceViewModel Scope { get; init; }
+}
+
+/// <summary>表示添加 LocalRelation 的提案修改。</summary>
+public sealed record ProposeAddLocalRelationViewModel : ProposalChangeViewModel
+{
+    /// <summary>获取自由语义名称。</summary>
+    public required string Name { get; init; }
+
+    /// <summary>获取自由语义说明。</summary>
+    public required string Description { get; init; }
+
+    /// <summary>获取整数数量。</summary>
+    public required int Quantity { get; init; }
+
+    /// <summary>获取 Source Element 引用。</summary>
+    public required ProposalElementReferenceViewModel Source { get; init; }
+
+    /// <summary>获取 Target Element 引用。</summary>
+    public required ProposalElementReferenceViewModel Target { get; init; }
+
+    /// <summary>获取所属 Scope 引用。</summary>
     public required ProposalScopeReferenceViewModel Scope { get; init; }
 }
 

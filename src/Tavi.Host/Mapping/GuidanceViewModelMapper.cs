@@ -28,9 +28,11 @@ internal static class GuidanceViewModelMapper
     private static ProposalChangeViewModel ToChange(ProposalChange change) => change switch
     {
         ProposeAddElement value => new ProposeAddElementViewModel { Id = value.Id, Rationale = value.Rationale, ElementId = value.ElementId.Value, Name = value.Name, Description = value.Description, Type = value.Type.Value },
-        ProposeAddScope value => new ProposeAddScopeViewModel { Id = value.Id, Rationale = value.Rationale, ScopeId = value.ScopeId.Value, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Type = value.Type.Value, Owner = ToReference(value.Owner) },
-        ProposeAddAspect value => new ProposeAddAspectViewModel { Id = value.Id, Rationale = value.Rationale, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Type = value.Type.Value, Element = ToReference(value.Element), Scope = ToReference(value.Scope) },
-        ProposeAddRelation value => new ProposeAddRelationViewModel { Id = value.Id, Rationale = value.Rationale, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Type = value.Type.Value, Source = ToReference(value.Source), Target = ToReference(value.Target), Scope = ToReference(value.Scope) },
+        ProposeAddScope value => new ProposeAddScopeViewModel { Id = value.Id, Rationale = value.Rationale, ScopeId = value.ScopeId.Value, Quantity = value.Quantity, Type = value.Type.Value, Owner = ToReference(value.Owner) },
+        ProposeAddAspect value => new ProposeAddAspectViewModel { Id = value.Id, Rationale = value.Rationale, Quantity = value.Quantity, Type = value.Type.Value, Element = ToReference(value.Element), Scope = ToReference(value.Scope) },
+        ProposeAddRelation value => new ProposeAddRelationViewModel { Id = value.Id, Rationale = value.Rationale, Quantity = value.Quantity, Type = value.Type.Value, Source = ToReference(value.Source), Target = ToReference(value.Target), Scope = ToReference(value.Scope) },
+        ProposeAddLocalAspect value => new ProposeAddLocalAspectViewModel { Id = value.Id, Rationale = value.Rationale, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Element = ToReference(value.Element), Scope = ToReference(value.Scope) },
+        ProposeAddLocalRelation value => new ProposeAddLocalRelationViewModel { Id = value.Id, Rationale = value.Rationale, Name = value.Name, Description = value.Description, Quantity = value.Quantity, Source = ToReference(value.Source), Target = ToReference(value.Target), Scope = ToReference(value.Scope) },
         _ => throw new InvalidOperationException($"不支持的 Guidance 提案修改类型 {change.GetType().Name}。")
     };
 

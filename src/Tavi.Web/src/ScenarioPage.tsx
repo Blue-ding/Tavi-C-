@@ -160,7 +160,7 @@ function ElementCard({ element, workspace }: { element: ElementViewModel; worksp
   return <article className="scenario-element-card">
     <div><span>{element.name.slice(0, 1).toUpperCase()}</span><section><strong>{element.name}</strong><small>{element.type}</small></section></div>
     {element.description && <p>{element.description}</p>}
-    <footer>{aspects.map(aspect => <span key={aspect.id} title={aspect.type}>{aspect.name}<b>{aspect.quantity}</b></span>)}{!aspects.length && <i>无 Aspect</i>}</footer>
+    <footer>{aspects.map(aspect => <span key={aspect.id} title={aspect.type}>{aspect.type}<b>{aspect.quantity}</b></span>)}{!aspects.length && <i>无 Aspect</i>}</footer>
   </article>
 }
 

@@ -16,40 +16,40 @@ public sealed record RemoveElementOperation(Guid ElementId) : ScenarioOperation;
 public sealed record UpdateElementOperation(Guid ElementId, string Name, string Description, ElementType Type) : ScenarioOperation;
 
 /// <summary>添加 Scope。</summary>
-/// <param name="ScopeId">Scope 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="OwnerElementId">Owner Element。</param>
-public sealed record AddScopeOperation(Guid ScopeId, string Name, string Description, double Quantity, ScopeType Type, Guid OwnerElementId) : ScenarioOperation;
+/// <param name="ScopeId">Scope 标识。</param><param name="Quantity">整数数量。</param><param name="Type">开放类型。</param><param name="OwnerElementId">Owner Element。</param>
+public sealed record AddScopeOperation(Guid ScopeId, int Quantity, ScopeType Type, Guid OwnerElementId) : ScenarioOperation;
 
 /// <summary>删除 Scope 及其中全部断言。</summary>
 /// <param name="ScopeId">目标 Scope 标识。</param>
 public sealed record RemoveScopeOperation(Guid ScopeId) : ScenarioOperation;
 
 /// <summary>更新 Scope 的可变语义属性。</summary>
-/// <param name="ScopeId">目标 Scope。</param><param name="Name">新名称。</param><param name="Description">新说明。</param><param name="Quantity">新强度。</param><param name="Type">新类型。</param>
-public sealed record UpdateScopeOperation(Guid ScopeId, string Name, string Description, double Quantity, ScopeType Type) : ScenarioOperation;
+/// <param name="ScopeId">目标 Scope。</param><param name="Quantity">新整数数量。</param><param name="Type">新类型。</param>
+public sealed record UpdateScopeOperation(Guid ScopeId, int Quantity, ScopeType Type) : ScenarioOperation;
 
 /// <summary>添加 Aspect。</summary>
-/// <param name="AspectId">Aspect 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="ElementId">目标 Element。</param><param name="ScopeId">唯一 Scope。</param>
-public sealed record AddAspectOperation(Guid AspectId, string Name, string Description, double Quantity, AspectType Type, Guid ElementId, Guid ScopeId) : ScenarioOperation;
+/// <param name="AspectId">Aspect 标识。</param><param name="Quantity">整数数量。</param><param name="Type">开放类型。</param><param name="ElementId">目标 Element。</param><param name="ScopeId">唯一 Scope。</param>
+public sealed record AddAspectOperation(Guid AspectId, int Quantity, AspectType Type, Guid ElementId, Guid ScopeId) : ScenarioOperation;
 
 /// <summary>删除 Aspect。</summary>
 /// <param name="AspectId">目标 Aspect 标识。</param>
 public sealed record RemoveAspectOperation(Guid AspectId) : ScenarioOperation;
 
 /// <summary>更新 Aspect 的可变语义属性。</summary>
-/// <param name="AspectId">目标 Aspect。</param><param name="Name">新名称。</param><param name="Description">新说明。</param><param name="Quantity">新强度。</param><param name="Type">新类型。</param>
-public sealed record UpdateAspectOperation(Guid AspectId, string Name, string Description, double Quantity, AspectType Type) : ScenarioOperation;
+/// <param name="AspectId">目标 Aspect。</param><param name="Quantity">新整数数量。</param><param name="Type">新类型。</param>
+public sealed record UpdateAspectOperation(Guid AspectId, int Quantity, AspectType Type) : ScenarioOperation;
 
 /// <summary>添加 Relation。</summary>
-/// <param name="RelationId">Relation 标识。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="Quantity">有限强度。</param><param name="Type">开放类型。</param><param name="SourceElementId">来源 Element。</param><param name="TargetElementId">目标 Element。</param><param name="ScopeId">唯一 Scope。</param>
-public sealed record AddRelationOperation(Guid RelationId, string Name, string Description, double Quantity, RelationType Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId) : ScenarioOperation;
+/// <param name="RelationId">Relation 标识。</param><param name="Quantity">整数数量。</param><param name="Type">开放类型。</param><param name="SourceElementId">来源 Element。</param><param name="TargetElementId">目标 Element。</param><param name="ScopeId">唯一 Scope。</param>
+public sealed record AddRelationOperation(Guid RelationId, int Quantity, RelationType Type, Guid SourceElementId, Guid TargetElementId, Guid ScopeId) : ScenarioOperation;
 
 /// <summary>删除 Relation。</summary>
 /// <param name="RelationId">目标 Relation 标识。</param>
 public sealed record RemoveRelationOperation(Guid RelationId) : ScenarioOperation;
 
 /// <summary>更新 Relation 的可变语义属性。</summary>
-/// <param name="RelationId">目标 Relation。</param><param name="Name">新名称。</param><param name="Description">新说明。</param><param name="Quantity">新强度。</param><param name="Type">新类型。</param>
-public sealed record UpdateRelationOperation(Guid RelationId, string Name, string Description, double Quantity, RelationType Type) : ScenarioOperation;
+/// <param name="RelationId">目标 Relation。</param><param name="Quantity">新整数数量。</param><param name="Type">新类型。</param>
+public sealed record UpdateRelationOperation(Guid RelationId, int Quantity, RelationType Type) : ScenarioOperation;
 
 /// <summary>添加由 SceneDefinition 实例化的 Scene。</summary>
 /// <param name="SceneId">Scene 标识。</param><param name="DefinitionId">定义键。</param><param name="ModuleId">Module 标识。</param><param name="ModuleVersion">Module 版本。</param><param name="BasedOnScenarioStateId">定义依据的 StateId。</param><param name="Name">名称。</param><param name="Description">说明。</param><param name="SettlementOptions">结算能力。</param><param name="Slots">创建时冻结的槽位要求。</param>

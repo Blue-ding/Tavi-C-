@@ -158,10 +158,10 @@
               "$ref": "#/$defs/keys"
             },
             "minimumQuantity": {
-              "type": "number"
+              "type": "integer"
             },
             "maximumQuantity": {
-              "type": "number"
+              "type": "integer"
             }
           }
         }
@@ -187,10 +187,10 @@
               "$ref": "#/$defs/keys"
             },
             "minimumQuantity": {
-              "type": "number"
+              "type": "integer"
             },
             "maximumQuantity": {
-              "type": "number"
+              "type": "integer"
             }
           }
         }

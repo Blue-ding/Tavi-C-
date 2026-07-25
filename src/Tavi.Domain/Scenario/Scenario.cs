@@ -195,13 +195,12 @@ public sealed class Scenario
     {
         const string name = nameof(AddScopeOperation);
         EnsureId(operation.ScopeId, name);
-        EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
-        EnsureQuantity(operation.Quantity, name);
+        EnsureType(operation.Type.IsEmpty, name);
         _ = GetElementCore(operation.OwnerElementId, name);
         EnsureElementsNotProcessing([operation.OwnerElementId], name);
         if (_data.Scopes.ContainsKey(operation.ScopeId))
             throw Duplicate(name, "Scope", operation.ScopeId);
-        _data.Scopes.Add(operation.ScopeId, new Scope(operation.ScopeId, operation.Name, operation.Description, operation.Quantity, operation.Type, operation.OwnerElementId));
+        _data.Scopes.Add(operation.ScopeId, new Scope(operation.ScopeId, operation.Quantity, operation.Type, operation.OwnerElementId));
         return true;
     }
 
@@ -221,13 +220,12 @@ public sealed class Scenario
     private bool ApplyUpdateScope(UpdateScopeOperation operation)
     {
         const string name = nameof(UpdateScopeOperation);
-        EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
-        EnsureQuantity(operation.Quantity, name);
+        EnsureType(operation.Type.IsEmpty, name);
         Scope scope = GetScopeCore(operation.ScopeId, name);
         EnsureElementsNotProcessing([scope.OwnerElementId], name);
-        if (scope.Name == operation.Name && scope.Description == operation.Description && scope.Quantity == operation.Quantity && scope.Type == operation.Type)
+        if (scope.Quantity == operation.Quantity && scope.Type == operation.Type)
             return false;
-        scope.Update(operation.Name, operation.Description, operation.Quantity, operation.Type);
+        scope.Update(operation.Quantity, operation.Type);
         return true;
     }
 
@@ -235,14 +233,13 @@ public sealed class Scenario
     {
         const string name = nameof(AddAspectOperation);
         EnsureId(operation.AspectId, name);
-        EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
-        EnsureQuantity(operation.Quantity, name);
+        EnsureType(operation.Type.IsEmpty, name);
         _ = GetElementCore(operation.ElementId, name);
         Scope scope = GetScopeCore(operation.ScopeId, name);
         EnsureElementsNotProcessing([operation.ElementId, scope.OwnerElementId], name);
         if (_data.Aspects.ContainsKey(operation.AspectId))
             throw Duplicate(name, "Aspect", operation.AspectId);
-        _data.Aspects.Add(operation.AspectId, new Aspect(operation.AspectId, operation.Name, operation.Description, operation.Quantity, operation.Type, operation.ElementId, operation.ScopeId));
+        _data.Aspects.Add(operation.AspectId, new Aspect(operation.AspectId, operation.Quantity, operation.Type, operation.ElementId, operation.ScopeId));
         return true;
     }
 
@@ -258,13 +255,12 @@ public sealed class Scenario
     private bool ApplyUpdateAspect(UpdateAspectOperation operation)
     {
         const string name = nameof(UpdateAspectOperation);
-        EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
-        EnsureQuantity(operation.Quantity, name);
+        EnsureType(operation.Type.IsEmpty, name);
         Aspect aspect = GetAspectCore(operation.AspectId, name);
         EnsureElementsNotProcessing([aspect.ElementId, GetScopeCore(aspect.ScopeId, name).OwnerElementId], name);
-        if (aspect.Name == operation.Name && aspect.Description == operation.Description && aspect.Quantity == operation.Quantity && aspect.Type == operation.Type)
+        if (aspect.Quantity == operation.Quantity && aspect.Type == operation.Type)
             return false;
-        aspect.Update(operation.Name, operation.Description, operation.Quantity, operation.Type);
+        aspect.Update(operation.Quantity, operation.Type);
         return true;
     }
 
@@ -272,15 +268,14 @@ public sealed class Scenario
     {
         const string name = nameof(AddRelationOperation);
         EnsureId(operation.RelationId, name);
-        EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
-        EnsureQuantity(operation.Quantity, name);
+        EnsureType(operation.Type.IsEmpty, name);
         _ = GetElementCore(operation.SourceElementId, name);
         _ = GetElementCore(operation.TargetElementId, name);
         Scope scope = GetScopeCore(operation.ScopeId, name);
         EnsureElementsNotProcessing([operation.SourceElementId, operation.TargetElementId, scope.OwnerElementId], name);
         if (_data.Relations.ContainsKey(operation.RelationId))
             throw Duplicate(name, "Relation", operation.RelationId);
-        _data.Relations.Add(operation.RelationId, new Relation(operation.RelationId, operation.Name, operation.Description, operation.Quantity, operation.Type, operation.SourceElementId, operation.TargetElementId, operation.ScopeId));
+        _data.Relations.Add(operation.RelationId, new Relation(operation.RelationId, operation.Quantity, operation.Type, operation.SourceElementId, operation.TargetElementId, operation.ScopeId));
         return true;
     }
 
@@ -296,13 +291,12 @@ public sealed class Scenario
     private bool ApplyUpdateRelation(UpdateRelationOperation operation)
     {
         const string name = nameof(UpdateRelationOperation);
-        EnsureCommon(operation.Name, operation.Description, operation.Type.IsEmpty, name);
-        EnsureQuantity(operation.Quantity, name);
+        EnsureType(operation.Type.IsEmpty, name);
         Relation relation = GetRelationCore(operation.RelationId, name);
         EnsureElementsNotProcessing([relation.SourceElementId, relation.TargetElementId, GetScopeCore(relation.ScopeId, name).OwnerElementId], name);
-        if (relation.Name == operation.Name && relation.Description == operation.Description && relation.Quantity == operation.Quantity && relation.Type == operation.Type)
+        if (relation.Quantity == operation.Quantity && relation.Type == operation.Type)
             return false;
-        relation.Update(operation.Name, operation.Description, operation.Quantity, operation.Type);
+        relation.Update(operation.Quantity, operation.Type);
         return true;
     }
 
@@ -454,17 +448,17 @@ public sealed class Scenario
         }
         foreach ((Guid key, Scope? scope) in snapshot.Scopes)
         {
-            if (scope is null || key == Guid.Empty || scope.Id != key || string.IsNullOrWhiteSpace(scope.Name) || scope.Description is null || scope.Type.IsEmpty || !double.IsFinite(scope.Quantity) || !snapshot.Elements.ContainsKey(scope.OwnerElementId))
+            if (scope is null || key == Guid.Empty || scope.Id != key || scope.Type.IsEmpty || !snapshot.Elements.ContainsKey(scope.OwnerElementId))
                 errors.Add($"Scope {key} 不合法。");
         }
         foreach ((Guid key, Aspect? aspect) in snapshot.Aspects)
         {
-            if (aspect is null || key == Guid.Empty || aspect.Id != key || string.IsNullOrWhiteSpace(aspect.Name) || aspect.Description is null || aspect.Type.IsEmpty || !double.IsFinite(aspect.Quantity) || !snapshot.Elements.ContainsKey(aspect.ElementId) || !snapshot.Scopes.ContainsKey(aspect.ScopeId))
+            if (aspect is null || key == Guid.Empty || aspect.Id != key || aspect.Type.IsEmpty || !snapshot.Elements.ContainsKey(aspect.ElementId) || !snapshot.Scopes.ContainsKey(aspect.ScopeId))
                 errors.Add($"Aspect {key} 不合法。");
         }
         foreach ((Guid key, Relation? relation) in snapshot.Relations)
         {
-            if (relation is null || key == Guid.Empty || relation.Id != key || string.IsNullOrWhiteSpace(relation.Name) || relation.Description is null || relation.Type.IsEmpty || !double.IsFinite(relation.Quantity) || !snapshot.Elements.ContainsKey(relation.SourceElementId) || !snapshot.Elements.ContainsKey(relation.TargetElementId) || !snapshot.Scopes.ContainsKey(relation.ScopeId))
+            if (relation is null || key == Guid.Empty || relation.Id != key || relation.Type.IsEmpty || !snapshot.Elements.ContainsKey(relation.SourceElementId) || !snapshot.Elements.ContainsKey(relation.TargetElementId) || !snapshot.Scopes.ContainsKey(relation.ScopeId))
                 errors.Add($"Relation {key} 不合法。");
         }
         foreach ((Guid key, Scene? scene) in snapshot.Scenes)
@@ -514,11 +508,11 @@ public sealed class Scenario
 
     private static Element CloneElement(Element source) => new(source.Id, source.Name, source.Description, source.Type);
 
-    private static Aspect CloneAspect(Aspect source) => new(source.Id, source.Name, source.Description, source.Quantity, source.Type, source.ElementId, source.ScopeId);
+    private static Aspect CloneAspect(Aspect source) => new(source.Id, source.Quantity, source.Type, source.ElementId, source.ScopeId);
 
-    private static Relation CloneRelation(Relation source) => new(source.Id, source.Name, source.Description, source.Quantity, source.Type, source.SourceElementId, source.TargetElementId, source.ScopeId);
+    private static Relation CloneRelation(Relation source) => new(source.Id, source.Quantity, source.Type, source.SourceElementId, source.TargetElementId, source.ScopeId);
 
-    private static Scope CloneScope(Scope source) => new(source.Id, source.Name, source.Description, source.Quantity, source.Type, source.OwnerElementId);
+    private static Scope CloneScope(Scope source) => new(source.Id, source.Quantity, source.Type, source.OwnerElementId);
 
     private static Scene CloneScene(Scene source) => new(source.Id, source.DefinitionId, source.ModuleId, source.ModuleVersion, source.BasedOnScenarioStateId, source.Name, source.Description, source.SettlementOptions, source.State, source.GetSlotSpecifications(), source.GetBindings(), source.DefinitionFrozen);
 
@@ -548,10 +542,10 @@ public sealed class Scenario
             throw Invalid(operation, "Description 不能为 null。");
     }
 
-    private static void EnsureQuantity(double quantity, string operation)
+    private static void EnsureType(bool typeIsEmpty, string operation)
     {
-        if (!double.IsFinite(quantity))
-            throw Invalid(operation, "Quantity 必须是有限 double。");
+        if (typeIsEmpty)
+            throw Invalid(operation, "类型不能是未初始化值。");
     }
 
     private static void EnsureSettlementOptions(SceneSettlementOptions options, string operation)

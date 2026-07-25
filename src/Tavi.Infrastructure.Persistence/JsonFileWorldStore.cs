@@ -92,7 +92,7 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
             string savePath = GetSavePath(normalizedSlot);
             string backupPath = GetBackupPath(normalizedSlot);
             tempPath = Path.Combine(_saveDirectory, $"{normalizedSlot}.{Guid.NewGuid():N}.tmp");
-            var document = new SaveDocumentV2 { SavedAtUtc = DateTimeOffset.UtcNow, World = WorldSaveMapper.FromDomain(snapshot) };
+            var document = new SaveDocumentV3 { SavedAtUtc = DateTimeOffset.UtcNow, World = WorldSaveMapper.FromDomain(snapshot) };
             await WriteDocumentAsync(tempPath, document, cancellationToken);
             if (!File.Exists(savePath))
                 File.Move(tempPath, savePath);
@@ -135,7 +135,8 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
         {
             SaveDocumentV1.CurrentVersion => ReadV1(json.RootElement),
             SaveDocumentV2.CurrentVersion => ReadV2(json.RootElement),
-            _ => throw new InvalidDataException($"不支持存档版本 {version}，当前版本为 {SaveDocumentV2.CurrentVersion}。")
+            SaveDocumentV3.CurrentVersion => ReadV3(json.RootElement),
+            _ => throw new InvalidDataException($"不支持存档版本 {version}，当前版本为 {SaveDocumentV3.CurrentVersion}。")
         };
         _ = RuntimeWorld.Create(snapshot);
         return snapshot;
@@ -150,10 +151,16 @@ public sealed class JsonFileWorldStore : IWorldStore, IDisposable
     private WorldSnapshot ReadV2(JsonElement root)
     {
         SaveDocumentV2 document = root.Deserialize<SaveDocumentV2>(_options) ?? throw new InvalidDataException("V2 存档内容为空。");
-        return WorldSaveMapper.ToDomain(document.World ?? throw new InvalidDataException("V2 存档缺少 world 数据。"));
+        return WorldSaveMapper.MigrateFromV2(document.World ?? throw new InvalidDataException("V2 存档缺少 world 数据。"));
     }
 
-    private async Task WriteDocumentAsync(string path, SaveDocumentV2 document, CancellationToken cancellationToken)
+    private WorldSnapshot ReadV3(JsonElement root)
+    {
+        SaveDocumentV3 document = root.Deserialize<SaveDocumentV3>(_options) ?? throw new InvalidDataException("V3 存档内容为空。");
+        return WorldSaveMapper.ToDomain(document.World ?? throw new InvalidDataException("V3 存档缺少 world 数据。"));
+    }
+
+    private async Task WriteDocumentAsync(string path, SaveDocumentV3 document, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough);
         await JsonSerializer.SerializeAsync(stream, document, _options, cancellationToken);

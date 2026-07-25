@@ -16,7 +16,7 @@ internal static class GuidanceProposalTool
         ArgumentNullException.ThrowIfNull(guidance);
         ArgumentNullException.ThrowIfNull(projectedWorld);
         ArgumentNullException.ThrowIfNull(catalog);
-        return [new WorldTypeDiscoveryTool(catalog), new SetSummaryTool(guidance), new ProposeElementTool(guidance), new ProposeScopeTool(guidance, projectedWorld), new ProposeAspectTool(guidance, projectedWorld), new ProposeRelationTool(guidance, projectedWorld)];
+        return [new WorldTypeDiscoveryTool(catalog), new SetSummaryTool(guidance), new ProposeElementTool(guidance), new ProposeScopeTool(guidance, projectedWorld), new ProposeAspectTool(guidance, projectedWorld), new ProposeRelationTool(guidance, projectedWorld), new ProposeLocalAspectTool(guidance, projectedWorld), new ProposeLocalRelationTool(guidance, projectedWorld)];
     }
 
     private static ProposalElementReference ResolveElementReference(GuidanceDraft guidance, WorldSnapshot world, ReferenceKind kind, string selector)
@@ -72,12 +72,14 @@ internal static class GuidanceProposalTool
 
     private static Scope RequireSingleScope(WorldSnapshot world, string selector)
     {
-        Scope[] values = world.Scopes.Values.Where(value => string.Equals(value.Name, selector, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (Guid.TryParse(selector, out Guid id) && world.Scopes.TryGetValue(id, out Scope? exact))
+            return exact;
+        Scope[] values = world.Scopes.Values.Where(value => string.Equals(value.Type.Value, selector, StringComparison.Ordinal)).ToArray();
         return values.Length switch
         {
             1 => values[0],
-            0 => throw new ToolArgumentException($"当前临时 World 不存在名称为“{selector}”的 Scope。"),
-            _ => throw new ToolArgumentException($"名称“{selector}”匹配多个 Scope。")
+            0 => throw new ToolArgumentException($"当前临时 World 不存在标识或类型为“{selector}”的 Scope。"),
+            _ => throw new ToolArgumentException($"类型“{selector}”匹配多个 Scope；请使用 Scope Id。")
         };
     }
 
@@ -91,13 +93,6 @@ internal static class GuidanceProposalTool
         {
             throw new ToolArgumentException(exception.Message, exception);
         }
-    }
-
-    private static double RequireFinite(double quantity)
-    {
-        if (!double.IsFinite(quantity))
-            throw new ToolArgumentException("Quantity 必须是有限 double。");
-        return quantity;
     }
 
     private enum ReferenceKind
@@ -164,14 +159,8 @@ internal static class GuidanceProposalTool
         [Description("向玩家说明这项修改如何发展叙事势能")]
         public string Rationale { get; set; } = string.Empty;
 
-        [Description("拟添加 Scope 的名称")]
-        public string Name { get; set; } = string.Empty;
-
-        [Description("拟添加 Scope 的描述")]
-        public string Description { get; set; } = string.Empty;
-
-        [Description("由对应 Module 解释的有限强度")]
-        public double Quantity { get; set; } = 1;
+        [Description("由对应 Module 解释的整数数量")]
+        public int Quantity { get; set; } = 1;
 
         [Description("符合 namespace:name 约定的 ScopeType")]
         public string Type { get; set; } = "core:none";
@@ -193,7 +182,7 @@ internal static class GuidanceProposalTool
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(Invoke(() =>
             {
-                ProposeAddScope change = guidance.ProposeScope(arguments.Rationale, arguments.Name, arguments.Description, RequireFinite(arguments.Quantity), new ScopeType(arguments.Type), ResolveElementReference(guidance, world, arguments.OwnerKind, arguments.Owner));
+                ProposeAddScope change = guidance.ProposeScope(arguments.Rationale, arguments.Quantity, new ScopeType(arguments.Type), ResolveElementReference(guidance, world, arguments.OwnerKind, arguments.Owner));
                 return new { changeId = change.Id, proposalScopeId = change.ScopeId.Value };
             }));
         }
@@ -204,19 +193,13 @@ internal static class GuidanceProposalTool
         [Description("向玩家说明这项修改如何发展叙事势能")]
         public string Rationale { get; set; } = string.Empty;
 
-        [Description("断言名称")]
-        public string Name { get; set; } = string.Empty;
-
-        [Description("断言描述")]
-        public string Description { get; set; } = string.Empty;
-
-        [Description("由对应 Module 解释的有限强度")]
-        public double Quantity { get; set; } = 1;
+        [Description("由对应 Module 解释的整数数量")]
+        public int Quantity { get; set; } = 1;
 
         [Description("Scope 是现有 Scope 还是 propose_scope 返回的临时 Scope")]
         public ReferenceKind ScopeKind { get; set; }
 
-        [Description("现有 Scope 的唯一名称或 proposalScopeId")]
+        [Description("现有 Scope 的 Id、唯一类型键或 proposalScopeId")]
         public string Scope { get; set; } = string.Empty;
     }
 
@@ -242,7 +225,7 @@ internal static class GuidanceProposalTool
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(Invoke(() =>
             {
-                ProposeAddAspect change = guidance.ProposeAspect(arguments.Rationale, arguments.Name, arguments.Description, RequireFinite(arguments.Quantity), new AspectType(arguments.Type), ResolveElementReference(guidance, world, arguments.ElementKind, arguments.Element), ResolveScopeReference(guidance, world, arguments.ScopeKind, arguments.Scope));
+                ProposeAddAspect change = guidance.ProposeAspect(arguments.Rationale, arguments.Quantity, new AspectType(arguments.Type), ResolveElementReference(guidance, world, arguments.ElementKind, arguments.Element), ResolveScopeReference(guidance, world, arguments.ScopeKind, arguments.Scope));
                 return new { changeId = change.Id, proposed = true };
             }));
         }
@@ -276,7 +259,72 @@ internal static class GuidanceProposalTool
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(Invoke(() =>
             {
-                ProposeAddRelation change = guidance.ProposeRelation(arguments.Rationale, arguments.Name, arguments.Description, RequireFinite(arguments.Quantity), new RelationType(arguments.Type), ResolveElementReference(guidance, world, arguments.SourceKind, arguments.Source), ResolveElementReference(guidance, world, arguments.TargetKind, arguments.Target), ResolveScopeReference(guidance, world, arguments.ScopeKind, arguments.Scope));
+                ProposeAddRelation change = guidance.ProposeRelation(arguments.Rationale, arguments.Quantity, new RelationType(arguments.Type), ResolveElementReference(guidance, world, arguments.SourceKind, arguments.Source), ResolveElementReference(guidance, world, arguments.TargetKind, arguments.Target), ResolveScopeReference(guidance, world, arguments.ScopeKind, arguments.Scope));
+                return new { changeId = change.Id, proposed = true };
+            }));
+        }
+    }
+
+    private abstract class ProposeLocalArguments : AssertionArguments
+    {
+        [Description("自由语义名称；其语义不会被 Module 或 Evolution 解释")]
+        public string Name { get; set; } = string.Empty;
+
+        [Description("自由语义说明")]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    private sealed class ProposeLocalAspectArguments : ProposeLocalArguments
+    {
+        [Description("目标是现有 Element 还是临时 Element")]
+        public ReferenceKind ElementKind { get; set; }
+
+        [Description("现有 Element 的唯一名称或 proposalElementId")]
+        public string Element { get; set; } = string.Empty;
+    }
+
+    private sealed class ProposeLocalAspectTool(GuidanceDraft guidance, WorldSnapshot world) : Tool<ProposeLocalAspectArguments>
+    {
+        public override string name => "propose_local_aspect";
+        public override string description => "当 Module 没有合适 AspectType 时，向草稿添加仅存在于 World 且不参与 Evolution 的 LocalAspect。";
+
+        protected override Task<string> Execute(ProposeLocalAspectArguments arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Invoke(() =>
+            {
+                ProposeAddLocalAspect change = guidance.ProposeLocalAspect(arguments.Rationale, arguments.Name, arguments.Description, arguments.Quantity, ResolveElementReference(guidance, world, arguments.ElementKind, arguments.Element), ResolveScopeReference(guidance, world, arguments.ScopeKind, arguments.Scope));
+                return new { changeId = change.Id, proposed = true };
+            }));
+        }
+    }
+
+    private sealed class ProposeLocalRelationArguments : ProposeLocalArguments
+    {
+        [Description("Source 是现有 Element 还是临时 Element")]
+        public ReferenceKind SourceKind { get; set; }
+
+        [Description("现有 Source Element 的唯一名称或 proposalElementId")]
+        public string Source { get; set; } = string.Empty;
+
+        [Description("Target 是现有 Element 还是临时 Element")]
+        public ReferenceKind TargetKind { get; set; }
+
+        [Description("现有 Target Element 的唯一名称或 proposalElementId")]
+        public string Target { get; set; } = string.Empty;
+    }
+
+    private sealed class ProposeLocalRelationTool(GuidanceDraft guidance, WorldSnapshot world) : Tool<ProposeLocalRelationArguments>
+    {
+        public override string name => "propose_local_relation";
+        public override string description => "当 Module 没有合适 RelationType 时，向草稿添加仅存在于 World 且不参与 Evolution 的 LocalRelation。";
+
+        protected override Task<string> Execute(ProposeLocalRelationArguments arguments, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Invoke(() =>
+            {
+                ProposeAddLocalRelation change = guidance.ProposeLocalRelation(arguments.Rationale, arguments.Name, arguments.Description, arguments.Quantity, ResolveElementReference(guidance, world, arguments.SourceKind, arguments.Source), ResolveElementReference(guidance, world, arguments.TargetKind, arguments.Target), ResolveScopeReference(guidance, world, arguments.ScopeKind, arguments.Scope));
                 return new { changeId = change.Id, proposed = true };
             }));
         }
