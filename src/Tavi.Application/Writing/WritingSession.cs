@@ -1,4 +1,5 @@
 using Tavi.Domain.Story;
+using Tavi.Utilities.Concurrency;
 
 namespace Tavi.Application.Writing;
 
@@ -7,16 +8,14 @@ public sealed class WritingSession : IWritingService
 {
     private readonly IManuscriptStore _store;
     private readonly TimeSpan? _autoSaveDelay;
-    private readonly object _sync = new();
+    private readonly object _initializationSync = new();
     private readonly object _debounceSync = new();
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly CancellationTokenSource _lifetimeSource = new();
+    private readonly VersionedWorkspace<WritingWorkspaceState, WritingOperationBatch, WritingHistoryEntry> _workspace;
     private readonly List<WritingStagedChange> _staged = [];
-    private readonly Stack<HistoryEntry> _undo = new();
-    private readonly Stack<HistoryEntry> _redo = new();
     private readonly List<Task> _autoSaveTasks = [];
     private CancellationTokenSource? _debounceSource;
-    private Manuscript? _current;
     private Guid _savedStateId;
     private long _stagingRevision;
     private bool _initialized;
@@ -30,13 +29,14 @@ public sealed class WritingSession : IWritingService
         if (autoSaveDelay < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(autoSaveDelay), "自动保存延迟不能为负数。");
         _autoSaveDelay = autoSaveDelay;
+        _workspace = new VersionedWorkspace<WritingWorkspaceState, WritingOperationBatch, WritingHistoryEntry>(new WritingConcurrencyModel());
     }
 
     /// <inheritdoc />
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        lock (_sync)
+        lock (_initializationSync)
         {
             if (_initialized)
                 throw new InvalidOperationException("WritingSession 已经初始化。");
@@ -46,16 +46,17 @@ public sealed class WritingSession : IWritingService
         try
         {
             Manuscript? active = await _store.LoadActiveAsync(cancellationToken);
-            lock (_sync)
+            _workspace.Initialize(new WritingWorkspaceState(active));
+            _workspace.ExecuteExclusive(() =>
             {
-                _current = active;
                 _savedStateId = active?.StateId ?? Guid.Empty;
                 _transitioning = false;
-            }
+                return true;
+            });
         }
         catch
         {
-            lock (_sync)
+            lock (_initializationSync)
             {
                 _initialized = false;
                 _transitioning = false;
@@ -68,11 +69,8 @@ public sealed class WritingSession : IWritingService
     public WritingSnapshot GetSnapshot()
     {
         ThrowIfDisposed();
-        lock (_sync)
-        {
-            EnsureInitializedLocked();
-            return CreateSnapshotLocked();
-        }
+        EnsureInitialized();
+        return _workspace.ExecuteExclusive(CreateSnapshotLocked);
     }
 
     /// <inheritdoc />
@@ -81,11 +79,12 @@ public sealed class WritingSession : IWritingService
         ThrowIfDisposed();
         IReadOnlyList<Manuscript> archived = await _store.ListArchivedAsync(cancellationToken);
         Manuscript? active;
-        lock (_sync)
+        EnsureInitialized();
+        active = _workspace.ExecuteExclusive(() =>
         {
-            EnsureInitializedLocked();
-            active = _current is null ? null : CreateProjectionLocked();
-        }
+            Manuscript? current = CurrentLocked();
+            return current is null ? null : CreateProjectionLocked();
+        });
         return (active is null ? archived : archived.Append(active)).OrderByDescending(manuscript => manuscript.UpdatedAtUtc).Select(ToSummary).ToArray();
     }
 
@@ -95,12 +94,14 @@ public sealed class WritingSession : IWritingService
         if (manuscriptId == Guid.Empty)
             throw new ArgumentException("手稿标识不能为空。", nameof(manuscriptId));
         ThrowIfDisposed();
-        lock (_sync)
+        EnsureInitialized();
+        Manuscript? current = _workspace.ExecuteExclusive(() =>
         {
-            EnsureInitializedLocked();
-            if (_current?.Id == manuscriptId)
-                return CreateProjectionLocked();
-        }
+            Manuscript? value = CurrentLocked();
+            return value?.Id == manuscriptId ? CreateProjectionLocked() : null;
+        });
+        if (current is not null)
+            return current;
         return await _store.LoadArchivedAsync(manuscriptId, cancellationToken) ?? throw WritingException.NotFound(manuscriptId);
     }
 
@@ -109,35 +110,38 @@ public sealed class WritingSession : IWritingService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ThrowIfDisposed();
-        Manuscript created;
-        lock (_sync)
+        EnsureInitialized();
+        Manuscript created = _workspace.ExecuteExclusive(() =>
         {
             EnsureReadyLocked();
-            if (_current is not null)
-                throw WritingException.ActiveExists(_current.Id);
+            Manuscript? current = CurrentLocked();
+            if (current is not null)
+                throw WritingException.ActiveExists(current.Id);
             _transitioning = true;
-            created = Manuscript.Create(title);
-            _current = created;
+            Manuscript created = Manuscript.Create(title);
+            _workspace.Reset(new WritingWorkspaceState(created));
             _savedStateId = Guid.Empty;
-        }
+            return created;
+        });
         try
         {
             await _store.SaveActiveAsync(created, cancellationToken);
-            lock (_sync)
+            return _workspace.ExecuteExclusive(() =>
             {
                 _savedStateId = created.StateId;
                 _transitioning = false;
                 return CreateSnapshotLocked();
-            }
+            });
         }
         catch
         {
-            lock (_sync)
+            _workspace.ExecuteExclusive(() =>
             {
-                _current = null;
+                _workspace.Reset(new WritingWorkspaceState(null));
                 _savedStateId = Guid.Empty;
                 _transitioning = false;
-            }
+                return true;
+            });
             throw;
         }
     }
@@ -149,7 +153,8 @@ public sealed class WritingSession : IWritingService
         if (!Enum.IsDefined(source))
             throw new ArgumentOutOfRangeException(nameof(source));
         ThrowIfDisposed();
-        lock (_sync)
+        EnsureInitialized();
+        return _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Stage");
             _ = ManuscriptEditor.Apply(CreateProjectionLocked(), [operation], true);
@@ -157,14 +162,15 @@ public sealed class WritingSession : IWritingService
             _staged.Add(change);
             _stagingRevision++;
             return change.Id;
-        }
+        });
     }
 
     /// <inheritdoc />
     public bool DeleteStaged(Guid changeId)
     {
         ThrowIfDisposed();
-        lock (_sync)
+        EnsureInitialized();
+        return _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("DeleteStaged");
             int index = _staged.FindIndex(change => change.Id == changeId);
@@ -173,7 +179,7 @@ public sealed class WritingSession : IWritingService
             _staged.RemoveAt(index);
             _stagingRevision++;
             return true;
-        }
+        });
     }
 
     /// <inheritdoc />
@@ -182,22 +188,22 @@ public sealed class WritingSession : IWritingService
         ArgumentNullException.ThrowIfNull(changeIds);
         Guid[] selectedIds = changeIds.Distinct().ToArray();
         ThrowIfDisposed();
-        lock (_sync)
+        EnsureInitialized();
+        return _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("CommitStaged");
             Manuscript current = RequireCurrentLocked("CommitStaged");
-            EnsureStateLocked(current, expectedStateId);
             if (selectedIds.Length == 0)
                 throw WritingException.StagingInvalid("至少需要选择一项暂存修改。");
             WritingStagedChange[] selected = selectedIds.Select(id => _staged.FirstOrDefault(change => change.Id == id) ?? throw WritingException.StagingInvalid($"不存在暂存项 {id}。")).ToArray();
             Manuscript candidate = ManuscriptEditor.Apply(current, selected.Select(change => change.Operation));
             WritingStagedChange[] remaining = _staged.Where(change => !selectedIds.Contains(change.Id)).ToArray();
             _ = ManuscriptEditor.Apply(candidate, remaining.Select(change => change.Operation), true);
-            WritingCommitResult result = CommitLocked(selected.Select(change => change.Operation));
+            WritingCommitResult result = CommitLocked(selected.Select(change => change.Operation), expectedStateId);
             _staged.RemoveAll(change => selectedIds.Contains(change.Id));
             _stagingRevision++;
             return result;
-        }
+        });
     }
 
     /// <inheritdoc />
@@ -207,55 +213,50 @@ public sealed class WritingSession : IWritingService
         if (!Enum.IsDefined(source))
             throw new ArgumentOutOfRangeException(nameof(source));
         ThrowIfDisposed();
-        lock (_sync)
+        EnsureInitialized();
+        return _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Apply");
-            Manuscript current = RequireCurrentLocked("Apply");
-            EnsureStateLocked(current, expectedStateId);
-            return CommitLocked([operation]);
-        }
+            return CommitLocked([operation], expectedStateId);
+        });
     }
 
     /// <inheritdoc />
     public WritingCommitResult Undo(Guid expectedStateId)
     {
         ThrowIfDisposed();
-        lock (_sync)
+        EnsureInitialized();
+        WritingCommitResult result = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Undo");
-            Manuscript current = RequireCurrentLocked("Undo");
-            EnsureStateLocked(current, expectedStateId);
             if (_staged.Count > 0)
                 throw WritingException.StagingInvalid("存在尚未提交的修改，不能撤销已提交历史。");
-            if (!_undo.TryPop(out HistoryEntry? entry))
+            if (!_workspace.CanUndo)
                 throw new InvalidOperationException("没有可撤销的手稿操作。");
-            Manuscript restored = ManuscriptEditor.RebaseContent(entry.Before);
-            _current = restored;
-            _redo.Push(entry);
+            return ExecuteWorkspace(() => _workspace.Undo(expectedStateId));
+        });
+        if (result.Changed)
             ScheduleAutoSave();
-            return new WritingCommitResult(Guid.NewGuid(), current.StateId, restored.StateId, true);
-        }
+        return result;
     }
 
     /// <inheritdoc />
     public WritingCommitResult Redo(Guid expectedStateId)
     {
         ThrowIfDisposed();
-        lock (_sync)
+        EnsureInitialized();
+        WritingCommitResult result = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Redo");
-            Manuscript current = RequireCurrentLocked("Redo");
-            EnsureStateLocked(current, expectedStateId);
             if (_staged.Count > 0)
                 throw WritingException.StagingInvalid("存在尚未提交的修改，不能重做已提交历史。");
-            if (!_redo.TryPop(out HistoryEntry? entry))
+            if (!_workspace.CanRedo)
                 throw new InvalidOperationException("没有可重做的手稿操作。");
-            Manuscript restored = ManuscriptEditor.RebaseContent(entry.After);
-            _current = restored;
-            _undo.Push(entry);
+            return ExecuteWorkspace(() => _workspace.Redo(expectedStateId));
+        });
+        if (result.Changed)
             ScheduleAutoSave();
-            return new WritingCommitResult(Guid.NewGuid(), current.StateId, restored.StateId, true);
-        }
+        return result;
     }
 
     /// <inheritdoc />
@@ -271,22 +272,23 @@ public sealed class WritingSession : IWritingService
     {
         ThrowIfDisposed();
         CancelPendingAutoSave();
-        Manuscript archived;
-        lock (_sync)
+        EnsureInitialized();
+        Manuscript archived = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Archive");
             Manuscript current = RequireCurrentLocked("Archive");
-            EnsureStateLocked(current, expectedStateId);
+            if (current.StateId != expectedStateId)
+                throw WritingException.Conflict(expectedStateId, current.StateId);
             if (_staged.Count > 0)
             {
-                _ = CommitLocked(_staged.Select(change => change.Operation));
+                _ = CommitLocked(_staged.Select(change => change.Operation), expectedStateId);
                 _staged.Clear();
                 _stagingRevision++;
                 current = RequireCurrentLocked("Archive");
             }
             _transitioning = true;
-            archived = ManuscriptEditor.Apply(current, [], false, ManuscriptStatus.Archived);
-        }
+            return ManuscriptEditor.Apply(current, [], false, ManuscriptStatus.Archived);
+        });
         try
         {
             await _saveGate.WaitAsync(cancellationToken);
@@ -298,20 +300,22 @@ public sealed class WritingSession : IWritingService
             {
                 _saveGate.Release();
             }
-            lock (_sync)
+            _workspace.ExecuteExclusive(() =>
             {
-                _current = null;
+                _workspace.Reset(new WritingWorkspaceState(null));
                 _savedStateId = Guid.Empty;
-                _undo.Clear();
-                _redo.Clear();
                 _transitioning = false;
-            }
+                return true;
+            });
             return archived;
         }
         catch
         {
-            lock (_sync)
+            _workspace.ExecuteExclusive(() =>
+            {
                 _transitioning = false;
+                return true;
+            });
             throw;
         }
     }
@@ -343,7 +347,7 @@ public sealed class WritingSession : IWritingService
         await CancelAndDrainAutoSaveAsync();
         try
         {
-            if (_initialized && _current is not null)
+            if (_initialized && _workspace.IsInitialized && _workspace.Read(state => state.Current is not null))
                 await SaveCoreAsync(CancellationToken.None);
         }
         finally
@@ -358,36 +362,33 @@ public sealed class WritingSession : IWritingService
     /// <summary>获取最近一次后台自动保存异常；下一次保存成功后清空。</summary>
     public Exception? LastAutoSaveException { get; private set; }
 
-    private WritingCommitResult CommitLocked(IEnumerable<ManuscriptOperation> operations)
+    private WritingCommitResult CommitLocked(IEnumerable<ManuscriptOperation> operations, Guid expectedStateId)
     {
-        Manuscript before = RequireCurrentLocked("Commit");
-        Manuscript after = ManuscriptEditor.Apply(before, operations);
-        if (ReferenceEquals(before, after))
-            return new WritingCommitResult(Guid.Empty, before.StateId, before.StateId, false);
-        _current = after;
-        _undo.Push(new HistoryEntry(before, after));
-        _redo.Clear();
-        ScheduleAutoSave();
-        return new WritingCommitResult(Guid.NewGuid(), before.StateId, after.StateId, true);
+        WritingCommitResult result = ExecuteWorkspace(() => _workspace.Commit(new WritingOperationBatch(operations), expectedStateId));
+        if (result.Changed)
+            ScheduleAutoSave();
+        return result;
     }
 
     private async Task SaveCoreAsync(CancellationToken cancellationToken)
     {
         Manuscript snapshot;
-        lock (_sync)
+        EnsureInitialized();
+        snapshot = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Save");
-            snapshot = RequireCurrentLocked("Save");
-        }
+            return RequireCurrentLocked("Save");
+        });
         await _saveGate.WaitAsync(cancellationToken);
         try
         {
             await _store.SaveActiveAsync(snapshot, cancellationToken);
-            lock (_sync)
+            _workspace.ExecuteExclusive(() =>
             {
                 _savedStateId = snapshot.StateId;
                 LastAutoSaveException = null;
-            }
+                return true;
+            });
         }
         finally
         {
@@ -459,8 +460,9 @@ public sealed class WritingSession : IWritingService
 
     private WritingSnapshot CreateSnapshotLocked()
     {
-        Manuscript? projection = _current is null ? null : CreateProjectionLocked();
-        return new WritingSnapshot { Manuscript = projection, StagingRevision = _stagingRevision, IsDirty = _current is not null && _current.StateId != _savedStateId, CanUndo = _undo.Count > 0 && _staged.Count == 0, CanRedo = _redo.Count > 0 && _staged.Count == 0, StagedChanges = _staged.ToArray(), LastAutoSaveException = LastAutoSaveException };
+        Manuscript? current = CurrentLocked();
+        Manuscript? projection = current is null ? null : CreateProjectionLocked();
+        return new WritingSnapshot { Manuscript = projection, StagingRevision = _stagingRevision, IsDirty = current is not null && current.StateId != _savedStateId, CanUndo = _workspace.CanUndo && _staged.Count == 0, CanRedo = _workspace.CanRedo && _staged.Count == 0, StagedChanges = _staged.ToArray(), LastAutoSaveException = LastAutoSaveException };
     }
 
     private Manuscript CreateProjectionLocked() => _staged.Count == 0 ? RequireCurrentLocked("Read") : ManuscriptEditor.Apply(RequireCurrentLocked("Read"), _staged.Select(change => change.Operation), true);
@@ -470,20 +472,34 @@ public sealed class WritingSession : IWritingService
         string preview = string.Join(" ", manuscript.Paragraphs.Select(paragraph => paragraph.Text.Trim()).Where(text => text.Length > 0)).Trim();
         return preview.Length > 160 ? $"{preview[..160]}…" : preview;
     }
-    private Manuscript RequireCurrentLocked(string operation) => _current ?? throw WritingException.NoActive(operation);
-    private static void EnsureStateLocked(Manuscript current, Guid expectedStateId)
+    private WritingCommitResult ExecuteWorkspace(Func<VersionedCommitResult<WritingHistoryEntry>> action)
     {
-        if (current.StateId != expectedStateId)
-            throw WritingException.Conflict(expectedStateId, current.StateId);
+        try
+        {
+            VersionedCommitResult<WritingHistoryEntry> result = action();
+            return new WritingCommitResult(result.CommitId, result.PreviousStateId, result.StateId, result.Changed);
+        }
+        catch (OptimisticConcurrencyConflictException exception)
+        {
+            throw WritingException.Conflict(exception.ExpectedStateId, exception.ActualStateId);
+        }
     }
-    private void EnsureInitializedLocked()
+
+    private Manuscript? CurrentLocked() => _workspace.Read(state => state.Current);
+    private Manuscript RequireCurrentLocked(string operation) => CurrentLocked() ?? throw WritingException.NoActive(operation);
+
+    private void EnsureInitialized()
     {
-        if (!_initialized)
+        bool initialized;
+        lock (_initializationSync)
+            initialized = _initialized;
+        if (!initialized || !_workspace.IsInitialized)
             throw new InvalidOperationException("WritingSession 尚未初始化。");
     }
+
     private void EnsureReadyLocked()
     {
-        EnsureInitializedLocked();
+        EnsureInitialized();
         if (_transitioning)
             throw new InvalidOperationException("WritingSession 正在执行状态转换。");
     }
@@ -495,5 +511,5 @@ public sealed class WritingSession : IWritingService
             throw WritingException.ArchivedImmutable(current.Id);
     }
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
-    private sealed record HistoryEntry(Manuscript Before, Manuscript After);
+
 }

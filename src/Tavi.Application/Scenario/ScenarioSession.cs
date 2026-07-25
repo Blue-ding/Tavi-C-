@@ -3,6 +3,7 @@ using Tavi.Application.Extensions;
 using Tavi.Application.Extensions.Scenario;
 using System.Collections.ObjectModel;
 using Tavi.Extensibility;
+using Tavi.Utilities.Concurrency;
 using RuntimeScenario = Tavi.Domain.Scenario.Scenario;
 using WorldSnapshot = Tavi.Domain.World.WorldSnapshot;
 
@@ -20,14 +21,11 @@ public sealed class ScenarioSession : IScenarioService
     private IReadOnlyDictionary<ModuleId, IReadOnlyDictionary<string, string>> _moduleParameters = new Dictionary<ModuleId, IReadOnlyDictionary<string, string>>();
     private readonly string _slot;
     private readonly TimeSpan _autoSaveDelay;
-    private readonly object _scenarioSync = new();
     private readonly object _debounceSync = new();
     private readonly SemaphoreSlim _saveGate = new(1, 1);
-    private readonly Stack<AppliedScenarioChangeSet> _undoHistory = new();
-    private readonly Stack<AppliedScenarioChangeSet> _redoHistory = new();
+    private readonly VersionedWorkspace<RuntimeScenario, ScenarioChangeSet, AppliedScenarioChangeSet> _workspace;
     private readonly List<Task> _autoSaveTasks = [];
     private CancellationTokenSource? _debounceSource;
-    private RuntimeScenario? _current;
     private Guid _savedStateId;
     private bool _disposed;
 
@@ -47,6 +45,7 @@ public sealed class ScenarioSession : IScenarioService
         if (_autoSaveDelay < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(autoSaveDelay), "自动保存延迟不能为负数。");
         _validator = new ScenarioSemanticValidator(catalog);
+        _workspace = new VersionedWorkspace<RuntimeScenario, ScenarioChangeSet, AppliedScenarioChangeSet>(new ScenarioConcurrencyModel(_validator));
         Queries = new ScenarioQueries(this);
     }
 
@@ -81,7 +80,7 @@ public sealed class ScenarioSession : IScenarioService
     public ScenarioQueries Queries { get; }
 
     /// <inheritdoc />
-    public ScenarioSessionHealth Health { get; private set; } = ScenarioSessionHealth.Healthy;
+    public ScenarioSessionHealth Health => _workspace.Health == VersionedWorkspaceHealth.Healthy ? ScenarioSessionHealth.Healthy : ScenarioSessionHealth.Faulted;
 
     /// <inheritdoc />
     public Guid StateId => ExecuteQuery(scenario => scenario.StateId);
@@ -90,10 +89,10 @@ public sealed class ScenarioSession : IScenarioService
     public bool IsDirty => ExecuteQuery(scenario => scenario.StateId != _savedStateId);
 
     /// <inheritdoc />
-    public bool CanUndo => ExecuteLocked(() => _undoHistory.Count > 0);
+    public bool CanUndo => _workspace.CanUndo;
 
     /// <inheritdoc />
-    public bool CanRedo => ExecuteLocked(() => _redoHistory.Count > 0);
+    public bool CanRedo => _workspace.CanRedo;
 
     /// <inheritdoc />
     public Exception? LastAutoSaveException { get; private set; }
@@ -102,26 +101,26 @@ public sealed class ScenarioSession : IScenarioService
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        lock (_scenarioSync)
-        {
-            if (_current is not null)
-                throw InvalidState(nameof(InitializeAsync), "ScenarioSession 已经初始化。");
-        }
+        if (_workspace.IsInitialized)
+            throw InvalidState(nameof(InitializeAsync), "ScenarioSession 已经初始化。");
         ScenarioSnapshot? loaded = await _store.LoadAsync(_slot, cancellationToken);
         ScenarioSnapshot snapshot = loaded ?? CreateInitialSnapshot();
         EnsureFrozenParametersMatch(snapshot);
         RuntimeScenario scenario = RuntimeScenario.Create(snapshot);
         _validator.EnsureValid(scenario.CreateSnapshot(), nameof(InitializeAsync));
-        lock (_scenarioSync)
+        try
         {
-            if (_current is not null)
-                throw InvalidState(nameof(InitializeAsync), "ScenarioSession 已经初始化。");
-            _current = scenario;
-            _savedStateId = loaded is null ? Guid.Empty : scenario.StateId;
-            _undoHistory.Clear();
-            _redoHistory.Clear();
-            Health = ScenarioSessionHealth.Healthy;
+            _workspace.Initialize(scenario);
         }
+        catch (InvalidOperationException exception) when (_workspace.IsInitialized)
+        {
+            throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.InvalidSessionState, TaviErrorCategory.InvalidState, nameof(InitializeAsync), "ScenarioSession 已经初始化。", innerException: exception);
+        }
+        _workspace.ExecuteExclusive(() =>
+        {
+            _savedStateId = loaded is null ? Guid.Empty : scenario.StateId;
+            return true;
+        });
     }
 
     /// <inheritdoc />
@@ -135,7 +134,7 @@ public sealed class ScenarioSession : IScenarioService
 
     private ScenarioCommitResult Commit(ScenarioChangeSet changeSet, Guid expectedStateId)
     {
-        ScenarioCommitResult result = ApplyCore(changeSet, expectedStateId, HistoryAction.Record);
+        ScenarioCommitResult result = ExecuteWorkspace(() => _workspace.Commit(changeSet, expectedStateId), nameof(Apply));
         Publish(result);
         return result;
     }
@@ -274,7 +273,12 @@ public sealed class ScenarioSession : IScenarioService
     /// <inheritdoc />
     public ScenarioCommitResult Undo(Guid expectedStateId)
     {
-        ScenarioCommitResult result = ApplyCore(null, expectedStateId, HistoryAction.Undo);
+        ScenarioCommitResult result = _workspace.ExecuteExclusive(() =>
+        {
+            if (!_workspace.CanUndo)
+                throw InvalidState(nameof(Undo), "没有可撤销的 Scenario 操作。");
+            return ExecuteWorkspace(() => _workspace.Undo(expectedStateId), nameof(Undo));
+        });
         Publish(result);
         return result;
     }
@@ -282,7 +286,12 @@ public sealed class ScenarioSession : IScenarioService
     /// <inheritdoc />
     public ScenarioCommitResult Redo(Guid expectedStateId)
     {
-        ScenarioCommitResult result = ApplyCore(null, expectedStateId, HistoryAction.Redo);
+        ScenarioCommitResult result = _workspace.ExecuteExclusive(() =>
+        {
+            if (!_workspace.CanRedo)
+                throw InvalidState(nameof(Redo), "没有可重做的 Scenario 操作。");
+            return ExecuteWorkspace(() => _workspace.Redo(expectedStateId), nameof(Redo));
+        });
         Publish(result);
         return result;
     }
@@ -309,7 +318,7 @@ public sealed class ScenarioSession : IScenarioService
         try
         {
             await CancelAndDrainAutoSaveAsync();
-            if (_current is not null && Health == ScenarioSessionHealth.Healthy)
+            if (_workspace.IsInitialized && Health == ScenarioSessionHealth.Healthy)
                 await SaveCoreAsync(false, CancellationToken.None);
         }
         finally
@@ -322,59 +331,26 @@ public sealed class ScenarioSession : IScenarioService
     internal TResult ExecuteQuery<TResult>(Func<RuntimeScenario, TResult> query)
     {
         ArgumentNullException.ThrowIfNull(query);
-        return ExecuteLocked(() => query(RequireCurrent()));
+        ThrowIfDisposed();
+        return _workspace.Read(query);
     }
 
-    private ScenarioCommitResult ApplyCore(ScenarioChangeSet? requested, Guid expectedStateId, HistoryAction action)
+    private ScenarioCommitResult ExecuteWorkspace(Func<VersionedCommitResult<AppliedScenarioChangeSet>> action, string operation)
     {
-        lock (_scenarioSync)
+        try
         {
-            EnsureUsableLocked();
-            RuntimeScenario scenario = RequireCurrent();
-            EnsureExpectedState(scenario, expectedStateId, nameof(Apply));
-            AppliedScenarioChangeSet? history = action switch
-            {
-                HistoryAction.Undo => _undoHistory.TryPeek(out AppliedScenarioChangeSet? undo) ? undo : throw InvalidState(nameof(Undo), "没有可撤销的 Scenario 操作。"),
-                HistoryAction.Redo => _redoHistory.TryPeek(out AppliedScenarioChangeSet? redo) ? redo : throw InvalidState(nameof(Redo), "没有可重做的 Scenario 操作。"),
-                _ => null
-            };
-            ScenarioChangeSet changeSet = action switch
-            {
-                HistoryAction.Undo => history!.Inverse,
-                HistoryAction.Redo => history!.Forward,
-                _ => requested!
-            };
-            RuntimeScenario projection = RuntimeScenario.Create(scenario.CreateSnapshot());
-            _ = projection.Apply(changeSet);
-            _validator.EnsureValid(projection.CreateSnapshot(), nameof(Apply));
-            ScenarioApplyResult applied;
-            try
-            {
-                applied = scenario.Apply(changeSet);
-            }
-            catch (ScenarioException exception) when (exception.ErrorCode == ScenarioErrorCodes.RollbackFailed)
-            {
-                Health = ScenarioSessionHealth.Faulted;
-                throw;
-            }
-            if (!applied.Changed)
-                return ScenarioCommitResult.Unchanged(scenario.StateId);
-            switch (action)
-            {
-                case HistoryAction.Record:
-                    _undoHistory.Push(applied.ChangeSet!);
-                    _redoHistory.Clear();
-                    break;
-                case HistoryAction.Undo:
-                    _undoHistory.Pop();
-                    _redoHistory.Push(history!);
-                    break;
-                case HistoryAction.Redo:
-                    _redoHistory.Pop();
-                    _undoHistory.Push(history!);
-                    break;
-            }
-            return new ScenarioCommitResult(Guid.NewGuid(), applied.PreviousStateId, applied.StateId, applied.ChangeSet);
+            VersionedCommitResult<AppliedScenarioChangeSet> result = action();
+            return result.Changed
+                ? new ScenarioCommitResult(result.CommitId, result.PreviousStateId, result.StateId, result.History)
+                : ScenarioCommitResult.Unchanged(result.StateId);
+        }
+        catch (OptimisticConcurrencyConflictException exception)
+        {
+            throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.StateConflict, TaviErrorCategory.Conflict, operation, $"Scenario 状态冲突：期望 {exception.ExpectedStateId}，实际 {exception.ActualStateId}。");
+        }
+        catch (AtomicStateRecoveryException exception) when (exception.InnerException is ScenarioException cause)
+        {
+            throw cause;
         }
     }
 
@@ -388,8 +364,11 @@ public sealed class ScenarioSession : IScenarioService
             if (!force && state.Saved)
                 return;
             await _store.SaveAsync(_slot, state.Snapshot, cancellationToken);
-            lock (_scenarioSync)
+            _workspace.ExecuteExclusive(() =>
+            {
                 _savedStateId = state.StateId;
+                return true;
+            });
             LastAutoSaveException = null;
         }
         finally
@@ -560,28 +539,15 @@ public sealed class ScenarioSession : IScenarioService
 
     private TResult ExecuteLocked<TResult>(Func<TResult> action)
     {
-        lock (_scenarioSync)
-        {
-            EnsureUsableLocked();
-            return action();
-        }
+        ThrowIfDisposed();
+        return _workspace.ExecuteExclusive(action);
     }
 
     private void EnsureUsable()
     {
-        lock (_scenarioSync)
-            EnsureUsableLocked();
-    }
-
-    private void EnsureUsableLocked()
-    {
         ThrowIfDisposed();
-        if (Health == ScenarioSessionHealth.Faulted)
-            throw InvalidState(nameof(ScenarioSession), "ScenarioSession 已进入 Faulted 状态。");
-        _ = RequireCurrent();
+        _workspace.Read(_ => true);
     }
-
-    private RuntimeScenario RequireCurrent() => _current ?? throw InvalidState(nameof(ScenarioSession), "ScenarioSession 尚未初始化。");
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -589,10 +555,4 @@ public sealed class ScenarioSession : IScenarioService
 
     private static ScenarioApplicationException Semantic(string operation, string message) => new(ScenarioApplicationErrorCodes.SemanticViolation, TaviErrorCategory.Validation, operation, message);
 
-    private enum HistoryAction
-    {
-        Record,
-        Undo,
-        Redo
-    }
 }

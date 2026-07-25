@@ -7,6 +7,7 @@
     <ProjectReference Include="..\Tavi.Abstractions\Tavi.Abstractions.csproj" />
     <ProjectReference Include="..\Tavi.Domain\Tavi.Domain.csproj" />
     <ProjectReference Include="..\Tavi.Extensibility\Tavi.Extensibility.csproj" />
+    <ProjectReference Include="..\Tavi.Utilities\Tavi.Utilities.csproj" />
     <PackageReference Include="System.Memory.Data" />
   </ItemGroup>
 </Project>

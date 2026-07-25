@@ -9,6 +9,7 @@ Tavi 正在从 Unity C# 代码包迁移为独立的 .NET 后端。当前入口�
 ```text
 src/
   Tavi.Domain/                    世界图等领域模型
+  Tavi.Utilities/                 乐观并发与版本化工作区等通用机制
   Tavi.Application/               应用服务与 LLM 契约
   Tavi.Infrastructure.OpenAI/     OpenAI SDK 适配
   Tavi.Infrastructure.Persistence/  本地持久化适配

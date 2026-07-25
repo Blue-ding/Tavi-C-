@@ -1,4 +1,5 @@
 using Tavi.Domain.World;
+using Tavi.Utilities.Concurrency;
 using RuntimeWorld = Tavi.Domain.World.World;
 
 namespace Tavi.Application.World;
@@ -13,16 +14,13 @@ public sealed class WorldSession : IWorldService
     private readonly string _slot;
     private readonly TimeSpan _autoSaveDelay;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
-    private readonly object _worldSync = new();
     private readonly object _debounceSync = new();
     private readonly object _disposeSync = new();
     private readonly CancellationTokenSource _lifetimeSource = new();
-    private readonly Stack<AppliedWorldChangeSet> _undoHistory = new();
-    private readonly Stack<AppliedWorldChangeSet> _redoHistory = new();
+    private readonly VersionedWorkspace<RuntimeWorld, WorldChangeSet, AppliedWorldChangeSet> _workspace;
     private readonly WorldStagingArea _staging = new();
     private CancellationTokenSource? _debounceSource;
     private readonly List<Task> _autoSaveTasks = [];
-    private RuntimeWorld? _current;
     private Guid _savedStateId;
     private int _reportedDirty;
     private bool _disposed;
@@ -41,6 +39,7 @@ public sealed class WorldSession : IWorldService
         _autoSaveDelay = autoSaveDelay ?? TimeSpan.FromSeconds(1);
         if (_autoSaveDelay < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(autoSaveDelay), "自动保存延迟不能为负数。");
+        _workspace = new VersionedWorkspace<RuntimeWorld, WorldChangeSet, AppliedWorldChangeSet>(new WorldConcurrencyModel());
         Queries = new WorldQueries(this);
     }
 
@@ -62,7 +61,7 @@ public sealed class WorldSession : IWorldService
     /// <summary>
     /// 获取当前会话健康状态。回滚失败后会话进入 Faulted，并拒绝继续读写或保存。
     /// </summary>
-    public WorldSessionHealth Health { get; private set; } = WorldSessionHealth.Healthy;
+    public WorldSessionHealth Health => _workspace.Health == VersionedWorkspaceHealth.Healthy ? WorldSessionHealth.Healthy : WorldSessionHealth.Faulted;
 
     /// <summary>获取当前 World 状态标识；每次实际提交都会生成新值，该值不表达提交顺序。</summary>
     public Guid StateId => ExecuteQuery(world => world.StateId);
@@ -75,12 +74,12 @@ public sealed class WorldSession : IWorldService
     /// <summary>
     /// 获取当前是否存在可撤销的已提交操作组。
     /// </summary>
-    public bool CanUndo => ExecuteLocked(() => _undoHistory.Count > 0);
+    public bool CanUndo => _workspace.CanUndo;
 
     /// <summary>
     /// 获取当前是否存在可重做的操作组。
     /// </summary>
-    public bool CanRedo => ExecuteLocked(() => _redoHistory.Count > 0);
+    public bool CanRedo => _workspace.CanRedo;
 
     /// <summary>获取当前暂存区 revision。</summary>
     public long StagingRevision => ExecuteLocked(() => _staging.Revision);
@@ -96,22 +95,23 @@ public sealed class WorldSession : IWorldService
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        lock (_worldSync)
-        {
-            if (_current is not null)
-                throw new InvalidOperationException("WorldSession 已经初始化。");
-        }
+        if (_workspace.IsInitialized)
+            throw new InvalidOperationException("WorldSession 已经初始化。");
         WorldSnapshot? snapshot = await _store.LoadAsync(_slot, cancellationToken);
-        lock (_worldSync)
+        RuntimeWorld world = RuntimeWorld.Create(snapshot ?? new WorldSnapshot());
+        try
         {
-            if (_current is not null)
-                throw new InvalidOperationException("WorldSession 已经初始化。");
-            _current = RuntimeWorld.Create(snapshot ?? new WorldSnapshot());
-            _undoHistory.Clear();
-            _redoHistory.Clear();
-            Health = WorldSessionHealth.Healthy;
-            _savedStateId = snapshot is null ? Guid.Empty : _current.StateId;
+            _workspace.Initialize(world);
         }
+        catch (InvalidOperationException exception) when (_workspace.IsInitialized)
+        {
+            throw new InvalidOperationException("WorldSession 已经初始化。", exception);
+        }
+        _workspace.ExecuteExclusive(() =>
+        {
+            _savedStateId = snapshot is null ? Guid.Empty : world.StateId;
+            return true;
+        });
         NotifyDirtyChanged();
         if (snapshot is null)
             ScheduleAutoSave();
@@ -124,7 +124,7 @@ public sealed class WorldSession : IWorldService
     {
         ArgumentNullException.ThrowIfNull(changeSet);
         ValidateRegisteredTypes(changeSet.Operations);
-        WorldCommitResult result = ApplyCore(changeSet, expectedStateId, HistoryAction.Record);
+        WorldCommitResult result = CommitWorkspace(changeSet, expectedStateId);
         PublishCommit(result, WorldSessionOperation.Apply);
         return result;
     }
@@ -157,7 +157,7 @@ public sealed class WorldSession : IWorldService
     /// <summary>创建包含全部暂存项及临时 World 投影的不可变快照。</summary>
     public WorldStagingSnapshot CreateStagingSnapshot() => ExecuteLocked(() =>
     {
-        RuntimeWorld world = RequireCurrent();
+        RuntimeWorld world = _workspace.Read(value => value);
         return _staging.CreateSnapshot(world.CreateSnapshot(), world.StateId);
     });
 
@@ -165,24 +165,22 @@ public sealed class WorldSession : IWorldService
     public bool DeleteStaged(Guid changeId) => ExecuteLocked(() => _staging.Delete(changeId));
 
     /// <summary>删除当前全部无效暂存项并返回删除数量；冲突项不会被删除。</summary>
-    public int DeleteInvalidStaged() => ExecuteLocked(() => _staging.DeleteInvalid(RequireCurrent().CreateSnapshot()));
+    public int DeleteInvalidStaged() => ExecuteLocked(() => _staging.DeleteInvalid(_workspace.Read(world => world.CreateSnapshot())));
 
     /// <summary>原子提交选中的有效暂存项并在成功后消费它们。</summary>
     public WorldStagingCommitResult CommitStaged(IEnumerable<Guid> selectedChangeIds, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(selectedChangeIds);
-        WorldCommitResult commit;
-        Guid[] selected;
-        lock (_worldSync)
+        (WorldCommitResult Commit, Guid[] Selected) transaction = _workspace.ExecuteExclusive(() =>
         {
-            EnsureUsableLocked();
-            RuntimeWorld world = RequireCurrent();
-            (WorldChangeSet changeSet, selected) = _staging.PrepareCommit(selectedChangeIds, world.CreateSnapshot());
-            commit = ApplyCoreLocked(changeSet, expectedStateId, HistoryAction.Record);
+            RuntimeWorld world = _workspace.Read(value => value);
+            (WorldChangeSet changeSet, Guid[] selected) = _staging.PrepareCommit(selectedChangeIds, world.CreateSnapshot());
+            WorldCommitResult commit = CommitWorkspace(changeSet, expectedStateId);
             _staging.Consume(selected);
-        }
-        PublishCommit(commit, WorldSessionOperation.Apply);
-        return new WorldStagingCommitResult { Commit = commit, ConsumedChangeIds = selected };
+            return (commit, selected);
+        });
+        PublishCommit(transaction.Commit, WorldSessionOperation.Apply);
+        return new WorldStagingCommitResult { Commit = transaction.Commit, ConsumedChangeIds = transaction.Selected };
     }
 
     /// <summary>
@@ -190,7 +188,7 @@ public sealed class WorldSession : IWorldService
     /// </summary>
     public WorldCommitResult Undo(Guid expectedStateId)
     {
-        WorldCommitResult result = ApplyCore(null, expectedStateId, HistoryAction.Undo);
+        WorldCommitResult result = ExecuteWorkspace(() => _workspace.Undo(expectedStateId));
         PublishCommit(result, WorldSessionOperation.Undo);
         return result;
     }
@@ -200,7 +198,7 @@ public sealed class WorldSession : IWorldService
     /// </summary>
     public WorldCommitResult Redo(Guid expectedStateId)
     {
-        WorldCommitResult result = ApplyCore(null, expectedStateId, HistoryAction.Redo);
+        WorldCommitResult result = ExecuteWorkspace(() => _workspace.Redo(expectedStateId));
         PublishCommit(result, WorldSessionOperation.Redo);
         return result;
     }
@@ -239,7 +237,7 @@ public sealed class WorldSession : IWorldService
         await CancelAndDrainPendingAutoSaveAsync();
         try
         {
-            if (_current is not null && Health == WorldSessionHealth.Healthy)
+            if (_workspace.IsInitialized && Health == WorldSessionHealth.Healthy)
                 await SaveCoreAsync(false, CancellationToken.None);
         }
         finally
@@ -257,62 +255,31 @@ public sealed class WorldSession : IWorldService
     internal TResult ExecuteQuery<TResult>(Func<RuntimeWorld, TResult> query)
     {
         ArgumentNullException.ThrowIfNull(query);
-        return ExecuteLocked(() => query(RequireCurrent()));
+        ThrowIfDisposed();
+        return _workspace.Read(query);
     }
 
-    private WorldCommitResult ApplyCore(WorldChangeSet? requestedChangeSet, Guid expectedStateId, HistoryAction historyAction)
-    {
-        lock (_worldSync)
-            return ApplyCoreLocked(requestedChangeSet, expectedStateId, historyAction);
-    }
+    private WorldCommitResult CommitWorkspace(WorldChangeSet changeSet, Guid expectedStateId)
+        => ExecuteWorkspace(() => _workspace.Commit(changeSet, expectedStateId));
 
-    private WorldCommitResult ApplyCoreLocked(WorldChangeSet? requestedChangeSet, Guid expectedStateId, HistoryAction historyAction)
+    private WorldCommitResult ExecuteWorkspace(Func<VersionedCommitResult<AppliedWorldChangeSet>> action)
     {
-        EnsureUsableLocked();
-        RuntimeWorld world = RequireCurrent();
-        if (world.StateId != expectedStateId)
-            throw new WorldStateConflictException(expectedStateId, world.StateId);
-        AppliedWorldChangeSet? historyEntry = historyAction switch
-        {
-            HistoryAction.Undo => _undoHistory.TryPeek(out AppliedWorldChangeSet? undo) ? undo : throw new InvalidOperationException("没有可撤销的世界操作。"),
-            HistoryAction.Redo => _redoHistory.TryPeek(out AppliedWorldChangeSet? redo) ? redo : throw new InvalidOperationException("没有可重做的世界操作。"),
-            _ => null
-        };
-        WorldChangeSet changeSet = historyAction switch
-        {
-            HistoryAction.Undo => historyEntry!.Inverse,
-            HistoryAction.Redo => historyEntry!.Forward,
-            _ => requestedChangeSet!
-        };
-        WorldApplyResult applied;
         try
         {
-            applied = world.Apply(changeSet);
+            VersionedCommitResult<AppliedWorldChangeSet> result = action();
+            return result.Changed
+                ? new WorldCommitResult(result.CommitId, result.PreviousStateId, result.StateId, result.History)
+                : WorldCommitResult.Unchanged(result.StateId);
+        }
+        catch (OptimisticConcurrencyConflictException exception)
+        {
+            throw new WorldStateConflictException(exception.ExpectedStateId, exception.ActualStateId);
         }
         catch (WorldTransactionException)
         {
-            Health = WorldSessionHealth.Faulted;
             CancelPendingAutoSave();
             throw;
         }
-        if (!applied.Changed)
-            return WorldCommitResult.Unchanged(world.StateId);
-        switch (historyAction)
-        {
-            case HistoryAction.Record:
-                _undoHistory.Push(applied.ChangeSet!);
-                _redoHistory.Clear();
-                break;
-            case HistoryAction.Undo:
-                _undoHistory.Pop();
-                _redoHistory.Push(historyEntry!);
-                break;
-            case HistoryAction.Redo:
-                _redoHistory.Pop();
-                _undoHistory.Push(historyEntry!);
-                break;
-        }
-        return new WorldCommitResult(Guid.NewGuid(), applied.PreviousStateId, applied.StateId, applied.ChangeSet);
     }
 
     private void PublishCommit(WorldCommitResult result, WorldSessionOperation operation)
@@ -347,8 +314,11 @@ public sealed class WorldSession : IWorldService
                 RaiseStateChanged(WorldSessionStateChange.SaveFailed, exception);
                 throw;
             }
-            lock (_worldSync)
+            _workspace.ExecuteExclusive(() =>
+            {
                 _savedStateId = state.StateId;
+                return true;
+            });
             LastAutoSaveException = null;
             NotifyDirtyChanged();
             RaiseStateChanged(WorldSessionStateChange.SaveCompleted);
@@ -463,27 +433,14 @@ public sealed class WorldSession : IWorldService
     private TResult ExecuteLocked<TResult>(Func<TResult> operation)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        lock (_worldSync)
-        {
-            EnsureUsableLocked();
-            return operation();
-        }
+        ThrowIfDisposed();
+        return _workspace.ExecuteExclusive(operation);
     }
-
-    private RuntimeWorld RequireCurrent() => _current ?? throw new InvalidOperationException("WorldSession 尚未初始化。");
 
     private void EnsureUsable()
     {
-        lock (_worldSync)
-            EnsureUsableLocked();
-    }
-
-    private void EnsureUsableLocked()
-    {
         ThrowIfDisposed();
-        if (Health == WorldSessionHealth.Faulted)
-            throw new InvalidOperationException("WorldSession 因事务回滚失败已进入 Faulted 状态，不能继续读写或保存。");
-        _ = RequireCurrent();
+        _workspace.Read(_ => true);
     }
 
     private void ThrowIfDisposed()
@@ -491,10 +448,4 @@ public sealed class WorldSession : IWorldService
         ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
-    private enum HistoryAction
-    {
-        Record,
-        Undo,
-        Redo
-    }
 }
