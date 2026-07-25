@@ -5,10 +5,12 @@ using Microsoft.AspNetCore.Hosting;
 using Serilog;
 using Serilog.Context;
 using Serilog.Debugging;
+using Tavi.Extensibility;
 using Tavi.Host.Endpoints;
 using Tavi.Host.Errors;
 using Tavi.Host.Logging;
 using Tavi.Host.Runtime;
+using Tavi.Modules.Magic;
 
 namespace Tavi.Host;
 
@@ -46,11 +48,14 @@ public static class TaviHost
         builder.Services.AddProblemDetails();
         builder.Services.AddExceptionHandler<TaviExceptionHandler>();
         builder.Services.AddSingleton<ApplicationLoggerAdapter>();
+        builder.Services.AddSingleton<ITaviPlugin, MagicPlugin>();
         builder.Services.AddSingleton<ExtensionRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<ExtensionRuntime>());
         builder.Services.AddSingleton<WorldEventBroker>();
         builder.Services.AddSingleton<WorldRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<WorldRuntime>());
+        builder.Services.AddSingleton<ScenarioRuntime>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<ScenarioRuntime>());
         builder.Services.AddSingleton<GuidanceEventBroker>();
         builder.Services.AddSingleton<GuidanceRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<GuidanceRuntime>());
@@ -78,6 +83,7 @@ public static class TaviHost
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.MapWorldEndpoints();
+        app.MapScenarioEndpoints();
         app.MapGuidanceEndpoints();
         app.MapSettingsEndpoints();
         app.MapWritingEndpoints();

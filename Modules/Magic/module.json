@@ -1,0 +1,25 @@
+{
+  "$schema": "../../docs/schemas/tavi-module.schema.json",
+  "id": "magic",
+  "version": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Magic",
+  "description": "声明法术、法力与施法场景，并由受信 Plugin 执行局部规则结算。",
+  "dependencies": [
+    {
+      "id": "character",
+      "minimumVersion": "1.0.0"
+    }
+  ],
+  "parameters": [
+    {
+      "key": "mana-cost-multiplier",
+      "name": "法力消耗倍率",
+      "description": "规则结算时应用到法术基础消耗的倍率。",
+      "type": "number",
+      "defaultValue": "1",
+      "minimum": 0,
+      "maximum": 10
+    }
+  ]
+}

@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Cli", "src\Tavi.Cli\Ta
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Host", "src\Tavi.Host\Tavi.Host.csproj", "{3B5445A8-7F57-4C6B-B235-6D5698FEF901}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Modules.Magic", "src\Tavi.Modules.Magic\Tavi.Modules.Magic.csproj", "{CC48710A-AB76-45EA-A34B-1741473B81D0}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Domain.Tests", "tests\Tavi.Domain.Tests\Tavi.Domain.Tests.csproj", "{A1DB11B7-BB70-421F-A0AB-2DC922594A57}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Application.Tests", "tests\Tavi.Application.Tests\Tavi.Application.Tests.csproj", "{50BAB966-B063-493F-AD3E-A201D7188478}"
@@ -68,6 +70,10 @@ Global
 		{3B5445A8-7F57-4C6B-B235-6D5698FEF901}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3B5445A8-7F57-4C6B-B235-6D5698FEF901}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3B5445A8-7F57-4C6B-B235-6D5698FEF901}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CC48710A-AB76-45EA-A34B-1741473B81D0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CC48710A-AB76-45EA-A34B-1741473B81D0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CC48710A-AB76-45EA-A34B-1741473B81D0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CC48710A-AB76-45EA-A34B-1741473B81D0}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A1DB11B7-BB70-421F-A0AB-2DC922594A57}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A1DB11B7-BB70-421F-A0AB-2DC922594A57}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A1DB11B7-BB70-421F-A0AB-2DC922594A57}.Release|Any CPU.ActiveCfg = Release|Any CPU

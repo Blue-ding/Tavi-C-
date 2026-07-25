@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Tavi.Modules.Magic</RootNamespace>
+    <AssemblyName>Tavi.Modules.Magic</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tavi.Application\Tavi.Application.csproj" />
+    <ProjectReference Include="..\Tavi.Extensibility\Tavi.Extensibility.csproj" />
+  </ItemGroup>
+</Project>

@@ -9,6 +9,10 @@
     <ProjectReference Include="..\Tavi.Domain\Tavi.Domain.csproj" />
     <ProjectReference Include="..\Tavi.Infrastructure.OpenAI\Tavi.Infrastructure.OpenAI.csproj" />
     <ProjectReference Include="..\Tavi.Infrastructure.Persistence\Tavi.Infrastructure.Persistence.csproj" />
+    <ProjectReference Include="..\Tavi.Modules.Magic\Tavi.Modules.Magic.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\Modules\**\*" Link="Modules\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" />

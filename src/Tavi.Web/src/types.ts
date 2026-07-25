@@ -269,3 +269,58 @@ export interface WritingWorkspaceViewModel {
   manuscripts: ManuscriptSummaryViewModel[]
   session: WritingSnapshotViewModel
 }
+
+export interface ScenarioModuleViewModel {
+  id: string
+  version: string
+}
+
+export interface SceneSlotViewModel {
+  id: string
+  name: string
+  description: string
+  minimum: number
+  maximum: number | null
+  elementTypes: string[]
+  requiredAspectGroups: string[]
+  elementIds: string[]
+}
+
+export interface SceneDefinitionViewModel {
+  id: string
+  module: string
+  moduleVersion: string
+  name: string
+  description: string
+  settlement: string[]
+  slots: SceneSlotViewModel[]
+}
+
+export interface SceneViewModel {
+  id: string
+  definitionId: string
+  module: string
+  moduleVersion: string
+  name: string
+  description: string
+  state: 'Binding' | 'Processing' | 'Settled'
+  settlement: string[]
+  definitionFrozen: boolean
+  slots: SceneSlotViewModel[]
+}
+
+export interface ScenarioWorkspaceViewModel {
+  stateId: string
+  sourceWorldStateId: string
+  isDirty: boolean
+  canUndo: boolean
+  canRedo: boolean
+  health: 'Healthy' | 'Faulted'
+  modules: ScenarioModuleViewModel[]
+  elements: ElementViewModel[]
+  aspects: AspectViewModel[]
+  relations: RelationViewModel[]
+  scopes: ScopeViewModel[]
+  definitions: SceneDefinitionViewModel[]
+  scenes: SceneViewModel[]
+}

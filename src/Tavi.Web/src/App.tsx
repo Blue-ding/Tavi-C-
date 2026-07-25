@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, Handle, MarkerType, MiniMap, Position, ReactFlow, getStraightPath, useNodesState, type Edge, type EdgeProps, type Node, type NodeChange, type NodePositionChange, type NodeProps } from '@xyflow/react'
-import { Archive, BookOpen, Check, ChevronDown, CirclePlus, Cloud, CloudOff, GitBranch, Layers3, LoaderCircle, Network, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, X } from 'lucide-react'
+import { Archive, BookOpen, Check, ChevronDown, CirclePlus, Clapperboard, Cloud, CloudOff, GitBranch, Layers3, LoaderCircle, Network, PanelRightClose, Redo2, Save, Search, Settings, Sparkles, Trash2, Undo2, X } from 'lucide-react'
 import { ApiError, settingsApi, worldApi } from './api'
 import { GuidancePanel } from './GuidancePanel'
 import { WritingWorkspace } from './WritingWorkspace'
@@ -419,6 +419,7 @@ function App() {
             <ChevronDown size={14} />
           </label>
           <div className="toolbar-divider" />
+          <a className="scenario-link" href="/scenario"><Clapperboard size={16} />Scenario</a>
           <button className="writing-toggle" onClick={() => setShowWriting(true)}><BookOpen size={16} />Writing</button>
           <button className={`guidance-toggle${showGuidance ? ' active' : ''}`} onClick={() => setShowGuidance(current => !current)}><Sparkles size={16} />Guidance</button>
           <button className="staging-toggle" disabled={!world.stagedChanges.length} onClick={() => setShowStaging(true)} title={world.stagedChanges.length ? `查看 ${world.stagedChanges.length} 项暂存修改` : '暂存区为空'}>

@@ -1,9 +1,10 @@
-import type { ApiProblem, GuidanceAvailabilityViewModel, GuidanceCommitViewModel, GuidanceOperationViewModel, GuidanceSnapshotViewModel, LanguageModelSettingsViewModel, ManuscriptViewModel, OpenAIConfigurationInput, OpenAIConfigurationViewModel, SettingsSaveResultViewModel, WorldGraphViewModel, WritingSnapshotViewModel, WritingWorkspaceViewModel } from './types'
+import type { ApiProblem, GuidanceAvailabilityViewModel, GuidanceCommitViewModel, GuidanceOperationViewModel, GuidanceSnapshotViewModel, LanguageModelSettingsViewModel, ManuscriptViewModel, OpenAIConfigurationInput, OpenAIConfigurationViewModel, ScenarioWorkspaceViewModel, SettingsSaveResultViewModel, WorldGraphViewModel, WritingSnapshotViewModel, WritingWorkspaceViewModel } from './types'
 
 const worldUrl = '/api/v1/world'
 const guidanceUrl = '/api/v1/guidance'
 const settingsUrl = '/api/v1/settings'
 const writingUrl = '/api/v1/writing'
+const scenarioUrl = '/api/v1/scenario'
 
 export class ApiError extends Error {
   readonly code: string
@@ -93,4 +94,18 @@ export const writingApi = {
   redo: (stateId: string) => request<WritingSnapshotViewModel>(`${writingUrl}/session/redo`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
   save: () => request<WritingSnapshotViewModel>(`${writingUrl}/session/save`, { method: 'POST', body: '{}' }),
   archive: (stateId: string) => request<ManuscriptViewModel>(`${writingUrl}/session/archive`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
+}
+
+export const scenarioApi = {
+  get: (randomSeed = 0) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/?randomSeed=${randomSeed}`),
+  createScene: (stateId: string, definitionId: string, randomSeed = 0) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/scenes`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId, definitionId, randomSeed }) }),
+  setBinding: (sceneId: string, slotId: string, stateId: string, elementIds: string[]) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/scenes/${sceneId}/bindings/${encodeURIComponent(slotId)}`, { method: 'PUT', body: JSON.stringify({ expectedStateId: stateId, elementIds }) }),
+  clearBinding: (sceneId: string, slotId: string, stateId: string) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/scenes/${sceneId}/bindings/${encodeURIComponent(slotId)}?expectedStateId=${stateId}`, { method: 'DELETE' }),
+  beginProcessing: (sceneId: string, stateId: string) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/scenes/${sceneId}/processing`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
+  settleRules: (sceneId: string, stateId: string, randomSeed = 0) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/scenes/${sceneId}/settle-rules`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId, randomSeed }) }),
+  removeScene: (sceneId: string, stateId: string) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/scenes/${sceneId}?expectedStateId=${stateId}`, { method: 'DELETE' }),
+  clearSettled: (stateId: string) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/scenes/clear-settled`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
+  undo: (stateId: string) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/undo`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
+  redo: (stateId: string) => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/redo`, { method: 'POST', body: JSON.stringify({ expectedStateId: stateId }) }),
+  save: () => request<ScenarioWorkspaceViewModel>(`${scenarioUrl}/save`, { method: 'POST', body: '{}' }),
 }

@@ -1,0 +1,85 @@
+{
+  "$schema": "../../docs/schemas/tavi-semantics.schema.json",
+  "elementTypes": [
+    {
+      "key": "magic:spell",
+      "name": "法术",
+      "description": "可以被角色施放的稳定法术定义。"
+    }
+  ],
+  "scopeTypes": [
+    {
+      "key": "magic:arcane-state",
+      "name": "魔法状态",
+      "description": "保存角色当前法力等可变魔法状态。",
+      "ownerElementTypes": [
+        "character:character"
+      ]
+    },
+    {
+      "key": "magic:spell-definition",
+      "name": "法术定义",
+      "description": "保存法术自身的施放规则数据。",
+      "ownerElementTypes": [
+        "magic:spell"
+      ]
+    }
+  ],
+  "aspectGroups": [
+    {
+      "key": "magic:mana",
+      "name": "法力",
+      "extensible": false
+    },
+    {
+      "key": "magic:casting-cost",
+      "name": "施法消耗",
+      "extensible": false
+    }
+  ],
+  "aspectTypes": [
+    {
+      "key": "magic:mana.current",
+      "name": "当前法力",
+      "description": "角色当前可用于施法的法力。",
+      "group": "magic:mana",
+      "subjectElementTypes": [
+        "character:character"
+      ],
+      "minimumQuantity": 0
+    },
+    {
+      "key": "magic:casting-cost.mana",
+      "name": "基础法力消耗",
+      "description": "施放一次法术所需的基础法力。",
+      "group": "magic:casting-cost",
+      "subjectElementTypes": [
+        "magic:spell"
+      ],
+      "minimumQuantity": 0
+    }
+  ],
+  "relationTypes": [],
+  "constraints": [
+    {
+      "key": "magic:spell-requires-definition",
+      "kind": "ownedScopeCardinality",
+      "subjectElementType": "magic:spell",
+      "scopeType": "magic:spell-definition",
+      "minimum": 1,
+      "maximum": 1,
+      "message": "每个法术必须恰好持有一个法术定义 Scope。"
+    },
+    {
+      "key": "magic:spell-requires-mana-cost",
+      "kind": "aspectGroupCardinality",
+      "subjectElementType": "magic:spell",
+      "scopeType": "magic:spell-definition",
+      "aspectGroup": "magic:casting-cost",
+      "minimum": 1,
+      "maximum": 1,
+      "aspectMustTargetScopeOwner": true,
+      "message": "每个法术必须恰好声明一个基础法力消耗。"
+    }
+  ]
+}

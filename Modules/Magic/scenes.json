@@ -1,0 +1,41 @@
+{
+  "$schema": "../../docs/schemas/tavi-scenes.schema.json",
+  "scenes": [
+    {
+      "id": "magic:cast-spell",
+      "name": "施放法术",
+      "description": "由一名拥有法力的角色施放一个已定义消耗的法术。",
+      "settlement": [
+        "rules"
+      ],
+      "slots": [
+        {
+          "id": "caster",
+          "name": "施法者",
+          "description": "支付法力并施放法术的角色。",
+          "minimum": 1,
+          "maximum": 1,
+          "elementTypes": [
+            "character:character"
+          ],
+          "requiredAspectGroups": [
+            "magic:mana"
+          ]
+        },
+        {
+          "id": "spell",
+          "name": "法术",
+          "description": "此次施放所使用的法术。",
+          "minimum": 1,
+          "maximum": 1,
+          "elementTypes": [
+            "magic:spell"
+          ],
+          "requiredAspectGroups": [
+            "magic:casting-cost"
+          ]
+        }
+      ]
+    }
+  ]
+}
