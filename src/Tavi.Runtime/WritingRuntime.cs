@@ -10,7 +10,9 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly object _disposeSync = new();
     private JsonFileManuscriptStore? _store;
-    private IWritingService? _service;
+    private IWritingWorkspace? _workspace;
+    private IWritingSessionLifecycle? _lifecycle;
+    private IBeatPublisher? _beatPublisher;
     private Task? _disposeTask;
     private bool _disposed;
 
@@ -26,22 +28,25 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
         bool autoSaveEnabled = !bool.TryParse(_configuration["Tavi:Writing:AutoSave"], out bool configured) || configured;
         int delayMilliseconds = int.TryParse(_configuration["Tavi:Writing:AutoSaveDelayMilliseconds"], out int delay) && delay >= 0 ? delay : 1500;
         _store = new JsonFileManuscriptStore(directory);
-        _service = new WritingSession(_store, autoSaveEnabled ? TimeSpan.FromMilliseconds(delayMilliseconds) : null);
-        await _service.InitializeAsync(cancellationToken);
+        var session = new WritingSession(_store, autoSaveEnabled ? TimeSpan.FromMilliseconds(delayMilliseconds) : null);
+        await session.InitializeAsync(cancellationToken);
+        _workspace = session;
+        _lifecycle = session;
+        _beatPublisher = session;
     }
 
     /// <summary>停止运行时并刷新未保存的活动手稿。</summary>
     public Task StopAsync(CancellationToken cancellationToken) => DisposeAsync().AsTask();
 
     /// <summary>在运行时访问锁内执行同步 Writing 服务操作。</summary>
-    public async Task<TResult> ExecuteAsync<TResult>(Func<IWritingService, TResult> operation, CancellationToken cancellationToken = default)
+    public async Task<TResult> ExecuteAsync<TResult>(Func<IWritingWorkspace, TResult> operation, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
         await _accessGate.WaitAsync(cancellationToken);
         try
         {
-            return operation(RequireService());
+            return operation(RequireWorkspace());
         }
         finally
         {
@@ -50,14 +55,14 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>在运行时访问锁内执行异步 Writing 服务操作。</summary>
-    public async Task<TResult> ExecuteAsync<TResult>(Func<IWritingService, Task<TResult>> operation, CancellationToken cancellationToken = default)
+    public async Task<TResult> ExecuteAsync<TResult>(Func<IWritingWorkspace, Task<TResult>> operation, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
         await _accessGate.WaitAsync(cancellationToken);
         try
         {
-            return await operation(RequireService());
+            return await operation(RequireWorkspace());
         }
         finally
         {
@@ -66,7 +71,7 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>向同一 Runtime 内的 Performance 暴露最小 Beat 发布能力。</summary>
-    internal IBeatPublisher BeatPublisher => RequireService();
+    internal IBeatPublisher BeatPublisher => _beatPublisher ?? throw new InvalidOperationException("Writing 运行时尚未初始化。");
 
     /// <summary>释放会话、文件存储和运行时访问锁。</summary>
     public ValueTask DisposeAsync()
@@ -78,11 +83,11 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
     private async Task DisposeCoreAsync()
     {
         _disposed = true;
-        if (_service is not null)
-            await _service.DisposeAsync();
+        if (_lifecycle is not null)
+            await _lifecycle.DisposeAsync();
         _store?.Dispose();
         _accessGate.Dispose();
     }
-    private IWritingService RequireService() => _service ?? throw new InvalidOperationException("Writing 运行时尚未初始化。");
+    private IWritingWorkspace RequireWorkspace() => _workspace ?? throw new InvalidOperationException("Writing 运行时尚未初始化。");
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 }

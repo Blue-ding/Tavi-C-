@@ -5,7 +5,7 @@ using Tavi.Utilities.Concurrency;
 namespace Tavi.Application.Writing;
 
 /// <summary>持有唯一活动手稿，并统一控制段落暂存、提交、历史、原子保存、自动保存和归档。</summary>
-public sealed class WritingSession : IWritingService
+public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle, IBeatPublisher
 {
     private readonly IManuscriptStore _store;
     private readonly TimeSpan? _autoSaveDelay;
@@ -31,7 +31,15 @@ public sealed class WritingSession : IWritingService
             throw new ArgumentOutOfRangeException(nameof(autoSaveDelay), "自动保存延迟不能为负数。");
         _autoSaveDelay = autoSaveDelay;
         _workspace = new VersionedWorkspace<WritingWorkspaceState, WritingOperationBatch, WritingHistoryEntry>(new WritingConcurrencyModel());
+        Queries = new WritingQueries(this);
+        Commands = new WritingCommands(this);
     }
+
+    /// <inheritdoc />
+    public WritingQueries Queries { get; }
+
+    /// <inheritdoc />
+    public WritingCommands Commands { get; }
 
     /// <inheritdoc />
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -67,7 +75,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public WritingSnapshot GetSnapshot()
+    internal WritingSnapshot GetSnapshot()
     {
         ThrowIfDisposed();
         EnsureInitialized();
@@ -75,7 +83,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<ManuscriptSummary>> ListAsync(CancellationToken cancellationToken = default)
+    internal async Task<IReadOnlyList<ManuscriptSummary>> ListAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         IReadOnlyList<Manuscript> archived = await _store.ListArchivedAsync(cancellationToken);
@@ -90,7 +98,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public async Task<Manuscript> GetAsync(Guid manuscriptId, CancellationToken cancellationToken = default)
+    internal async Task<Manuscript> GetAsync(Guid manuscriptId, CancellationToken cancellationToken = default)
     {
         if (manuscriptId == Guid.Empty)
             throw new ArgumentException("手稿标识不能为空。", nameof(manuscriptId));
@@ -107,7 +115,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public async Task<WritingSnapshot> CreateAsync(string title, CancellationToken cancellationToken = default)
+    internal async Task<WritingSnapshot> CreateAsync(string title, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ThrowIfDisposed();
@@ -148,7 +156,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public Guid Stage(ManuscriptOperation operation, WritingChangeSource source = WritingChangeSource.Player)
+    internal Guid Stage(ManuscriptOperation operation, WritingChangeSource source = WritingChangeSource.Player)
     {
         ArgumentNullException.ThrowIfNull(operation);
         if (!Enum.IsDefined(source))
@@ -167,7 +175,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public bool DeleteStaged(Guid changeId)
+    internal bool DeleteStaged(Guid changeId)
     {
         ThrowIfDisposed();
         EnsureInitialized();
@@ -184,7 +192,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public WritingCommitResult CommitStaged(IEnumerable<Guid> changeIds, Guid expectedStateId)
+    internal WritingCommitResult CommitStaged(IEnumerable<Guid> changeIds, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(changeIds);
         Guid[] selectedIds = changeIds.Distinct().ToArray();
@@ -208,7 +216,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public WritingCommitResult Apply(ManuscriptOperation operation, Guid expectedStateId, WritingChangeSource source = WritingChangeSource.Player)
+    internal WritingCommitResult Apply(ManuscriptOperation operation, Guid expectedStateId, WritingChangeSource source = WritingChangeSource.Player)
     {
         ArgumentNullException.ThrowIfNull(operation);
         if (!Enum.IsDefined(source))
@@ -223,7 +231,10 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public BeatPublicationResult PublishBeat(Guid performanceId, Guid beatId, IReadOnlyList<BeatParagraph> paragraphs, Guid expectedStateId)
+    BeatPublicationResult IBeatPublisher.PublishBeat(Guid performanceId, Guid beatId, IReadOnlyList<BeatParagraph> paragraphs, Guid expectedStateId)
+        => PublishBeat(performanceId, beatId, paragraphs, expectedStateId);
+
+    internal BeatPublicationResult PublishBeat(Guid performanceId, Guid beatId, IReadOnlyList<BeatParagraph> paragraphs, Guid expectedStateId)
     {
         if (performanceId == Guid.Empty || beatId == Guid.Empty)
             throw new ArgumentException("Performance 与 Beat 标识不能为空。");
@@ -254,7 +265,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public WritingCommitResult Undo(Guid expectedStateId)
+    internal WritingCommitResult Undo(Guid expectedStateId)
     {
         ThrowIfDisposed();
         EnsureInitialized();
@@ -273,7 +284,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public WritingCommitResult Redo(Guid expectedStateId)
+    internal WritingCommitResult Redo(Guid expectedStateId)
     {
         ThrowIfDisposed();
         EnsureInitialized();
@@ -292,7 +303,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public Task SaveAsync(CancellationToken cancellationToken = default)
+    internal Task SaveAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         CancelPendingAutoSave();
@@ -300,7 +311,23 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public async Task<Manuscript> ArchiveAsync(Guid expectedStateId, CancellationToken cancellationToken = default)
+    public async Task FlushAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        await CancelAndDrainAutoSaveAsync();
+        if (_initialized && _workspace.IsInitialized &&
+            _workspace.ExecuteExclusive(() =>
+            {
+                Manuscript? current = CurrentLocked();
+                return current is not null && current.StateId != _savedStateId;
+            }))
+        {
+            await SaveCoreAsync(cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
+    internal async Task<Manuscript> ArchiveAsync(Guid expectedStateId, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         CancelPendingAutoSave();
@@ -353,7 +380,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public async Task<Manuscript> RenameArchivedAsync(Guid manuscriptId, string title, CancellationToken cancellationToken = default)
+    internal async Task<Manuscript> RenameArchivedAsync(Guid manuscriptId, string title, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ThrowIfDisposed();
@@ -364,7 +391,7 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
-    public async Task DeleteArchivedAsync(Guid manuscriptId, CancellationToken cancellationToken = default)
+    internal async Task DeleteArchivedAsync(Guid manuscriptId, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         if (!await _store.DeleteArchivedAsync(manuscriptId, cancellationToken))

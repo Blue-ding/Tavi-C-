@@ -4,7 +4,7 @@
 
 Module 是带稳定身份、版本、依赖和可选行为参数的纵向语义包。Plugin 是由受信宿主显式构造的代码载体。`Tavi.Extensibility` 只公开稳定 SDK；`Tavi.Application.Extension` 管理启停、参数和冻结快照；`Tavi.Application.Scenario` 管理静态、玩家显式驱动的 Scenario 与 Scene。
 
-当前基础设施不包含自动演化、时间周期、自动选择、Writing 流程或前端。未来的 Evolution 应建立在 `IScenarioService` 之上，而不是把调度能力焊入 Module 或 ScenarioSession。
+当前基础设施不包含自动演化、时间周期或自动选择。未来的 Evolution 应建立在 `IScenarioWorkspace` 之上，而不是把调度能力焊入 Module 或 ScenarioSession。
 
 依赖方向固定如下：
 
@@ -68,7 +68,7 @@ Binding → Processing → Settled
 
 删除 Binding Scene 会释放其绑定。Processing Scene 不能删除。Settled Scene 可单独删除，也可由 `ClearSettledScenes` 批量清理。
 
-通用 `IScenarioService.Apply` 只接受 EARS 操作。Scene 创建、绑定、状态转换、结算和清理必须使用专用方法，避免调用方绕过生命周期与局部权限边界。
+通用 `IScenarioWorkspace.Commands.Apply` 只接受 EARS 操作。Scene 创建、绑定、状态转换、结算和清理必须使用专用命令，避免调用方绕过生命周期与局部权限 seam。
 
 旧 V1 存档中的 `Preparing`/`Ready` 会迁移为 Binding，`AwaitingWriting` 会迁移为 Processing。旧存档没有保存完整槽位定义，因此旧 Binding Scene 不能重新进入 Processing，应删除并从当前 Definition 重建；旧 `Cancelled` Scene 没有无歧义迁移路径并会产生明确读取错误。
 

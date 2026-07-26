@@ -1,4 +1,5 @@
 using Tavi.Domain.Scenario;
+using Tavi.Extensibility;
 using RuntimeScenario = Tavi.Domain.Scenario.Scenario;
 
 namespace Tavi.Application.Scenario;
@@ -12,6 +13,13 @@ public sealed class ScenarioQueries
 
     /// <summary>创建当前 Scenario 的独立完整快照。</summary>
     public ScenarioSnapshot CreateSnapshot() => _session.ExecuteQuery(scenario => scenario.CreateSnapshot());
+
+    /// <summary>获取静态声明与代码 Plugin 动态提供的全部 SceneDefinition。</summary>
+    public Task<IReadOnlyList<SceneDefinition>> GetSceneDefinitionsAsync(long randomSeed, CancellationToken cancellationToken = default)
+        => _session.GetSceneDefinitionsAsync(randomSeed, cancellationToken);
+
+    /// <summary>获取受信处理器使用的冻结 Processing Scene 局部上下文。</summary>
+    public SceneContextView GetProcessingContext(Guid sceneId) => _session.GetProcessingContext(sceneId);
 
     /// <summary>根据标识获取独立 Element 副本。</summary>
     public Element GetElement(Guid id) => _session.ExecuteQuery(scenario => scenario.GetElement(id));

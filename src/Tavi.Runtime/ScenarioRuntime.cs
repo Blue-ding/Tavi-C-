@@ -13,7 +13,8 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly object _disposeSync = new();
     private JsonFileScenarioStore? _store;
-    private IScenarioService? _service;
+    private IScenarioWorkspace? _workspace;
+    private IScenarioSessionLifecycle? _lifecycle;
     private Task? _disposeTask;
     private bool _disposed;
 
@@ -32,24 +33,26 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
         string defaultDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tavi", "Saves");
         string saveDirectory = _configuration["Tavi:ScenarioDirectory"] ?? _configuration["Tavi:SaveDirectory"] ?? Environment.GetEnvironmentVariable("TAVI_SCENARIO_DIRECTORY") ?? defaultDirectory;
         string slot = _configuration["Tavi:ScenarioSlot"] ?? "default";
-        WorldSnapshot world = await _world.ExecuteAsync(service => service.Queries.CreateSnapshot(), cancellationToken);
+        WorldSnapshot world = await _world.ExecuteAsync(workspace => workspace.Queries.CreateSnapshot(), cancellationToken);
         _store = new JsonFileScenarioStore(saveDirectory);
-        _service = new ScenarioSession(_store, _extensions.Frozen, world, slot);
-        await _service.InitializeAsync(cancellationToken);
+        var session = new ScenarioSession(_store, _extensions.Frozen, world, slot);
+        await session.InitializeAsync(cancellationToken);
+        _workspace = session;
+        _lifecycle = session;
     }
 
     /// <summary>停止运行时并刷新尚未保存的 Scenario。</summary>
     public Task StopAsync(CancellationToken cancellationToken) => DisposeAsync().AsTask();
 
     /// <summary>在运行时访问锁内执行同步 Scenario 操作。</summary>
-    public async Task<TResult> ExecuteAsync<TResult>(Func<IScenarioService, TResult> operation, CancellationToken cancellationToken = default)
+    public async Task<TResult> ExecuteAsync<TResult>(Func<IScenarioWorkspace, TResult> operation, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
         await _accessGate.WaitAsync(cancellationToken);
         try
         {
-            return operation(RequireService());
+            return operation(RequireWorkspace());
         }
         finally
         {
@@ -58,14 +61,14 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>在运行时访问锁内执行异步 Scenario 操作。</summary>
-    public async Task<TResult> ExecuteAsync<TResult>(Func<IScenarioService, Task<TResult>> operation, CancellationToken cancellationToken = default)
+    public async Task<TResult> ExecuteAsync<TResult>(Func<IScenarioWorkspace, Task<TResult>> operation, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
         await _accessGate.WaitAsync(cancellationToken);
         try
         {
-            return await operation(RequireService());
+            return await operation(RequireWorkspace());
         }
         finally
         {
@@ -83,12 +86,12 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     private async Task DisposeCoreAsync()
     {
         _disposed = true;
-        if (_service is not null)
-            await _service.DisposeAsync();
+        if (_lifecycle is not null)
+            await _lifecycle.DisposeAsync();
         _store?.Dispose();
         _accessGate.Dispose();
     }
 
-    private IScenarioService RequireService() => _service ?? throw new InvalidOperationException("Scenario 运行时尚未初始化。");
+    private IScenarioWorkspace RequireWorkspace() => _workspace ?? throw new InvalidOperationException("Scenario 运行时尚未初始化。");
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 }

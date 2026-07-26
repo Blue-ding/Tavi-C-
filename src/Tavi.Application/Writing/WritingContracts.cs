@@ -55,53 +55,24 @@ public interface IBeatPublisher
     BeatPublicationResult PublishBeat(Guid performanceId, Guid beatId, IReadOnlyList<BeatParagraph> paragraphs, Guid expectedStateId);
 }
 
-/// <summary>定义单活动手稿、归档库、编辑历史和持久化的 Application 服务。</summary>
-public interface IWritingService : IBeatPublisher, IAsyncDisposable
+/// <summary>定义调用方可查询和编辑唯一活动手稿及归档库的 Writing 工作区。</summary>
+public interface IWritingWorkspace
 {
-    /// <summary>从持久化存储恢复唯一活动手稿；同一服务实例只能初始化一次。</summary>
+    /// <summary>获取始终通过 Session 同步边界读取最新状态的查询器。</summary>
+    WritingQueries Queries { get; }
+
+    /// <summary>获取始终通过 Session 同步和事务边界执行的命令器。</summary>
+    WritingCommands Commands { get; }
+}
+
+/// <summary>定义 Runtime 管理 Writing Session 恢复和最终刷新的生命周期角色。</summary>
+public interface IWritingSessionLifecycle : IAsyncDisposable
+{
+    /// <summary>从持久化存储恢复唯一活动手稿；同一 Session 实例只能初始化一次。</summary>
     Task InitializeAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>获取当前活动手稿及暂存投影的权威快照。</summary>
-    WritingSnapshot GetSnapshot();
-
-    /// <summary>列出全部手稿摘要，包含当前活动手稿和归档手稿。</summary>
-    Task<IReadOnlyList<ManuscriptSummary>> ListAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>读取指定手稿；活动手稿返回当前已提交内容，归档手稿返回只读正文。</summary>
-    Task<Manuscript> GetAsync(Guid manuscriptId, CancellationToken cancellationToken = default);
-
-    /// <summary>创建并立即持久化全局唯一的空白活动手稿。</summary>
-    Task<WritingSnapshot> CreateAsync(string title, CancellationToken cancellationToken = default);
-
-    /// <summary>将不可变手稿操作追加到暂存日志，不修改已提交正文。</summary>
-    Guid Stage(ManuscriptOperation operation, WritingChangeSource source = WritingChangeSource.Player);
-
-    /// <summary>删除指定暂存项；不存在时返回 false。</summary>
-    bool DeleteStaged(Guid changeId);
-
-    /// <summary>以乐观并发条件原子提交选中的暂存操作。</summary>
-    WritingCommitResult CommitStaged(IEnumerable<Guid> changeIds, Guid expectedStateId);
-
-    /// <summary>原子提交一项操作，供不需要展示暂存区的段落编辑界面使用。</summary>
-    WritingCommitResult Apply(ManuscriptOperation operation, Guid expectedStateId, WritingChangeSource source = WritingChangeSource.Player);
-
-    /// <summary>撤销最近一次已提交修改；撤销本身会生成新的状态标识。</summary>
-    WritingCommitResult Undo(Guid expectedStateId);
-
-    /// <summary>重做最近一次撤销；重做本身会生成新的状态标识。</summary>
-    WritingCommitResult Redo(Guid expectedStateId);
-
-    /// <summary>原子持久化当前已提交手稿；保存不会结束编辑状态。</summary>
-    Task SaveAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>提交全部暂存修改并原子归档当前手稿；成功后释放活动编辑席位。</summary>
-    Task<Manuscript> ArchiveAsync(Guid expectedStateId, CancellationToken cancellationToken = default);
-
-    /// <summary>修改归档手稿名称；归档正文保持不变。</summary>
-    Task<Manuscript> RenameArchivedAsync(Guid manuscriptId, string title, CancellationToken cancellationToken = default);
-
-    /// <summary>永久删除归档手稿；活动手稿不能通过此操作删除。</summary>
-    Task DeleteArchivedAsync(Guid manuscriptId, CancellationToken cancellationToken = default);
+    /// <summary>活动手稿包含未保存修改时立即写入持久化存储。</summary>
+    Task FlushAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>定义活动手稿和归档库所需的持久化端口。</summary>
