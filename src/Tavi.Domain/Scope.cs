@@ -1,6 +1,6 @@
-namespace Tavi.Domain.World;
+namespace Tavi.Domain;
 
-/// <summary>表示由一个 Element 持有并容纳规则化与 Local 事实的结构化断言域。</summary>
+/// <summary>表示由一个 Element 持有并容纳规则化事实的结构化断言域。</summary>
 public sealed record Scope
 {
     /// <summary>使用确定标识、整数数量、规则化类型和必填 Owner Element 创建 Scope。</summary>

@@ -187,7 +187,9 @@ public sealed class Scenario
         EnsureElementsNotProcessing([element.Id], name);
         if (element.Name == operation.Name && element.Description == operation.Description && element.Type == operation.Type)
             return false;
-        element.Update(operation.Name, operation.Description, operation.Type);
+        element.UpdateName(operation.Name);
+        element.UpdateDescription(operation.Description);
+        element.UpdateType(operation.Type);
         return true;
     }
 
@@ -225,7 +227,8 @@ public sealed class Scenario
         EnsureElementsNotProcessing([scope.OwnerElementId], name);
         if (scope.Quantity == operation.Quantity && scope.Type == operation.Type)
             return false;
-        scope.Update(operation.Quantity, operation.Type);
+        scope.UpdateQuantity(operation.Quantity);
+        scope.UpdateType(operation.Type);
         return true;
     }
 
@@ -260,7 +263,8 @@ public sealed class Scenario
         EnsureElementsNotProcessing([aspect.ElementId, GetScopeCore(aspect.ScopeId, name).OwnerElementId], name);
         if (aspect.Quantity == operation.Quantity && aspect.Type == operation.Type)
             return false;
-        aspect.Update(operation.Quantity, operation.Type);
+        aspect.UpdateQuantity(operation.Quantity);
+        aspect.UpdateType(operation.Type);
         return true;
     }
 
@@ -296,7 +300,8 @@ public sealed class Scenario
         EnsureElementsNotProcessing([relation.SourceElementId, relation.TargetElementId, GetScopeCore(relation.ScopeId, name).OwnerElementId], name);
         if (relation.Quantity == operation.Quantity && relation.Type == operation.Type)
             return false;
-        relation.Update(operation.Quantity, operation.Type);
+        relation.UpdateQuantity(operation.Quantity);
+        relation.UpdateType(operation.Type);
         return true;
     }
 

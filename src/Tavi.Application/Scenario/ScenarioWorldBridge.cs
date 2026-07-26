@@ -26,10 +26,10 @@ public static class ScenarioWorldBridge
         {
             SourceWorldStateId = world.Id,
             Modules = catalog.Modules.Select(module => new ScenarioDomain.ScenarioModuleReference(module.Id.Value, module.Version.Value, parameters?.GetValueOrDefault(module.Id))).ToList(),
-            Elements = world.Elements.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Element(pair.Value.Id, pair.Value.Name, pair.Value.Description, new ScenarioDomain.ElementType(pair.Value.Type.Value))),
-            Scopes = world.Scopes.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Scope(pair.Value.Id, pair.Value.Quantity, new ScenarioDomain.ScopeType(pair.Value.Type.Value), pair.Value.OwnerElementId)),
-            Aspects = world.Aspects.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Aspect(pair.Value.Id, pair.Value.Quantity, new ScenarioDomain.AspectType(pair.Value.Type.Value), pair.Value.ElementId, pair.Value.ScopeId)),
-            Relations = world.Relations.ToDictionary(pair => pair.Key, pair => new ScenarioDomain.Relation(pair.Value.Id, pair.Value.Quantity, new ScenarioDomain.RelationType(pair.Value.Type.Value), pair.Value.SourceElementId, pair.Value.TargetElementId, pair.Value.ScopeId))
+            Elements = world.Elements.ToDictionary(pair => pair.Key, pair => new Element(pair.Value.Id, pair.Value.Name, pair.Value.Description, pair.Value.Type)),
+            Scopes = world.Scopes.ToDictionary(pair => pair.Key, pair => new Scope(pair.Value.Id, pair.Value.Quantity, pair.Value.Type, pair.Value.OwnerElementId)),
+            Aspects = world.Aspects.ToDictionary(pair => pair.Key, pair => new Aspect(pair.Value.Id, pair.Value.Quantity, pair.Value.Type, pair.Value.ElementId, pair.Value.ScopeId)),
+            Relations = world.Relations.ToDictionary(pair => pair.Key, pair => new Relation(pair.Value.Id, pair.Value.Quantity, pair.Value.Type, pair.Value.SourceElementId, pair.Value.TargetElementId, pair.Value.ScopeId))
         };
     }
 
@@ -65,73 +65,73 @@ public static class ScenarioWorldBridge
 
     private static void AppendElementChanges(WorldSnapshot world, ScenarioDomain.ScenarioSnapshot scenario, List<WorldOperation> operations)
     {
-        foreach (ScenarioDomain.Element value in scenario.Elements.Values)
+        foreach (Element value in scenario.Elements.Values)
         {
-            if (!world.Elements.TryGetValue(value.Id, out WorldDomain.Element? current))
+            if (!world.Elements.TryGetValue(value.Id, out Element? current))
             {
-                operations.Add(new WorldDomain.AddElementOperation(value.Id, value.Name, value.Description, new WorldDomain.ElementType(value.Type.Value)));
+                operations.Add(new WorldDomain.AddElementOperation(value.Id, value.Name, value.Description, value.Type));
                 continue;
             }
             if (current.Name != value.Name)
                 operations.Add(new UpdateElementNameOperation(value.Id, value.Name));
             if (current.Description != value.Description)
                 operations.Add(new UpdateElementDescriptionOperation(value.Id, value.Description));
-            if (current.Type.Value != value.Type.Value)
-                operations.Add(new UpdateElementTypeOperation(value.Id, new WorldDomain.ElementType(value.Type.Value)));
+            if (current.Type != value.Type)
+                operations.Add(new UpdateElementTypeOperation(value.Id, value.Type));
         }
     }
 
     private static void AppendScopeChanges(WorldSnapshot world, ScenarioDomain.ScenarioSnapshot scenario, List<WorldOperation> operations)
     {
-        foreach (ScenarioDomain.Scope value in scenario.Scopes.Values)
+        foreach (Scope value in scenario.Scopes.Values)
         {
-            if (!world.Scopes.TryGetValue(value.Id, out WorldDomain.Scope? current))
+            if (!world.Scopes.TryGetValue(value.Id, out Scope? current))
             {
-                operations.Add(new WorldDomain.AddScopeOperation(value.Id, value.Quantity, new WorldDomain.ScopeType(value.Type.Value), value.OwnerElementId));
+                operations.Add(new WorldDomain.AddScopeOperation(value.Id, value.Quantity, value.Type, value.OwnerElementId));
                 continue;
             }
             if (current.OwnerElementId != value.OwnerElementId)
-                throw Structural(nameof(ScenarioDomain.Scope), value.Id);
+                throw Structural(nameof(Scope), value.Id);
             if (current.Quantity != value.Quantity)
                 operations.Add(new UpdateScopeQuantityOperation(value.Id, value.Quantity));
-            if (current.Type.Value != value.Type.Value)
-                operations.Add(new UpdateScopeTypeOperation(value.Id, new WorldDomain.ScopeType(value.Type.Value)));
+            if (current.Type != value.Type)
+                operations.Add(new UpdateScopeTypeOperation(value.Id, value.Type));
         }
     }
 
     private static void AppendAspectChanges(WorldSnapshot world, ScenarioDomain.ScenarioSnapshot scenario, List<WorldOperation> operations)
     {
-        foreach (ScenarioDomain.Aspect value in scenario.Aspects.Values)
+        foreach (Aspect value in scenario.Aspects.Values)
         {
-            if (!world.Aspects.TryGetValue(value.Id, out WorldDomain.Aspect? current))
+            if (!world.Aspects.TryGetValue(value.Id, out Aspect? current))
             {
-                operations.Add(new WorldDomain.AddAspectOperation(value.Id, value.Quantity, new WorldDomain.AspectType(value.Type.Value), value.ElementId, value.ScopeId));
+                operations.Add(new WorldDomain.AddAspectOperation(value.Id, value.Quantity, value.Type, value.ElementId, value.ScopeId));
                 continue;
             }
             if (current.ElementId != value.ElementId || current.ScopeId != value.ScopeId)
-                throw Structural(nameof(ScenarioDomain.Aspect), value.Id);
+                throw Structural(nameof(Aspect), value.Id);
             if (current.Quantity != value.Quantity)
                 operations.Add(new UpdateAspectQuantityOperation(value.Id, value.Quantity));
-            if (current.Type.Value != value.Type.Value)
-                operations.Add(new UpdateAspectTypeOperation(value.Id, new WorldDomain.AspectType(value.Type.Value)));
+            if (current.Type != value.Type)
+                operations.Add(new UpdateAspectTypeOperation(value.Id, value.Type));
         }
     }
 
     private static void AppendRelationChanges(WorldSnapshot world, ScenarioDomain.ScenarioSnapshot scenario, List<WorldOperation> operations)
     {
-        foreach (ScenarioDomain.Relation value in scenario.Relations.Values)
+        foreach (Relation value in scenario.Relations.Values)
         {
-            if (!world.Relations.TryGetValue(value.Id, out WorldDomain.Relation? current))
+            if (!world.Relations.TryGetValue(value.Id, out Relation? current))
             {
-                operations.Add(new WorldDomain.AddRelationOperation(value.Id, value.Quantity, new WorldDomain.RelationType(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId));
+                operations.Add(new WorldDomain.AddRelationOperation(value.Id, value.Quantity, value.Type, value.SourceElementId, value.TargetElementId, value.ScopeId));
                 continue;
             }
             if (current.SourceElementId != value.SourceElementId || current.TargetElementId != value.TargetElementId || current.ScopeId != value.ScopeId)
-                throw Structural(nameof(ScenarioDomain.Relation), value.Id);
+                throw Structural(nameof(Relation), value.Id);
             if (current.Quantity != value.Quantity)
                 operations.Add(new UpdateRelationQuantityOperation(value.Id, value.Quantity));
-            if (current.Type.Value != value.Type.Value)
-                operations.Add(new UpdateRelationTypeOperation(value.Id, new WorldDomain.RelationType(value.Type.Value)));
+            if (current.Type != value.Type)
+                operations.Add(new UpdateRelationTypeOperation(value.Id, value.Type));
         }
     }
 

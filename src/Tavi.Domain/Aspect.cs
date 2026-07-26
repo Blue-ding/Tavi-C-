@@ -1,4 +1,4 @@
-namespace Tavi.Domain.World;
+namespace Tavi.Domain;
 
 /// <summary>表示一个 Scope 中针对单个 Element 的规则化一元断言。</summary>
 public sealed record Aspect

@@ -1,4 +1,4 @@
-namespace Tavi.Domain.World;
+namespace Tavi.Domain;
 
 /// <summary>表示一个 Scope 中从 Source Element 指向 Target Element 的规则化有向二元断言。</summary>
 public sealed record Relation

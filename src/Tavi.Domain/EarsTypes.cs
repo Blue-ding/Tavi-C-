@@ -1,13 +1,13 @@
-namespace Tavi.Domain.World;
+namespace Tavi.Domain;
 
-/// <summary>表示由 World Kernel 或 Module 定义的 Element 类型开放键。</summary>
+/// <summary>表示由 Tavi 或 Module 定义的 Element 类型开放键。</summary>
 public readonly record struct ElementType
 {
     /// <summary>使用符合“命名空间:名称”约定的稳定文本创建 Element 类型。</summary>
     /// <param name="value">大小写敏感的类型键文本。</param>
     public ElementType(string value)
     {
-        Value = WorldTypeKeyValidation.Validate(value, nameof(value));
+        Value = EarsTypeKeyValidation.Validate(value, nameof(value));
     }
 
     /// <summary>获取不携带 Module 专属语义的内置类型。</summary>
@@ -23,14 +23,14 @@ public readonly record struct ElementType
     public override string ToString() => Value ?? string.Empty;
 }
 
-/// <summary>表示由 World Kernel 或 Module 定义的 Aspect 类型开放键。</summary>
+/// <summary>表示由 Tavi 或 Module 定义的 Aspect 类型开放键。</summary>
 public readonly record struct AspectType
 {
     /// <summary>使用符合“命名空间:名称”约定的稳定文本创建 Aspect 类型。</summary>
     /// <param name="value">大小写敏感的类型键文本。</param>
     public AspectType(string value)
     {
-        Value = WorldTypeKeyValidation.Validate(value, nameof(value));
+        Value = EarsTypeKeyValidation.Validate(value, nameof(value));
     }
 
     /// <summary>获取不携带 Module 专属语义的内置类型。</summary>
@@ -46,14 +46,14 @@ public readonly record struct AspectType
     public override string ToString() => Value ?? string.Empty;
 }
 
-/// <summary>表示由 World Kernel 或 Module 定义的 Relation 类型开放键。</summary>
+/// <summary>表示由 Tavi 或 Module 定义的 Relation 类型开放键。</summary>
 public readonly record struct RelationType
 {
     /// <summary>使用符合“命名空间:名称”约定的稳定文本创建 Relation 类型。</summary>
     /// <param name="value">大小写敏感的类型键文本。</param>
     public RelationType(string value)
     {
-        Value = WorldTypeKeyValidation.Validate(value, nameof(value));
+        Value = EarsTypeKeyValidation.Validate(value, nameof(value));
     }
 
     /// <summary>获取不携带 Module 专属语义的内置类型。</summary>
@@ -69,14 +69,14 @@ public readonly record struct RelationType
     public override string ToString() => Value ?? string.Empty;
 }
 
-/// <summary>表示由 World Kernel 或 Module 定义的 Scope 类型开放键。</summary>
+/// <summary>表示由 Tavi 或 Module 定义的 Scope 类型开放键。</summary>
 public readonly record struct ScopeType
 {
     /// <summary>使用符合“命名空间:名称”约定的稳定文本创建 Scope 类型。</summary>
     /// <param name="value">大小写敏感的类型键文本。</param>
     public ScopeType(string value)
     {
-        Value = WorldTypeKeyValidation.Validate(value, nameof(value));
+        Value = EarsTypeKeyValidation.Validate(value, nameof(value));
     }
 
     /// <summary>获取不携带 Module 专属语义的内置类型。</summary>
@@ -92,18 +92,18 @@ public readonly record struct ScopeType
     public override string ToString() => Value ?? string.Empty;
 }
 
-/// <summary>集中实施四种 World 开放类型共享的文本格式约定。</summary>
-internal static class WorldTypeKeyValidation
+/// <summary>集中实施四种 EARS 开放类型共享的文本格式约定。</summary>
+internal static class EarsTypeKeyValidation
 {
     /// <summary>校验并返回未经规范化的稳定键，避免静默改变持久化身份。</summary>
     internal static string Validate(string value, string parameterName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
         if (!string.Equals(value, value.Trim(), StringComparison.Ordinal))
-            throw new ArgumentException("World 类型键不能包含首尾空白。", parameterName);
+            throw new ArgumentException("EARS 类型键不能包含首尾空白。", parameterName);
         int separatorIndex = value.IndexOf(':');
         if (separatorIndex <= 0 || separatorIndex == value.Length - 1)
-            throw new ArgumentException("World 类型键必须符合“命名空间:名称”约定。", parameterName);
+            throw new ArgumentException("EARS 类型键必须符合“命名空间:名称”约定。", parameterName);
         return value;
     }
 }
