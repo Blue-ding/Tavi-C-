@@ -1,6 +1,6 @@
 using ApplicationLogLevel = Tavi.Application.Logging.LogLevel;
 
-namespace Tavi.Host.Logging;
+namespace Tavi.Runtime.Logging;
 
 /// <summary>将 Application 日志端口转发到 ASP.NET Core 日志系统。</summary>
 public sealed class ApplicationLoggerAdapter : Tavi.Application.Logging.ILogger

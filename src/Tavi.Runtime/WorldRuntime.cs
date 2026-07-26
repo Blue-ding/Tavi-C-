@@ -1,8 +1,7 @@
 using Tavi.Application.World;
-using Tavi.Host.ViewModels;
 using Tavi.Infrastructure.Persistence;
 
-namespace Tavi.Host.Runtime;
+namespace Tavi.Runtime;
 
 /// <summary>持有当前世界会话，并为所有展示层读写提供统一的串行访问和生命周期边界。</summary>
 public sealed class WorldRuntime : IHostedService, IAsyncDisposable
@@ -100,13 +99,13 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     private void OnWorldChanged(object? sender, WorldSessionChangedEventArgs eventArgs)
     {
         IWorldService service = RequireService();
-        _events.Publish(new WorldEventViewModel("world.changed", eventArgs.StateId, service.IsDirty, eventArgs.CommitId, eventArgs.Operation.ToString(), null));
+        _events.Publish(new WorldRuntimeEvent("world.changed", eventArgs.StateId, service.IsDirty, eventArgs.CommitId, eventArgs.Operation.ToString(), null));
     }
 
     private void OnWorldStateChanged(object? sender, WorldSessionStateChangedEventArgs eventArgs)
     {
         Guid stateId = _service?.StateId ?? Guid.Empty;
-        _events.Publish(new WorldEventViewModel($"world.{ToKebabCase(eventArgs.Change.ToString())}", stateId, eventArgs.IsDirty, null, null, eventArgs.Exception?.Message));
+        _events.Publish(new WorldRuntimeEvent($"world.{ToKebabCase(eventArgs.Change.ToString())}", stateId, eventArgs.IsDirty, null, null, eventArgs.Exception?.Message));
     }
 
     private IWorldService RequireService() => _service ?? throw new InvalidOperationException("世界运行时尚未初始化。");

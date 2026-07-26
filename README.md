@@ -11,10 +11,11 @@ src/
   Tavi.Domain/                    EARS、World、Scenario 等领域模型
   Tavi.Utilities/                 乐观并发与版本化工作区等通用机制
   Tavi.Application/               应用服务与 LLM 契约
+  Tavi.Runtime/                   进程级 Session、生命周期、并发与运行期协调
   Tavi.Infrastructure.OpenAI/     OpenAI SDK 适配
   Tavi.Infrastructure.Persistence/  本地持久化适配
   Tavi.Cli/                       命令行入口
-  Tavi.Host/                      本地 HTTP/SSE 宿主与 ViewModel 展示层
+  Tavi.Host/                      组合根、本地 HTTP/SSE Adapter 与项目入口
   Tavi.Web/                       React 世界图工作台
   Tavi.App/                       .NET MAUI 桌面外壳
 tests/

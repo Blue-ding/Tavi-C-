@@ -9,8 +9,9 @@ using Tavi.Extensibility;
 using Tavi.Host.Endpoints;
 using Tavi.Host.Errors;
 using Tavi.Host.Logging;
-using Tavi.Host.Runtime;
 using Tavi.Modules.Magic;
+using Tavi.Runtime;
+using Tavi.Runtime.Logging;
 
 namespace Tavi.Host;
 

@@ -2,7 +2,7 @@ using Tavi.Application.Scenario;
 using Tavi.Domain.World;
 using Tavi.Infrastructure.Persistence;
 
-namespace Tavi.Host.Runtime;
+namespace Tavi.Runtime;
 
 /// <summary>持有当前独立 Scenario 会话，并为 Host 请求提供串行访问和持久化生命周期。</summary>
 public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable

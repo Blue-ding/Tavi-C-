@@ -1,13 +1,15 @@
 # Tavi.Host 展示层约定
 
-`Tavi.Host` 是本地前端的组合根和展示适配层，不实现世界业务规则。
+`Tavi.Host` 是本地前端的组合根和 HTTP/SSE 展示适配层，不实现世界业务规则，
+也不持有 Tavi 的运行期 Session。
 
 ## 依赖约定
 
-- Endpoint 只能通过 `WorldRuntime` 访问 `IWorldService`。
+- Endpoint 只能通过 `Tavi.Runtime` 访问活动 Application Session。
 - ViewModel 是稳定的 HTTP/SSE 契约，不直接暴露运行时 `World`。
+- Runtime 事件在 Host 中映射为 HTTP/SSE ViewModel，`Tavi.Runtime` 不依赖 Host。
 - Domain 和 Application 决定操作是否合法，Host 只完成协议解析与结果映射。
-- 当前世界会话由 Host 单例持有，避免丢失状态标识、撤销历史和自动保存状态。
+- 当前世界会话由 Runtime 单例持有，避免丢失状态标识、撤销历史和自动保存状态。
 
 ## 修改约定
 

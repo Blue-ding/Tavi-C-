@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Tavi.Application.LanguageModel;
 
-namespace Tavi.Host.Runtime;
+namespace Tavi.Runtime;
 
 /// <summary>
 /// 为长期存活的 GuidanceService 提供可热替换的语言模型执行器。

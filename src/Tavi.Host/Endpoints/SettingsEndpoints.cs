@@ -1,5 +1,6 @@
-using Tavi.Host.Runtime;
+using Tavi.Host.Mapping;
 using Tavi.Host.ViewModels;
+using Tavi.Runtime;
 
 namespace Tavi.Host.Endpoints;
 
@@ -15,7 +16,7 @@ internal static class SettingsEndpoints
             CancellationToken cancellationToken) => SaveAllAsync(request, runtime, guidance, cancellationToken));
         settings.MapGet("/language-model", (
             SettingsRuntime runtime,
-            CancellationToken cancellationToken) => runtime.LoadAsync(cancellationToken));
+            CancellationToken cancellationToken) => LoadLanguageModelAsync(runtime, cancellationToken));
         settings.MapPut("/language-model", (
             UpdateLanguageModelSettingsRequest request,
             SettingsRuntime runtime,
@@ -23,7 +24,7 @@ internal static class SettingsEndpoints
             CancellationToken cancellationToken) => SaveLanguageModelAsync(request, runtime, guidance, cancellationToken));
         settings.MapGet("/openai", (
             SettingsRuntime runtime,
-            CancellationToken cancellationToken) => runtime.LoadOpenAIAsync(cancellationToken));
+            CancellationToken cancellationToken) => LoadOpenAIAsync(runtime, cancellationToken));
         settings.MapPut("/openai", (
             UpdateOpenAIConfigurationRequest request,
             SettingsRuntime runtime,
@@ -39,8 +40,10 @@ internal static class SettingsEndpoints
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        OpenAIConfigurationViewModel openAI = await settings.SaveOpenAIAsync(request.OpenAI, cancellationToken);
-        LanguageModelSettingsViewModel languageModel = await settings.SaveAsync(request.LanguageModel, cancellationToken);
+        OpenAIConfigurationViewModel openAI = SettingsViewModelMapper.ToViewModel(
+            await settings.SaveOpenAIAsync(SettingsViewModelMapper.ToUpdate(request.OpenAI), cancellationToken));
+        LanguageModelSettingsViewModel languageModel = SettingsViewModelMapper.ToViewModel(
+            await settings.SaveLanguageModelAsync(SettingsViewModelMapper.ToSettings(request.LanguageModel), cancellationToken));
         await guidance.ReloadSettingsAsync(cancellationToken);
         return new SettingsSaveResultViewModel(
             languageModel,
@@ -55,7 +58,8 @@ internal static class SettingsEndpoints
         GuidanceRuntime guidance,
         CancellationToken cancellationToken)
     {
-        LanguageModelSettingsViewModel saved = await settings.SaveAsync(request, cancellationToken);
+        LanguageModelSettingsViewModel saved = SettingsViewModelMapper.ToViewModel(
+            await settings.SaveLanguageModelAsync(SettingsViewModelMapper.ToSettings(request), cancellationToken));
         await guidance.ReloadSettingsAsync(cancellationToken);
         return saved;
     }
@@ -66,8 +70,19 @@ internal static class SettingsEndpoints
         GuidanceRuntime guidance,
         CancellationToken cancellationToken)
     {
-        OpenAIConfigurationViewModel saved = await settings.SaveOpenAIAsync(request, cancellationToken);
+        OpenAIConfigurationViewModel saved = SettingsViewModelMapper.ToViewModel(
+            await settings.SaveOpenAIAsync(SettingsViewModelMapper.ToUpdate(request), cancellationToken));
         await guidance.ReloadSettingsAsync(cancellationToken);
         return saved;
     }
+
+    private static async Task<LanguageModelSettingsViewModel> LoadLanguageModelAsync(
+        SettingsRuntime settings,
+        CancellationToken cancellationToken) =>
+        SettingsViewModelMapper.ToViewModel(await settings.LoadLanguageModelAsync(cancellationToken));
+
+    private static async Task<OpenAIConfigurationViewModel> LoadOpenAIAsync(
+        SettingsRuntime settings,
+        CancellationToken cancellationToken) =>
+        SettingsViewModelMapper.ToViewModel(await settings.LoadOpenAIAsync(cancellationToken));
 }

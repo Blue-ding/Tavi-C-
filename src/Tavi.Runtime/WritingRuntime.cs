@@ -1,7 +1,7 @@
 using Tavi.Application.Writing;
 using Tavi.Infrastructure.Persistence;
 
-namespace Tavi.Host.Runtime;
+namespace Tavi.Runtime;
 
 /// <summary>持有唯一 WritingSession，并为 Host 请求提供串行访问、配置和关闭刷新边界。</summary>
 public sealed class WritingRuntime : IHostedService, IAsyncDisposable

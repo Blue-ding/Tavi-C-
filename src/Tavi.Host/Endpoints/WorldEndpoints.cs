@@ -3,10 +3,10 @@ using Tavi.Application.World;
 using Tavi.Application.Extensions;
 using Tavi.Domain.World;
 using Tavi.Host.Mapping;
-using Tavi.Host.Runtime;
 using Tavi.Host.ViewModels;
 using Tavi.Application.Extensions.World;
 using Tavi.Extensibility;
+using Tavi.Runtime;
 
 namespace Tavi.Host.Endpoints;
 
@@ -204,8 +204,15 @@ internal static class WorldEndpoints
         context.Response.Headers.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Connection = "keep-alive";
-        await foreach (WorldEventViewModel worldEvent in broker.SubscribeAsync(cancellationToken))
+        await foreach (WorldRuntimeEvent runtimeEvent in broker.SubscribeAsync(cancellationToken))
         {
+            var worldEvent = new WorldEventViewModel(
+                runtimeEvent.Type,
+                runtimeEvent.StateId,
+                runtimeEvent.IsDirty,
+                runtimeEvent.CommitId,
+                runtimeEvent.Operation,
+                runtimeEvent.Error);
             await context.Response.WriteAsync($"event: {worldEvent.Type}\n", cancellationToken);
             await context.Response.WriteAsync($"data: {JsonSerializer.Serialize(worldEvent, EventJsonOptions)}\n\n", cancellationToken);
             await context.Response.Body.FlushAsync(cancellationToken);

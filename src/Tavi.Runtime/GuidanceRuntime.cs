@@ -1,15 +1,13 @@
 using Tavi.Application;
 using Tavi.Application.Guidance;
 using Tavi.Application.LanguageModel;
-using Tavi.Host.Logging;
-using Tavi.Host.Mapping;
-using Tavi.Host.ViewModels;
 using Tavi.Infrastructure.OpenAI;
 using Tavi.Infrastructure.Persistence;
+using Tavi.Runtime.Logging;
 
-namespace Tavi.Host.Runtime;
+namespace Tavi.Runtime;
 
-internal sealed class GuidanceRuntime : IHostedService
+public sealed class GuidanceRuntime : IHostedService
 {
     private readonly WorldRuntime _world;
     private readonly ExtensionRuntime _extensions;
@@ -37,10 +35,10 @@ internal sealed class GuidanceRuntime : IHostedService
         _providedLanguageModels = providedLanguageModels?.ToArray() ?? throw new ArgumentNullException(nameof(providedLanguageModels));
     }
 
-    internal GuidanceAvailabilityViewModel Availability => new(_service is not null, _provider, _availabilityMessage);
+    public GuidanceAvailability Availability => new(_service is not null, _provider, _availabilityMessage);
 
     /// <summary>获取唯一 Guidance Session 当前是否正在生成。</summary>
-    internal bool IsGenerating
+    public bool IsGenerating
     {
         get
         {
@@ -81,7 +79,7 @@ internal sealed class GuidanceRuntime : IHostedService
     /// <summary>
     /// 重新加载持久化配置。已有 Guidance Session 保持不变，之后启动的模型运行使用新配置。
     /// </summary>
-    internal async Task ReloadSettingsAsync(CancellationToken cancellationToken)
+    public async Task ReloadSettingsAsync(CancellationToken cancellationToken)
     {
         // 显式注入的模型服务不由本地 OpenAI 设置管理。
         if (_providedLanguageModels.Count != 0)
@@ -122,50 +120,49 @@ internal sealed class GuidanceRuntime : IHostedService
         }
     }
 
-    internal GuidanceOperationViewModel Start(string potential)
+    public GuidanceRuntimeOperation Start(string potential)
     {
         IGuidanceService service = RequireService();
         GuidanceOperation operation = service.Start(new NarrativePotential(potential), _lifetime.ApplicationStopping);
         TrackOperation(service, operation);
-        return GuidanceViewModelMapper.ToOperation(operation, service.GetSnapshot(operation.SessionId));
+        return ToRuntimeOperation(operation, service.GetSnapshot(operation.SessionId));
     }
 
-    internal GuidanceOperationViewModel Continue(Guid sessionId, string message)
+    public GuidanceRuntimeOperation Continue(Guid sessionId, string message)
     {
         IGuidanceService service = RequireService();
         GuidanceOperation operation = service.Continue(sessionId, new GuidanceMessage(message), _lifetime.ApplicationStopping);
         TrackOperation(service, operation);
-        return GuidanceViewModelMapper.ToOperation(operation, service.GetSnapshot(sessionId));
+        return ToRuntimeOperation(operation, service.GetSnapshot(sessionId));
     }
 
-    internal GuidanceSnapshotViewModel GetSnapshot(Guid sessionId) => GuidanceViewModelMapper.ToSnapshot(RequireService().GetSnapshot(sessionId));
+    public GuidanceSnapshot GetSnapshot(Guid sessionId) => RequireService().GetSnapshot(sessionId);
 
-    internal GuidanceSnapshotViewModel GetCurrentSnapshot()
+    public GuidanceSnapshot GetCurrentSnapshot()
     {
         IGuidanceService service = RequireService();
-        return GuidanceViewModelMapper.ToSnapshot(service.GetSnapshot(service.Id));
+        return service.GetSnapshot(service.Id);
     }
 
-    internal GuidanceCommitViewModel Commit(Guid sessionId, IReadOnlyCollection<string> acceptedChangeIds)
+    public GuidanceRuntimeCommit Commit(Guid sessionId, IReadOnlyCollection<string> acceptedChangeIds)
     {
         IGuidanceService service = RequireService();
         GuidanceCommitResult result = service.Commit(sessionId, acceptedChangeIds);
         GuidanceSnapshot snapshot = service.GetSnapshot(sessionId);
-        GuidanceSnapshotViewModel mappedSnapshot = GuidanceViewModelMapper.ToSnapshot(snapshot);
-        _events.Publish(new GuidanceEventViewModel("guidance.session.changed", sessionId, null, null, mappedSnapshot, null));
-        return GuidanceViewModelMapper.ToCommit(result, snapshot);
+        _events.Publish(new GuidanceRuntimeEvent("guidance.session.changed", sessionId, null, null, snapshot, null));
+        return new GuidanceRuntimeCommit(result, snapshot);
     }
 
-    internal GuidanceSnapshotViewModel Cancel(Guid sessionId)
+    public GuidanceSnapshot Cancel(Guid sessionId)
     {
         IGuidanceService service = RequireService();
         service.Cancel(sessionId);
-        GuidanceSnapshotViewModel snapshot = GuidanceViewModelMapper.ToSnapshot(service.GetSnapshot(sessionId));
-        _events.Publish(new GuidanceEventViewModel("guidance.cancelled", sessionId, null, null, snapshot, null));
+        GuidanceSnapshot snapshot = service.GetSnapshot(sessionId);
+        _events.Publish(new GuidanceRuntimeEvent("guidance.cancelled", sessionId, null, null, snapshot, null));
         return snapshot;
     }
 
-    internal void Forget(Guid sessionId)
+    public void Forget(Guid sessionId)
     {
         IGuidanceService service = RequireService();
         GuidanceSnapshot snapshot = service.GetSnapshot(sessionId);
@@ -173,28 +170,28 @@ internal sealed class GuidanceRuntime : IHostedService
             throw new InvalidOperationException($"Guidance 会话当前状态为 {snapshot.State}，不能遗忘。");
     }
 
-    internal GuidanceOperationViewModel Retry(Guid sessionId, string message)
+    public GuidanceRuntimeOperation Retry(Guid sessionId, string message)
     {
         IGuidanceService service = RequireService();
         GuidanceOperation operation = service.Retry(sessionId, new GuidanceMessage(message), _lifetime.ApplicationStopping);
         TrackOperation(service, operation);
-        return GuidanceViewModelMapper.ToOperation(operation, service.GetSnapshot(sessionId));
+        return ToRuntimeOperation(operation, service.GetSnapshot(sessionId));
     }
 
-    internal GuidanceSnapshotViewModel Refresh(Guid sessionId)
+    public GuidanceSnapshot Refresh(Guid sessionId)
     {
         IGuidanceService service = RequireService();
         service.Refresh(sessionId);
-        GuidanceSnapshotViewModel snapshot = GuidanceViewModelMapper.ToSnapshot(service.GetSnapshot(sessionId));
-        _events.Publish(new GuidanceEventViewModel("guidance.refreshed", sessionId, null, null, snapshot, null));
+        GuidanceSnapshot snapshot = service.GetSnapshot(sessionId);
+        _events.Publish(new GuidanceRuntimeEvent("guidance.refreshed", sessionId, null, null, snapshot, null));
         return snapshot;
     }
 
     private void TrackOperation(IGuidanceService service, GuidanceOperation operation)
     {
-        operation.TextReceived += (_, text) => _events.Publish(new GuidanceEventViewModel("guidance.text.delta", operation.SessionId, operation.Id, text, null, null));
-        GuidanceSnapshotViewModel snapshot = GuidanceViewModelMapper.ToSnapshot(service.GetSnapshot(operation.SessionId));
-        _events.Publish(new GuidanceEventViewModel("guidance.operation.started", operation.SessionId, operation.Id, null, snapshot, null));
+        operation.TextReceived += (_, text) => _events.Publish(new GuidanceRuntimeEvent("guidance.text.delta", operation.SessionId, operation.Id, text, null, null));
+        GuidanceSnapshot snapshot = service.GetSnapshot(operation.SessionId);
+        _events.Publish(new GuidanceRuntimeEvent("guidance.operation.started", operation.SessionId, operation.Id, null, snapshot, null));
         _ = ObserveOperationAsync(service, operation);
     }
 
@@ -203,17 +200,17 @@ internal sealed class GuidanceRuntime : IHostedService
         try
         {
             GuidanceSnapshot snapshot = await operation.Completion;
-            _events.Publish(new GuidanceEventViewModel("guidance.operation.completed", operation.SessionId, operation.Id, null, GuidanceViewModelMapper.ToSnapshot(snapshot), null));
+            _events.Publish(new GuidanceRuntimeEvent("guidance.operation.completed", operation.SessionId, operation.Id, null, snapshot, null));
         }
         catch (OperationCanceledException)
         {
-            GuidanceSnapshotViewModel snapshot = GuidanceViewModelMapper.ToSnapshot(service.GetSnapshot(operation.SessionId));
-            _events.Publish(new GuidanceEventViewModel("guidance.operation.cancelled", operation.SessionId, operation.Id, null, snapshot, null));
+            GuidanceSnapshot snapshot = service.GetSnapshot(operation.SessionId);
+            _events.Publish(new GuidanceRuntimeEvent("guidance.operation.cancelled", operation.SessionId, operation.Id, null, snapshot, null));
         }
         catch (Exception exception)
         {
-            GuidanceSnapshotViewModel snapshot = GuidanceViewModelMapper.ToSnapshot(service.GetSnapshot(operation.SessionId));
-            _events.Publish(new GuidanceEventViewModel("guidance.operation.failed", operation.SessionId, operation.Id, null, snapshot, snapshot.Failure?.Message ?? "Guidance 生成失败。"));
+            GuidanceSnapshot snapshot = service.GetSnapshot(operation.SessionId);
+            _events.Publish(new GuidanceRuntimeEvent("guidance.operation.failed", operation.SessionId, operation.Id, null, snapshot, snapshot.Failure?.Message ?? "Guidance 生成失败。"));
             _logger.LogWarning(exception, "Guidance 操作失败，SessionId={SessionId}，OperationId={OperationId}。", operation.SessionId, operation.Id);
         }
     }
@@ -246,4 +243,9 @@ internal sealed class GuidanceRuntime : IHostedService
     }
 
     private IGuidanceService RequireService() => _service ?? throw LanguageModelConfigurationException.Invalid(_availabilityMessage);
+
+    private static GuidanceRuntimeOperation ToRuntimeOperation(
+        GuidanceOperation operation,
+        GuidanceSnapshot snapshot) =>
+        new(operation.Id, operation.SessionId, operation.State, snapshot);
 }

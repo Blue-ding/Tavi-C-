@@ -1,5 +1,6 @@
 using Tavi.Application.Guidance;
 using Tavi.Host.ViewModels;
+using Tavi.Runtime;
 
 namespace Tavi.Host.Mapping;
 
@@ -13,14 +14,16 @@ internal static class GuidanceViewModelMapper
         return new GuidanceSnapshotViewModel(snapshot.SessionId, snapshot.State.ToString(), snapshot.BaseWorldStateId, messages, snapshot.Proposal is null ? null : ToProposal(snapshot.Proposal), failure, snapshot.RetryMessage);
     }
 
-    internal static GuidanceOperationViewModel ToOperation(GuidanceOperation operation, GuidanceSnapshot snapshot) => new(operation.Id, operation.SessionId, operation.State.ToString(), ToSnapshot(snapshot));
+    internal static GuidanceOperationViewModel ToOperation(GuidanceRuntimeOperation operation) =>
+        new(operation.OperationId, operation.SessionId, operation.State.ToString(), ToSnapshot(operation.Snapshot));
 
-    internal static GuidanceCommitViewModel ToCommit(GuidanceCommitResult result, GuidanceSnapshot snapshot)
+    internal static GuidanceCommitViewModel ToCommit(GuidanceRuntimeCommit commit)
     {
+        GuidanceCommitResult result = commit.Result;
         CreatedWorldEntityViewModel[] elements = result.CreatedElementIds.Select(pair => new CreatedWorldEntityViewModel(pair.Key.Value, pair.Value)).ToArray();
         CreatedWorldEntityViewModel[] scopes = result.CreatedScopeIds.Select(pair => new CreatedWorldEntityViewModel(pair.Key.Value, pair.Value)).ToArray();
         GuidanceIssueViewModel[] issues = result.Issues.Select(issue => new GuidanceIssueViewModel(issue.Code, issue.Message, issue.ChangeId)).ToArray();
-        return new GuidanceCommitViewModel(result.Status.ToString(), result.WorldStateId, elements, scopes, issues, result.ExpectedWorldStateId, result.ActualWorldStateId, ToSnapshot(snapshot));
+        return new GuidanceCommitViewModel(result.Status.ToString(), result.WorldStateId, elements, scopes, issues, result.ExpectedWorldStateId, result.ActualWorldStateId, ToSnapshot(commit.Snapshot));
     }
 
     private static WorldProposalViewModel ToProposal(WorldProposal proposal) => new(proposal.Id, proposal.BaseWorldStateId, proposal.Summary, proposal.Changes.Select(ToChange).ToArray());

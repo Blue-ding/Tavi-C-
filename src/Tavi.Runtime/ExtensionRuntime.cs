@@ -2,7 +2,7 @@ using Tavi.Application.Extensions;
 using Tavi.Extensibility;
 using Tavi.Infrastructure.Persistence;
 
-namespace Tavi.Host.Runtime;
+namespace Tavi.Runtime;
 
 /// <summary>加载 Extension 设置与 Module Package，并为所有 Application Session 持有同一份冻结 Runtime。</summary>
 public sealed class ExtensionRuntime : IHostedService
