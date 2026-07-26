@@ -159,19 +159,19 @@ internal static class WorldEndpoints
     {
         if (guidance.IsGenerating)
             throw new InvalidOperationException("Guidance 正在生成；请先停止生成，再提交真实 World。");
-        return runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.CommitStaged(request.ChangeIds, request.ExpectedStateId).Commit), cancellationToken);
+        return runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Commands.CommitStaged(request.ChangeIds, request.ExpectedStateId).Commit), cancellationToken);
     }
 
     private static Task<WorldStagingResultViewModel> DeleteStagedAsync(Guid changeId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
     {
-        if (!session.DeleteStaged(changeId))
+        if (!session.Commands.DeleteStaged(changeId))
             throw new ArgumentException($"不存在暂存项 {changeId}。", nameof(changeId));
         return new WorldStagingResultViewModel([changeId], WorldViewModelMapper.ToGraph(session));
     }, cancellationToken);
 
     private static Task<WorldStagingResultViewModel> DeleteInvalidStagedAsync(WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session =>
     {
-        session.DeleteInvalidStaged();
+        session.Commands.DeleteInvalidStaged();
         return new WorldStagingResultViewModel([], WorldViewModelMapper.ToGraph(session));
     }, cancellationToken);
 
@@ -190,12 +190,12 @@ internal static class WorldEndpoints
         return new WorldStagingResultViewModel([changeId], WorldViewModelMapper.ToGraph(session));
     }, cancellationToken);
 
-    private static Task<WorldCommitViewModel> UndoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Undo(request.ExpectedStateId)), cancellationToken);
-    private static Task<WorldCommitViewModel> RedoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Redo(request.ExpectedStateId)), cancellationToken);
+    private static Task<WorldCommitViewModel> UndoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Commands.Undo(request.ExpectedStateId)), cancellationToken);
+    private static Task<WorldCommitViewModel> RedoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(session => WorldViewModelMapper.ToCommit(session.Commands.Redo(request.ExpectedStateId)), cancellationToken);
 
     private static Task<SaveWorldViewModel> SaveAsync(WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(async session =>
     {
-        await session.SaveAsync(cancellationToken);
+        await session.Commands.SaveAsync(cancellationToken);
         return new SaveWorldViewModel(session.StateId, session.IsDirty);
     }, cancellationToken);
 
@@ -229,7 +229,7 @@ internal static class WorldEndpoints
     {
         if (operations.Count == 0)
             throw new ArgumentException("更新请求至少需要包含一个可修改属性。");
-        Guid id = workspace.Stage(new WorldChangeSet(operations));
+        Guid id = workspace.Commands.Stage(new WorldChangeSet(operations));
         return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(workspace));
     }
 

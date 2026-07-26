@@ -48,7 +48,7 @@ public sealed class WorldAuthoringCoordinator
         var request = new WorldAuthoringRequest { World = WorldExtensibilityAdapter.ToView(snapshot), ActionId = actionId, Arguments = arguments ?? throw new ArgumentNullException(nameof(arguments)), Parameters = _runtime.GetParameters(module) };
         WorldAuthoringProposal proposal = await Invoke(module, () => extension.ProposeAsync(request, cancellationToken));
         WorldChangeSet changeSet = WorldExtensibilityAdapter.ToChangeSet(proposal, snapshot);
-        return _world.Stage(changeSet, source);
+        return _world.Commands.Stage(changeSet, source);
     }
 
     private static async ValueTask<T> Invoke<T>(ModuleId module, Func<ValueTask<T>> action)

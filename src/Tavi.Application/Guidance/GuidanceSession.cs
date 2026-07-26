@@ -113,7 +113,7 @@ internal sealed class GuidanceSession : IGuidanceService
         }
         try
         {
-            WorldStagingCommitResult result = _world.CommitStaged(ids, _world.StateId);
+            WorldStagingCommitResult result = _world.Commands.CommitStaged(ids, _world.StateId);
             lock (_sync)
             {
                 string committed = string.Join(", ", result.ConsumedChangeIds);
@@ -239,7 +239,7 @@ internal sealed class GuidanceSession : IGuidanceService
             if (proposal.Changes.Count > 0)
             {
                 ProposalCompilationResult compilation = WorldProposalCompiler.Compile(proposal, proposal.Changes.Select(change => change.Id), _world);
-                IReadOnlyList<Guid> stagedIds = _world.Stage(compilation.ChangeSet.Operations, WorldStagedChangeSource.Guidance);
+                IReadOnlyList<Guid> stagedIds = _world.Commands.Stage(compilation.ChangeSet.Operations, WorldStagedChangeSource.Guidance);
                 Dictionary<string, Guid> stagedIdsByChangeId = compilation.OperationChangeIds.Select((changeId, index) => (changeId, stagedId: stagedIds[index])).ToDictionary(item => item.changeId, item => item.stagedId, StringComparer.Ordinal);
                 ProposalChange[] changes = proposal.Changes.Select(change => change switch
                 {

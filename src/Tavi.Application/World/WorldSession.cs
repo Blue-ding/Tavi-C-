@@ -41,6 +41,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
             throw new ArgumentOutOfRangeException(nameof(autoSaveDelay), "自动保存延迟不能为负数。");
         _workspace = new VersionedWorkspace<RuntimeWorld, WorldChangeSet, AppliedWorldChangeSet>(new WorldConcurrencyModel());
         Queries = new WorldQueries(this);
+        Commands = new WorldCommands(this);
     }
 
     /// <summary>
@@ -57,6 +58,11 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     /// 获取始终通过本会话同步边界读取最新状态的查询工具；查询器自身不缓存 World 数据。
     /// </summary>
     public WorldQueries Queries { get; }
+
+    /// <summary>
+    /// 获取始终通过本会话同步和事务边界执行的命令工具。
+    /// </summary>
+    public WorldCommands Commands { get; }
 
     /// <summary>
     /// 获取当前会话健康状态。回滚失败后会话进入 Faulted，并拒绝继续读写或保存。
@@ -120,7 +126,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     /// <summary>
     /// 以 expectedStateId 为乐观并发条件原子提交操作组。中间操作不产生事件，失败且回滚成功时 World 和 StateId 保持不变。
     /// </summary>
-    public WorldCommitResult Apply(WorldChangeSet changeSet, Guid expectedStateId)
+    internal WorldCommitResult Apply(WorldChangeSet changeSet, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(changeSet);
         ValidateRegisteredTypes(changeSet.Operations);
@@ -130,7 +136,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     }
 
     /// <summary>将一项不可变 World 操作追加到暂存日志；暂存不会修改真实 World。</summary>
-    public Guid Stage(WorldOperation operation, WorldStagedChangeSource source = WorldStagedChangeSource.Player)
+    internal Guid Stage(WorldOperation operation, WorldStagedChangeSource source = WorldStagedChangeSource.Player)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ValidateRegisteredType(operation);
@@ -138,7 +144,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     }
 
     /// <summary>将指向同一 World 项目的操作组作为一项原子暂存记录追加。</summary>
-    public Guid Stage(WorldChangeSet changeSet, WorldStagedChangeSource source = WorldStagedChangeSource.Player)
+    internal Guid Stage(WorldChangeSet changeSet, WorldStagedChangeSource source = WorldStagedChangeSource.Player)
     {
         ArgumentNullException.ThrowIfNull(changeSet);
         ValidateRegisteredTypes(changeSet.Operations);
@@ -146,7 +152,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     }
 
     /// <summary>将一组不可变 World 操作按顺序追加到暂存日志；全部操作通过结构校验后才会写入。</summary>
-    public IReadOnlyList<Guid> Stage(IEnumerable<WorldOperation> operations, WorldStagedChangeSource source)
+    internal IReadOnlyList<Guid> Stage(IEnumerable<WorldOperation> operations, WorldStagedChangeSource source)
     {
         ArgumentNullException.ThrowIfNull(operations);
         WorldOperation[] copied = operations.ToArray();
@@ -162,13 +168,13 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     });
 
     /// <summary>删除指定暂存日志项；不存在时返回 false。</summary>
-    public bool DeleteStaged(Guid changeId) => ExecuteLocked(() => _staging.Delete(changeId));
+    internal bool DeleteStaged(Guid changeId) => ExecuteLocked(() => _staging.Delete(changeId));
 
     /// <summary>删除当前全部无效暂存项并返回删除数量；冲突项不会被删除。</summary>
-    public int DeleteInvalidStaged() => ExecuteLocked(() => _staging.DeleteInvalid(_workspace.Read(world => world.CreateSnapshot())));
+    internal int DeleteInvalidStaged() => ExecuteLocked(() => _staging.DeleteInvalid(_workspace.Read(world => world.CreateSnapshot())));
 
     /// <summary>原子提交选中的有效暂存项并在成功后消费它们。</summary>
-    public WorldStagingCommitResult CommitStaged(IEnumerable<Guid> selectedChangeIds, Guid expectedStateId)
+    internal WorldStagingCommitResult CommitStaged(IEnumerable<Guid> selectedChangeIds, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(selectedChangeIds);
         (WorldCommitResult Commit, Guid[] Selected) transaction = _workspace.ExecuteExclusive(() =>
@@ -186,7 +192,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     /// <summary>
     /// 原子应用最近一次提交的反向操作。撤销本身是新提交，因此会生成新的 StateId。
     /// </summary>
-    public WorldCommitResult Undo(Guid expectedStateId)
+    internal WorldCommitResult Undo(Guid expectedStateId)
     {
         WorldCommitResult result = ExecuteWorkspace(() => _workspace.Undo(expectedStateId));
         PublishCommit(result, WorldSessionOperation.Undo);
@@ -196,7 +202,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     /// <summary>
     /// 原子重新应用最近一次撤销的正向操作。重做本身是新提交，因此会生成新的 StateId。
     /// </summary>
-    public WorldCommitResult Redo(Guid expectedStateId)
+    internal WorldCommitResult Redo(Guid expectedStateId)
     {
         WorldCommitResult result = ExecuteWorkspace(() => _workspace.Redo(expectedStateId));
         PublishCommit(result, WorldSessionOperation.Redo);
@@ -206,7 +212,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     /// <summary>
     /// 立即保存当前世界，无论当前是否为脏状态。
     /// </summary>
-    public Task SaveAsync(CancellationToken cancellationToken = default)
+    internal Task SaveAsync(CancellationToken cancellationToken = default)
     {
         EnsureUsable();
         CancelPendingAutoSave();

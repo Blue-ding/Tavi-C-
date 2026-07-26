@@ -40,7 +40,7 @@ internal static class WorldGuidanceTool
         return new { total = all.Length, returned = Math.Min(all.Length, MaxResults), truncated = all.Length > MaxResults, items = all.Take(MaxResults).ToArray() };
     }
 
-    private static Guid Apply(IWorldWorkspace service, params WorldOperation[] operations) => service.Apply(new WorldChangeSet(operations), service.StateId).StateId;
+    private static Guid Apply(IWorldWorkspace service, params WorldOperation[] operations) => service.Commands.Apply(new WorldChangeSet(operations), service.StateId).StateId;
     private static object Output(Element value) => new { value.Id, value.Name, value.Description, Type = value.Type.Value };
     private static object Output(ResolvedScope value) => new { value.Scope.Id, value.Scope.Quantity, Type = value.Scope.Type.Value, value.Scope.OwnerElementId, Owner = Output(value.Owner) };
     private static object Output(ResolvedAspect value) => new { value.Aspect.Id, value.Aspect.Quantity, Type = value.Aspect.Type.Value, value.Aspect.ElementId, value.Aspect.ScopeId, Element = Output(value.Element), Scope = Output(new ResolvedScope(value.Scope, value.ScopeOwner)) };
