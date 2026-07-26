@@ -227,6 +227,14 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return ScenarioExtensibilityAdapter.ToSceneContext(scenario.CreateSnapshot(), scene);
     });
 
+    internal SceneContextView GetPerformanceContext(Guid sceneId, Guid expectedStateId) => ExecuteQuery(scenario =>
+    {
+        EnsureExpectedState(scenario, expectedStateId, nameof(GetPerformanceContext));
+        Scene scene = scenario.GetScene(sceneId);
+        EnsureSceneCanUse(scene, SceneSettlementOptions.Performance, SceneState.Processing, nameof(GetPerformanceContext));
+        return ScenarioExtensibilityAdapter.ToSceneContext(scenario.CreateSnapshot(), scene);
+    });
+
     internal async Task<ScenarioCommitResult> SettleSceneByRulesAsync(Guid sceneId, long randomSeed, Guid expectedStateId, CancellationToken cancellationToken = default)
     {
         (ScenarioSnapshot Snapshot, Scene Scene) captured = ExecuteQuery(scenario =>

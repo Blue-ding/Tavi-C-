@@ -20,6 +20,9 @@
   管理 Session，并通过 `I*Workspace` 向上层 Adapter 提供业务能力。
 - `WritingRuntime` 另向 `PerformanceRuntime` 暴露最小的 `IBeatPublisher` 能力，
   不授予活动手稿编辑或归档库管理权限。
+- `ScenarioPerformanceRuntime` 统一采用 Scenario 后 Performance 的锁顺序，从
+  Performance-capable Processing Scene 启动唯一 Performance，并把全部已发布 Beat
+  产生的结算提案回写来源 Scene 后结束 Performance。
 - 不为 Runtime 创建与现有 `I*Service` 一一对应的转发接口。
 - 后续如果拆分 Application 接口，应按稳定能力和权限拆分，而不是按 Runtime、HTTP 等调用方拆分。
 - Runtime 的对外 interface 应逐步隐藏 Session 生命周期、同步锁和具体持久化 Adapter。

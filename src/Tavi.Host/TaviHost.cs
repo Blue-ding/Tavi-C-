@@ -67,6 +67,7 @@ public static class TaviHost
         builder.Services.AddHostedService(services => services.GetRequiredService<WritingRuntime>());
         builder.Services.AddSingleton<PerformanceRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<PerformanceRuntime>());
+        builder.Services.AddSingleton<ScenarioPerformanceRuntime>();
 
         WebApplication app = builder.Build();
         app.UseSerilogRequestLogging(requestLogging =>

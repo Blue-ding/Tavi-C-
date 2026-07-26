@@ -21,6 +21,10 @@ public sealed class ScenarioQueries
     /// <summary>获取受信处理器使用的冻结 Processing Scene 局部上下文。</summary>
     public SceneContextView GetProcessingContext(Guid sceneId) => _session.GetProcessingContext(sceneId);
 
+    /// <summary>以乐观并发条件获取允许进入 Performance 路径的冻结 Processing Scene 上下文。</summary>
+    public SceneContextView GetPerformanceContext(Guid sceneId, Guid expectedStateId)
+        => _session.GetPerformanceContext(sceneId, expectedStateId);
+
     /// <summary>根据标识获取独立 Element 副本。</summary>
     public Element GetElement(Guid id) => _session.ExecuteQuery(scenario => scenario.GetElement(id));
 
