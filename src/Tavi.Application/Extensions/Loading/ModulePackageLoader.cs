@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Globalization;
 using Tavi.Extensibility;
 
 namespace Tavi.Application.Extensions.Loading;
@@ -22,11 +23,22 @@ public static class ModulePackageLoader
             RawSemantics semantics = File.Exists(semanticsPath) ? ReadRequired<RawSemantics>(semanticsPath) : new RawSemantics();
             RawScenes scenes = File.Exists(scenesPath) ? ReadRequired<RawScenes>(scenesPath) : new RawScenes();
             ModuleManifest convertedManifest = ConvertManifest(manifest);
+            ModuleSettingsSchema? settingsSchema = LoadSettingsSchema(fullDirectory, manifest);
+            if (settingsSchema is not null)
+            {
+                if (convertedManifest.Parameters.Count > 0)
+                    throw Invalid(nameof(Load), $"Module {convertedManifest.Id} 不能同时声明 parameters 和 settings.schema。");
+                convertedManifest = convertedManifest with
+                {
+                    Parameters = settingsSchema.Settings.Select(ToLegacyParameter).ToArray()
+                };
+            }
             return new ModulePackageDefinition
             {
                 Manifest = convertedManifest,
                 Semantics = ConvertSemantics(semantics),
-                Scenes = scenes.Scenes.Select(scene => ConvertScene(scene, convertedManifest)).ToArray()
+                Scenes = scenes.Scenes.Select(scene => ConvertScene(scene, convertedManifest)).ToArray(),
+                SettingsSchema = settingsSchema
             };
         }
         catch (ModuleConfigurationException)
@@ -79,10 +91,60 @@ public static class ModulePackageLoader
                 DefaultValue = Required(parameter.DefaultValue, "parameter.defaultValue"),
                 AllowedValues = parameter.AllowedValues.ToArray(),
                 Minimum = parameter.Minimum,
-                Maximum = parameter.Maximum
+                Maximum = parameter.Maximum,
+                ApplyMode = ModuleSettingApplyMode.ProcessRestart
             }).ToArray()
         };
     }
+
+    private static ModuleSettingsSchema? LoadSettingsSchema(string moduleDirectory, RawManifest manifest)
+    {
+        if (manifest.Settings is null)
+            return null;
+        string relativePath = Required(manifest.Settings.Schema, "module.settings.schema");
+        if (Path.IsPathRooted(relativePath))
+            throw Invalid(nameof(Load), "Module Setting Schema 必须使用 Module 目录内的相对路径。");
+        string fullPath = Path.GetFullPath(Path.Combine(moduleDirectory, relativePath));
+        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(moduleDirectory));
+        if (!fullPath.StartsWith($"{root}{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            throw Invalid(nameof(Load), "Module Setting Schema 不能位于 Module 目录之外。");
+        if (!File.Exists(fullPath))
+            throw Invalid(nameof(Load), $"缺少 Module Setting Schema {fullPath}。");
+        return ModuleSettingsProfile.Parse(File.ReadAllText(fullPath));
+    }
+
+    private static ModuleParameterDefinition ToLegacyParameter(ModuleSettingDefinition setting) => new()
+    {
+        Key = setting.Key,
+        Name = setting.Name,
+        Description = setting.Description,
+        Type = setting.Type switch
+        {
+            ModuleSettingValueType.Boolean => ModuleParameterType.Boolean,
+            ModuleSettingValueType.Integer => ModuleParameterType.Integer,
+            ModuleSettingValueType.Number => ModuleParameterType.Number,
+            ModuleSettingValueType.String => ModuleParameterType.String,
+            _ => throw new ArgumentOutOfRangeException(nameof(setting))
+        },
+        DefaultValue = ToLegacyText(setting.Type, setting.DefaultValue),
+        AllowedValues = setting.AllowedValues.Select(value => ToLegacyText(setting.Type, value)).ToArray(),
+        Minimum = setting.Minimum,
+        Maximum = setting.Maximum,
+        MinimumLength = setting.MinimumLength,
+        MaximumLength = setting.MaximumLength,
+        ApplyMode = setting.ApplyMode
+    };
+
+    private static string ToLegacyText(ModuleSettingValueType type, JsonElement value) => type switch
+    {
+        ModuleSettingValueType.Boolean => value.GetBoolean() ? "true" : "false",
+        ModuleSettingValueType.Integer => value.TryGetInt64(out long integer)
+            ? integer.ToString(CultureInfo.InvariantCulture)
+            : value.GetDecimal().ToString(CultureInfo.InvariantCulture),
+        ModuleSettingValueType.Number => value.GetDouble().ToString("R", CultureInfo.InvariantCulture),
+        ModuleSettingValueType.String => value.GetString()!,
+        _ => throw new ArgumentOutOfRangeException(nameof(type))
+    };
 
     private static SemanticModuleDefinition ConvertSemantics(RawSemantics raw) => new()
     {
@@ -165,6 +227,12 @@ public static class ModulePackageLoader
         public string? Entrypoint { get; set; }
         public List<RawDependency> Dependencies { get; set; } = [];
         public List<RawParameter> Parameters { get; set; } = [];
+        public RawSettings? Settings { get; set; }
+    }
+
+    private sealed class RawSettings
+    {
+        public string? Schema { get; set; }
     }
 
     private sealed class RawDependency

@@ -24,6 +24,10 @@ public sealed class FrozenModuleRuntime
     public ModuleCatalog Catalog { get; }
     /// <summary>获取按 Module 标识索引的规范冻结参数。</summary>
     public IReadOnlyDictionary<ModuleId, IReadOnlyDictionary<string, string>> Parameters { get; }
+
+    /// <summary>获取指定活动 Module 的声明式 Setting Schema；未声明时返回 null。</summary>
+    public ModuleSettingsSchema? FindSettingsSchema(ModuleId module) =>
+        Catalog.Packages.SingleOrDefault(package => package.Manifest.Id == module)?.SettingsSchema;
     /// <summary>获取按 Module 标识稳定排序的 World Authoring 能力。</summary>
     public IReadOnlyList<(ModuleId Module, IWorldAuthoringExtension Extension)> WorldAuthoringExtensions => Select<IWorldAuthoringExtension>();
     /// <summary>获取按 Module 标识稳定排序的 Scenario Definition 能力。</summary>

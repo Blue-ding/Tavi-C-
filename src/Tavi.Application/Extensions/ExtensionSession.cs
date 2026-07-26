@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Collections.ObjectModel;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Tavi.Extensibility;
 
 namespace Tavi.Application.Extensions;
@@ -28,6 +30,9 @@ public sealed class ExtensionSession
 
     /// <summary>获取 Module Manifest 的稳定排序副本。</summary>
     public IReadOnlyList<ModuleManifest> Modules => _packages.Values.Select(package => ExtensibilityCopies.Manifest(package.Manifest)).OrderBy(manifest => manifest.Id.Value, StringComparer.Ordinal).ToArray();
+
+    /// <summary>获取指定 Module 的声明式 Setting Schema；未声明时返回 null。</summary>
+    public ModuleSettingsSchema? FindSettingsSchema(ModuleId module) => GetPackage(module).SettingsSchema;
 
     /// <summary>获取设置是否已在冻结后改变，因而需要重建 ScenarioSession。</summary>
     public bool RestartRequired { get; private set; }
@@ -81,6 +86,44 @@ public sealed class ExtensionSession
     {
         ModuleManifest manifest = GetPackage(module).Manifest;
         return new ReadOnlyDictionary<string, string>(manifest.Parameters.ToDictionary(parameter => parameter.Key, parameter => _parameters[module].GetValueOrDefault(parameter.Key) ?? Canonicalize(parameter, parameter.DefaultValue), StringComparer.Ordinal));
+    }
+
+    /// <summary>获取指定 Module 经过 Schema 校验并物化默认值的完整 JSON Setting 快照。</summary>
+    public JsonElement GetEffectiveSettings(ModuleId module)
+    {
+        ModulePackageDefinition package = GetPackage(module);
+        ModuleSettingsSchema schema = package.SettingsSchema
+            ?? throw new InvalidOperationException($"Module {module} 未声明 JSON Setting Schema。");
+        var configured = new JsonObject();
+        foreach (ModuleParameterDefinition definition in package.Manifest.Parameters)
+        {
+            if (_parameters[module].TryGetValue(definition.Key, out string? value))
+                configured[definition.Key] = ToJsonValue(definition, value);
+        }
+        return schema.Materialize(JsonSerializer.SerializeToElement(configured));
+    }
+
+    /// <summary>
+    /// 原子校验并替换指定 Module 的完整 JSON Setting。
+    /// 当前 Runtime 尚未切换 Setting 代际，因此所有变化仍标记为需要重建。
+    /// </summary>
+    public JsonElement SetSettings(ModuleId module, JsonElement settings)
+    {
+        ModulePackageDefinition package = GetPackage(module);
+        ModuleSettingsSchema schema = package.SettingsSchema
+            ?? throw new InvalidOperationException($"Module {module} 未声明 JSON Setting Schema。");
+        JsonElement materialized = schema.Materialize(settings);
+        Dictionary<string, ModuleParameterDefinition> definitions = package.Manifest.Parameters.ToDictionary(value => value.Key, StringComparer.Ordinal);
+        Dictionary<string, string> candidate = materialized.EnumerateObject().ToDictionary(
+            property => property.Name,
+            property => ToCanonicalText(definitions[property.Name], property.Value),
+            StringComparer.Ordinal);
+        if (candidate.Count == _parameters[module].Count &&
+            candidate.All(pair => _parameters[module].GetValueOrDefault(pair.Key) == pair.Value))
+            return materialized;
+        _parameters[module] = candidate;
+        MarkChanged();
+        return materialized;
     }
 
     /// <summary>冻结当前已启用 Module、Plugin 和有效参数；后续设置变化不会修改已返回快照。</summary>
@@ -184,6 +227,37 @@ public sealed class ExtensionSession
             if (definition.Minimum is double minimum && number < minimum || definition.Maximum is double maximum && number > maximum)
                 throw new ArgumentOutOfRangeException(nameof(value), $"参数 {definition.Key} 超出允许范围。");
         }
+        if (definition.Type == ModuleParameterType.String)
+        {
+            if (definition.MinimumLength is int minimum && canonical.Length < minimum ||
+                definition.MaximumLength is int maximum && canonical.Length > maximum)
+                throw new ArgumentOutOfRangeException(nameof(value), $"参数 {definition.Key} 的文本长度超出允许范围。");
+        }
         return canonical;
     }
+
+    private static JsonNode? ToJsonValue(ModuleParameterDefinition definition, string value)
+    {
+        string canonical = Canonicalize(definition, value);
+        return definition.Type switch
+        {
+            ModuleParameterType.Boolean => JsonValue.Create(bool.Parse(canonical)),
+            ModuleParameterType.Integer => JsonValue.Create(long.Parse(canonical, NumberStyles.Integer, CultureInfo.InvariantCulture)),
+            ModuleParameterType.Number => JsonValue.Create(double.Parse(canonical, NumberStyles.Float, CultureInfo.InvariantCulture)),
+            ModuleParameterType.String => JsonValue.Create(canonical),
+            _ => throw new ArgumentOutOfRangeException(nameof(definition))
+        };
+    }
+
+    private static string ToCanonicalText(ModuleParameterDefinition definition, JsonElement value) =>
+        Canonicalize(definition, definition.Type switch
+        {
+            ModuleParameterType.Boolean => value.GetBoolean() ? "true" : "false",
+            ModuleParameterType.Integer => value.TryGetInt64(out long integer)
+                ? integer.ToString(CultureInfo.InvariantCulture)
+                : value.GetDecimal().ToString(CultureInfo.InvariantCulture),
+            ModuleParameterType.Number => value.GetDouble().ToString("R", CultureInfo.InvariantCulture),
+            ModuleParameterType.String => value.GetString()!,
+            _ => throw new ArgumentOutOfRangeException(nameof(definition))
+        });
 }

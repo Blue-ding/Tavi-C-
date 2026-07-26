@@ -32,6 +32,15 @@ public sealed record ModuleParameterDefinition
     public double? Minimum { get; init; }
     /// <summary>获取数值最大值；非数值参数必须为 null。</summary>
     public double? Maximum { get; init; }
+
+    /// <summary>获取字符串最小长度；非字符串参数必须为 null。</summary>
+    public int? MinimumLength { get; init; }
+
+    /// <summary>获取字符串最大长度；非字符串参数必须为 null。</summary>
+    public int? MaximumLength { get; init; }
+
+    /// <summary>获取该 Setting 的应用策略。</summary>
+    public ModuleSettingApplyMode ApplyMode { get; init; } = ModuleSettingApplyMode.ProcessRestart;
 }
 
 /// <summary>声明一个 Module 对另一个 Module 的兼容版本依赖。</summary>
@@ -82,4 +91,6 @@ public sealed record ModulePackageDefinition
     /// <summary>获取 Module 静态声明的 SceneDefinition。</summary>
     public IReadOnlyList<SceneDefinition> Scenes { get; init; } = [];
 
+    /// <summary>获取 Module 的声明式 Setting Schema；未声明时为 null。</summary>
+    public ModuleSettingsSchema? SettingsSchema { get; init; }
 }

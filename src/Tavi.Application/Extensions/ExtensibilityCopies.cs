@@ -9,7 +9,8 @@ internal static class ExtensibilityCopies
     {
         Manifest = Manifest(source.Manifest),
         Semantics = Semantics(source.Semantics),
-        Scenes = Array.AsReadOnly(source.Scenes.Select(Scene).ToArray())
+        Scenes = Array.AsReadOnly(source.Scenes.Select(Scene).ToArray()),
+        SettingsSchema = source.SettingsSchema
     };
 
     internal static ModuleManifest Manifest(ModuleManifest source) => source with { Dependencies = Array.AsReadOnly(source.Dependencies.Select(value => value with { }).ToArray()), Parameters = Array.AsReadOnly(source.Parameters.Select(value => value with { AllowedValues = Array.AsReadOnly(value.AllowedValues.ToArray()) }).ToArray()) };
