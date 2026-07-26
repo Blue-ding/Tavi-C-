@@ -27,3 +27,9 @@ Tavi 以结构化事实描述世界，并在演绎状态中通过场景推动这
 
 **Scene**:
 约束一组 Element 并产生局部演绎结果的情境。
+
+**Performance**:
+从一个 Processing Scene 的冻结局部上下文创建、使用临时 EARS 图完成交互叙事演绎的状态；其变化在最终结算前不影响 Scenario。
+
+**Beat**:
+Performance 中一次可独立绑定、处理、解决并发布的最小叙事推进；它是 Performance 生成内容进入 Manuscript 的唯一桥梁。

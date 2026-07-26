@@ -559,7 +559,7 @@ public sealed class Scenario
             throw Invalid(operation, "Scene 必须声明至少一种已知结算路径。");
     }
 
-    private static bool IsSettlementOptionsValid(SceneSettlementOptions options) => options != SceneSettlementOptions.None && (options & ~(SceneSettlementOptions.Rules | SceneSettlementOptions.Writing)) == 0;
+    private static bool IsSettlementOptionsValid(SceneSettlementOptions options) => options != SceneSettlementOptions.None && (options & ~(SceneSettlementOptions.Rules | SceneSettlementOptions.Performance)) == 0;
 
     private static void EnsureSceneBindingMutable(Scene scene, string operation)
     {

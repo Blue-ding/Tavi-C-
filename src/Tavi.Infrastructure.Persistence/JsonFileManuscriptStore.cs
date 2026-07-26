@@ -7,7 +7,7 @@ namespace Tavi.Infrastructure.Persistence;
 /// <summary>使用独立 active 文件和逐篇 archive 文件持久化手稿，并以临时文件原子替换防止读取半写快照。</summary>
 public sealed class JsonFileManuscriptStore : IManuscriptStore, IDisposable
 {
-    private const int CurrentVersion = 1;
+    private const int CurrentVersion = 2;
     private readonly string _directory;
     private readonly string _archiveDirectory;
     private readonly JsonSerializerOptions _options = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, WriteIndented = true };
@@ -229,11 +229,19 @@ public sealed class JsonFileManuscriptStore : IManuscriptStore, IDisposable
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
         ManuscriptDocument document = await JsonSerializer.DeserializeAsync<ManuscriptDocument>(stream, _options, cancellationToken) ?? throw new InvalidDataException("手稿文件内容为空。");
-        if (document.Version != CurrentVersion)
+        if (document.Version is < 1 or > CurrentVersion)
             throw new InvalidDataException($"不支持手稿版本 {document.Version}。");
         if (document.Paragraphs is null)
             throw new InvalidDataException("手稿缺少 paragraphs 数据。");
-        return new Manuscript(document.Id, document.StateId, document.Title ?? "", document.Paragraphs.Select(paragraph => new ManuscriptParagraph(paragraph.Id, paragraph.Text ?? "")), document.Status, document.CreatedAtUtc, document.UpdatedAtUtc);
+        return new Manuscript(
+            document.Id,
+            document.StateId,
+            document.Title ?? "",
+            document.Paragraphs.Select(paragraph => new ManuscriptParagraph(paragraph.Id, paragraph.Text ?? "")),
+            document.Status,
+            document.CreatedAtUtc,
+            document.UpdatedAtUtc,
+            (document.BeatPublications ?? []).Select(value => new ManuscriptBeatPublication(value.PerformanceId, value.BeatId, value.ParagraphIds ?? [])));
     }
 
     private async Task WriteAtomicallyAsync(string path, Manuscript manuscript, CancellationToken cancellationToken)
@@ -242,7 +250,17 @@ public sealed class JsonFileManuscriptStore : IManuscriptStore, IDisposable
         string tempPath = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
         try
         {
-            var document = new ManuscriptDocument { Id = manuscript.Id, StateId = manuscript.StateId, Title = manuscript.Title, Status = manuscript.Status, CreatedAtUtc = manuscript.CreatedAtUtc, UpdatedAtUtc = manuscript.UpdatedAtUtc, Paragraphs = manuscript.Paragraphs.Select(paragraph => new ParagraphDocument { Id = paragraph.Id, Text = paragraph.Text }).ToArray() };
+            var document = new ManuscriptDocument
+            {
+                Id = manuscript.Id,
+                StateId = manuscript.StateId,
+                Title = manuscript.Title,
+                Status = manuscript.Status,
+                CreatedAtUtc = manuscript.CreatedAtUtc,
+                UpdatedAtUtc = manuscript.UpdatedAtUtc,
+                Paragraphs = manuscript.Paragraphs.Select(paragraph => new ParagraphDocument { Id = paragraph.Id, Text = paragraph.Text }).ToArray(),
+                BeatPublications = manuscript.BeatPublications.Select(value => new BeatPublicationDocument { PerformanceId = value.PerformanceId, BeatId = value.BeatId, ParagraphIds = value.ParagraphIds.ToArray() }).ToArray()
+            };
             await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
                 await JsonSerializer.SerializeAsync(stream, document, _options, cancellationToken);
@@ -289,11 +307,19 @@ public sealed class JsonFileManuscriptStore : IManuscriptStore, IDisposable
         public DateTimeOffset CreatedAtUtc { get; init; }
         public DateTimeOffset UpdatedAtUtc { get; init; }
         public ParagraphDocument[]? Paragraphs { get; init; }
+        public BeatPublicationDocument[]? BeatPublications { get; init; }
     }
 
     private sealed class ParagraphDocument
     {
         public Guid Id { get; init; }
         public string? Text { get; init; }
+    }
+
+    private sealed class BeatPublicationDocument
+    {
+        public Guid PerformanceId { get; init; }
+        public Guid BeatId { get; init; }
+        public Guid[]? ParagraphIds { get; init; }
     }
 }

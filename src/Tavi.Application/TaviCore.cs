@@ -1,8 +1,11 @@
 using Tavi.Application.Guidance;
 using Tavi.Application.LanguageModel;
 using Tavi.Application.Logging;
+using Tavi.Application.Performance;
+using Tavi.Application.Writing;
 using Tavi.Application.World;
 using Tavi.Application.Extensions;
+using Tavi.Extensibility;
 
 namespace Tavi.Application;
 
@@ -36,5 +39,14 @@ public sealed class TaviCore
         ArgumentNullException.ThrowIfNull(worldWorkspace);
         ArgumentNullException.ThrowIfNull(extensions);
         return new GuidanceSession(worldWorkspace, LanguageModels, Logger, extensions);
+    }
+
+    /// <summary>创建从 Processing Scene 冻结上下文展开并向 Writing 发布 Beat 的 Performance 服务。</summary>
+    public IPerformanceService CreatePerformanceService(SceneContextView scene, IWritingService writing, FrozenModuleRuntime extensions)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(writing);
+        ArgumentNullException.ThrowIfNull(extensions);
+        return new PerformanceSession(scene, writing, extensions);
     }
 }

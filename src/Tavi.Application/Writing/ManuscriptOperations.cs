@@ -34,6 +34,9 @@ public sealed record RemoveParagraphOperation(Guid ParagraphId) : ManuscriptOper
 /// <param name="Title">去除首尾空白后使用的新名称，不能留空。</param>
 public sealed record RenameManuscriptOperation(string Title) : ManuscriptOperation;
 
+/// <summary>把一个已解决 Beat 的稳定段落幂等追加到活动手稿。</summary>
+internal sealed record PublishBeatOperation(Guid PerformanceId, Guid BeatId, IReadOnlyList<ManuscriptParagraph> Paragraphs) : ManuscriptOperation;
+
 /// <summary>表示暂存日志中的一项手稿修改。</summary>
 public sealed record WritingStagedChange
 {
@@ -57,6 +60,7 @@ internal static class ManuscriptEditor
             throw WritingException.ArchivedImmutable(source.Id);
         string title = source.Title;
         var paragraphs = source.Paragraphs.ToList();
+        var publications = source.BeatPublications.ToList();
         bool changed = false;
         foreach (ManuscriptOperation operation in operations)
         {
@@ -98,6 +102,20 @@ internal static class ManuscriptEditor
                         changed = true;
                     }
                     break;
+                case PublishBeatOperation publish:
+                    if (publish.PerformanceId == Guid.Empty || publish.BeatId == Guid.Empty)
+                        throw WritingException.StagingInvalid("Performance 与 Beat 标识不能为空。");
+                    if (publications.Any(value => value.PerformanceId == publish.PerformanceId && value.BeatId == publish.BeatId))
+                        break;
+                    ManuscriptParagraph[] generated = publish.Paragraphs?.Select(value => new ManuscriptParagraph(value.Id, value.Text)).ToArray()
+                        ?? throw new ArgumentNullException(nameof(publish.Paragraphs));
+                    if (generated.Select(value => value.Id).Distinct().Count() != generated.Length ||
+                        generated.Any(value => paragraphs.Any(existing => existing.Id == value.Id)))
+                        throw WritingException.ParagraphInvalid("Beat 产生了重复或已存在的段落标识。");
+                    paragraphs.AddRange(generated);
+                    publications.Add(new ManuscriptBeatPublication(publish.PerformanceId, publish.BeatId, generated.Select(value => value.Id)));
+                    changed = true;
+                    break;
                 default:
                     throw new ArgumentException($"不支持的手稿操作 {operation.GetType().Name}。", nameof(operations));
             }
@@ -105,8 +123,8 @@ internal static class ManuscriptEditor
         ManuscriptStatus nextStatus = status ?? source.Status;
         if (!changed && nextStatus == source.Status)
             return source;
-        return new Manuscript(source.Id, preserveState ? source.StateId : Guid.NewGuid(), title, paragraphs, nextStatus, source.CreatedAtUtc, preserveState ? source.UpdatedAtUtc : DateTimeOffset.UtcNow);
+        return new Manuscript(source.Id, preserveState ? source.StateId : Guid.NewGuid(), title, paragraphs, nextStatus, source.CreatedAtUtc, preserveState ? source.UpdatedAtUtc : DateTimeOffset.UtcNow, publications);
     }
 
-    internal static Manuscript RebaseContent(Manuscript content, ManuscriptStatus? status = null) => new(content.Id, Guid.NewGuid(), content.Title, content.Paragraphs, status ?? content.Status, content.CreatedAtUtc, DateTimeOffset.UtcNow);
+    internal static Manuscript RebaseContent(Manuscript content, ManuscriptStatus? status = null) => new(content.Id, Guid.NewGuid(), content.Title, content.Paragraphs, status ?? content.Status, content.CreatedAtUtc, DateTimeOffset.UtcNow, content.BeatPublications);
 }

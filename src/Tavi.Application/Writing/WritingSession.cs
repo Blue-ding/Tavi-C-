@@ -1,4 +1,5 @@
 using Tavi.Domain.Story;
+using Tavi.Domain.Performance;
 using Tavi.Utilities.Concurrency;
 
 namespace Tavi.Application.Writing;
@@ -222,6 +223,37 @@ public sealed class WritingSession : IWritingService
     }
 
     /// <inheritdoc />
+    public BeatPublicationResult PublishBeat(Guid performanceId, Guid beatId, IReadOnlyList<BeatParagraph> paragraphs, Guid expectedStateId)
+    {
+        if (performanceId == Guid.Empty || beatId == Guid.Empty)
+            throw new ArgumentException("Performance 与 Beat 标识不能为空。");
+        ArgumentNullException.ThrowIfNull(paragraphs);
+        ThrowIfDisposed();
+        EnsureInitialized();
+        return _workspace.ExecuteExclusive(() =>
+        {
+            EnsureEditableLocked(nameof(PublishBeat));
+            Manuscript current = RequireCurrentLocked(nameof(PublishBeat));
+            ManuscriptBeatPublication? existing = current.BeatPublications.SingleOrDefault(value => value.PerformanceId == performanceId && value.BeatId == beatId);
+            if (existing is not null)
+            {
+                Guid[] requestedIds = paragraphs.Select(value => value.Id).ToArray();
+                if (!existing.ParagraphIds.SequenceEqual(requestedIds))
+                    throw WritingException.StagingInvalid($"Beat {beatId} 已使用不同段落集合发布。");
+                return new BeatPublicationResult(current.Id, current.StateId, true);
+            }
+            var operation = new PublishBeatOperation(performanceId, beatId, paragraphs.Select(value => new ManuscriptParagraph(value.Id, value.Text)).ToArray());
+            Manuscript candidate = ManuscriptEditor.Apply(current, [operation]);
+            _ = ManuscriptEditor.Apply(candidate, _staged.Select(value => value.Operation), true);
+            WritingCommitResult committed = CommitLocked([operation], expectedStateId);
+            Manuscript updated = RequireCurrentLocked(nameof(PublishBeat));
+            // Beat 发布跨越 Performance 与 Writing；建立不可撤销检查点，避免单边 Undo 破坏已发布状态。
+            _workspace.Reset(new WritingWorkspaceState(updated));
+            return new BeatPublicationResult(updated.Id, committed.StateId, false);
+        });
+    }
+
+    /// <inheritdoc />
     public WritingCommitResult Undo(Guid expectedStateId)
     {
         ThrowIfDisposed();
@@ -326,7 +358,7 @@ public sealed class WritingSession : IWritingService
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ThrowIfDisposed();
         Manuscript archived = await _store.LoadArchivedAsync(manuscriptId, cancellationToken) ?? throw WritingException.NotFound(manuscriptId);
-        Manuscript renamed = new(archived.Id, Guid.NewGuid(), title, archived.Paragraphs, ManuscriptStatus.Archived, archived.CreatedAtUtc, DateTimeOffset.UtcNow);
+        Manuscript renamed = new(archived.Id, Guid.NewGuid(), title, archived.Paragraphs, ManuscriptStatus.Archived, archived.CreatedAtUtc, DateTimeOffset.UtcNow, archived.BeatPublications);
         await _store.SaveArchivedAsync(renamed, cancellationToken);
         return renamed;
     }

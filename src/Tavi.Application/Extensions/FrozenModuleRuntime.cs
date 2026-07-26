@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Tavi.Application.Extensions.Guidance;
+using Tavi.Application.Extensions.Performance;
 using Tavi.Application.Extensions.Scenario;
 using Tavi.Application.Extensions.World;
 using Tavi.Application.Extensions.Writing;
@@ -37,6 +38,8 @@ public sealed class FrozenModuleRuntime
     public IReadOnlyList<(ModuleId Module, IWritingInteractionExtension Extension)> WritingInteractionExtensions => Select<IWritingInteractionExtension>();
     /// <summary>获取按 Module 标识稳定排序的 Written Scene 结果能力。</summary>
     public IReadOnlyList<(ModuleId Module, IWrittenSceneOutcomeExtension Extension)> WrittenSceneOutcomeExtensions => Select<IWrittenSceneOutcomeExtension>();
+    /// <summary>获取按 Module 标识稳定排序的 Performance 演绎能力。</summary>
+    public IReadOnlyList<(ModuleId Module, IPerformanceExtension Extension)> PerformanceExtensions => Select<IPerformanceExtension>();
     /// <summary>获取指定 Module 的冻结参数；没有参数时返回空字典。</summary>
     public IReadOnlyDictionary<string, string> GetParameters(ModuleId module) => Parameters.TryGetValue(module, out IReadOnlyDictionary<string, string>? values) ? values : new ReadOnlyDictionary<string, string>(new Dictionary<string, string>());
     /// <summary>获取指定 Module 的 Plugin；纯声明式 Module 返回 null。</summary>

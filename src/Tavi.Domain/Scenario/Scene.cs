@@ -10,8 +10,12 @@ public enum SceneSettlementOptions
     /// <summary>Scene 可以使用 Module 规则结算。</summary>
     Rules = 1,
 
-    /// <summary>Scene 可以进入独立的 Writing 演绎路径。</summary>
-    Writing = 2
+    /// <summary>Scene 可以进入独立的 Performance 演绎路径。</summary>
+    Performance = 2,
+
+    /// <summary>旧名称；请使用 Performance。</summary>
+    [Obsolete("请使用 Performance。")]
+    Writing = Performance
 }
 
 /// <summary>指定 Scene 功能容器的当前生命周期状态；该状态不表示历史时间线。</summary>
@@ -20,7 +24,7 @@ public enum SceneState
     /// <summary>Scene 正在接受可持久化且允许不完整的 Element 槽位绑定。</summary>
     Binding,
 
-    /// <summary>Scene 已冻结绑定并正在由规则或未来的 Writing 流程处理。</summary>
+    /// <summary>Scene 已冻结绑定并正在由规则或 Performance 流程处理。</summary>
     Processing,
 
     /// <summary>Scene 的结构化结果已经提交。</summary>

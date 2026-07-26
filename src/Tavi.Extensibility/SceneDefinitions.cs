@@ -10,8 +10,12 @@ public enum SceneSettlementCapabilities
     /// <summary>Scene 可以由所属 Module 的规则结算器产生确定的 Scenario 变化。</summary>
     Rules = 1,
 
-    /// <summary>Scene 可以进入允许玩家改变目标的 Writing 演绎路径。</summary>
-    Writing = 2
+    /// <summary>Scene 可以进入允许玩家交互演绎的 Performance 路径。</summary>
+    Performance = 2,
+
+    /// <summary>旧名称；请使用 Performance。</summary>
+    [Obsolete("请使用 Performance。")]
+    Writing = Performance
 }
 
 /// <summary>描述 Scene 槽位接受 Element 时使用的声明式条件。</summary>

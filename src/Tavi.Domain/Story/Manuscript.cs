@@ -29,11 +29,32 @@ public sealed record ManuscriptParagraph
     public string Text { get; }
 }
 
+/// <summary>记录一次 Performance Beat 已经向当前 Manuscript 幂等发布正文。</summary>
+public sealed record ManuscriptBeatPublication
+{
+    public ManuscriptBeatPublication(Guid performanceId, Guid beatId, IEnumerable<Guid> paragraphIds)
+    {
+        if (performanceId == Guid.Empty || beatId == Guid.Empty)
+            throw new ArgumentException("Performance 与 Beat 标识不能为空。");
+        ArgumentNullException.ThrowIfNull(paragraphIds);
+        Guid[] copied = paragraphIds.ToArray();
+        if (copied.Any(id => id == Guid.Empty) || copied.Distinct().Count() != copied.Length)
+            throw new ArgumentException("发布记录不能包含空或重复的段落标识。", nameof(paragraphIds));
+        PerformanceId = performanceId;
+        BeatId = beatId;
+        ParagraphIds = Array.AsReadOnly(copied);
+    }
+
+    public Guid PerformanceId { get; }
+    public Guid BeatId { get; }
+    public IReadOnlyList<Guid> ParagraphIds { get; }
+}
+
 /// <summary>表示可持久化的完整手稿快照；实例及其段落集合均不可变。</summary>
 public sealed record Manuscript
 {
     /// <summary>创建经过完整校验的手稿快照。</summary>
-    public Manuscript(Guid id, Guid stateId, string title, IEnumerable<ManuscriptParagraph> paragraphs, ManuscriptStatus status, DateTimeOffset createdAtUtc, DateTimeOffset updatedAtUtc)
+    public Manuscript(Guid id, Guid stateId, string title, IEnumerable<ManuscriptParagraph> paragraphs, ManuscriptStatus status, DateTimeOffset createdAtUtc, DateTimeOffset updatedAtUtc, IEnumerable<ManuscriptBeatPublication>? beatPublications = null)
     {
         if (id == Guid.Empty)
             throw new ArgumentException("手稿标识不能为空。", nameof(id));
@@ -50,6 +71,9 @@ public sealed record Manuscript
             throw new ArgumentException("同一篇手稿中的段落标识必须唯一。", nameof(paragraphs));
         if (updatedAtUtc < createdAtUtc)
             throw new ArgumentException("手稿更新时间不能早于创建时间。", nameof(updatedAtUtc));
+        ManuscriptBeatPublication[] publications = (beatPublications ?? []).Select(value => new ManuscriptBeatPublication(value.PerformanceId, value.BeatId, value.ParagraphIds)).ToArray();
+        if (publications.Select(value => (value.PerformanceId, value.BeatId)).Distinct().Count() != publications.Length)
+            throw new ArgumentException("同一 Performance Beat 只能发布一次。", nameof(beatPublications));
         Id = id;
         StateId = stateId;
         Title = title.Trim();
@@ -57,6 +81,7 @@ public sealed record Manuscript
         Status = status;
         CreatedAtUtc = createdAtUtc;
         UpdatedAtUtc = updatedAtUtc;
+        BeatPublications = Array.AsReadOnly(publications);
     }
 
     /// <summary>获取手稿的长期稳定标识。</summary>
@@ -79,6 +104,9 @@ public sealed record Manuscript
 
     /// <summary>获取手稿最近一次实际修改时间，统一使用 UTC。</summary>
     public DateTimeOffset UpdatedAtUtc { get; }
+
+    /// <summary>获取按发布时间排列的幂等 Beat 正文发布记录。</summary>
+    public IReadOnlyList<ManuscriptBeatPublication> BeatPublications { get; }
 
     /// <summary>创建一篇不含段落的活动手稿。</summary>
     public static Manuscript Create(string title, DateTimeOffset? now = null)

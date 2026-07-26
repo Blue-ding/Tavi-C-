@@ -139,7 +139,8 @@ public static class ModulePackageLoader
             result |= value switch
             {
                 "rules" => SceneSettlementCapabilities.Rules,
-                "writing" => SceneSettlementCapabilities.Writing,
+                "performance" => SceneSettlementCapabilities.Performance,
+                "writing" => SceneSettlementCapabilities.Performance,
                 _ => throw Invalid(nameof(Load), $"不支持的 Scene 结算能力 {value}。")
             };
         }

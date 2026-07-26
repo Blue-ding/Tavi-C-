@@ -1,4 +1,5 @@
 using Tavi.Domain.Story;
+using Tavi.Domain.Performance;
 
 namespace Tavi.Application.Writing;
 
@@ -44,6 +45,9 @@ public sealed record WritingSnapshot
 /// <param name="Changed">提交是否实际改变手稿。</param>
 public sealed record WritingCommitResult(Guid CommitId, Guid PreviousStateId, Guid StateId, bool Changed);
 
+/// <summary>描述 Beat 正文的幂等发布结果。</summary>
+public sealed record BeatPublicationResult(Guid ManuscriptId, Guid ManuscriptStateId, bool AlreadyPublished);
+
 /// <summary>定义单活动手稿、归档库、编辑历史和持久化的 Application 服务。</summary>
 public interface IWritingService : IAsyncDisposable
 {
@@ -73,6 +77,9 @@ public interface IWritingService : IAsyncDisposable
 
     /// <summary>原子提交一项操作，供不需要展示暂存区的段落编辑界面使用。</summary>
     WritingCommitResult Apply(ManuscriptOperation operation, Guid expectedStateId, WritingChangeSource source = WritingChangeSource.Player);
+
+    /// <summary>把已解决 Beat 的稳定段落幂等追加到活动 Manuscript；重复 BeatId 返回原发布结果。</summary>
+    BeatPublicationResult PublishBeat(Guid performanceId, Guid beatId, IReadOnlyList<BeatParagraph> paragraphs, Guid expectedStateId);
 
     /// <summary>撤销最近一次已提交修改；撤销本身会生成新的状态标识。</summary>
     WritingCommitResult Undo(Guid expectedStateId);

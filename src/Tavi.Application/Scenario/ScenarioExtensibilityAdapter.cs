@@ -30,8 +30,8 @@ internal static class ScenarioExtensibilityAdapter
         DomainScenario.SceneSettlementOptions result = DomainScenario.SceneSettlementOptions.None;
         if (value.HasFlag(SceneSettlementCapabilities.Rules))
             result |= DomainScenario.SceneSettlementOptions.Rules;
-        if (value.HasFlag(SceneSettlementCapabilities.Writing))
-            result |= DomainScenario.SceneSettlementOptions.Writing;
+        if (value.HasFlag(SceneSettlementCapabilities.Performance))
+            result |= DomainScenario.SceneSettlementOptions.Performance;
         return result;
     }
 
@@ -76,8 +76,8 @@ internal static class ScenarioExtensibilityAdapter
         SceneSettlementCapabilities result = SceneSettlementCapabilities.None;
         if (value.HasFlag(DomainScenario.SceneSettlementOptions.Rules))
             result |= SceneSettlementCapabilities.Rules;
-        if (value.HasFlag(DomainScenario.SceneSettlementOptions.Writing))
-            result |= SceneSettlementCapabilities.Writing;
+        if (value.HasFlag(DomainScenario.SceneSettlementOptions.Performance))
+            result |= SceneSettlementCapabilities.Performance;
         return result;
     }
 
