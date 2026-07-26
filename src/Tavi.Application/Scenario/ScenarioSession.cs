@@ -127,7 +127,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         });
     }
 
-    /// <inheritdoc />
     internal ScenarioCommitResult Apply(ScenarioChangeSet changeSet, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(changeSet);
@@ -143,7 +142,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return result;
     }
 
-    /// <inheritdoc />
     internal async Task<IReadOnlyList<SceneDefinition>> GetSceneDefinitionsAsync(long randomSeed, CancellationToken cancellationToken = default)
     {
         ScenarioSnapshot snapshot = ExecuteQuery(scenario => scenario.CreateSnapshot());
@@ -165,7 +163,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return definitions.OrderBy(value => value.Id.Value, StringComparer.Ordinal).ToArray();
     }
 
-    /// <inheritdoc />
     internal ScenarioCommitResult CreateScene(SceneDefinition definition, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -179,7 +176,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return Commit(new ScenarioChangeSet([new AddSceneOperation(sceneId, new SceneDefinitionType(definition.Id.Value), definition.Module.Value, definition.ModuleVersion.Value, expectedStateId, definition.Name, definition.Description, ScenarioExtensibilityAdapter.ToDomain(definition.SettlementCapabilities), ScenarioExtensibilityAdapter.ToDomainSlots(definition))]), expectedStateId);
     }
 
-    /// <inheritdoc />
     internal ScenarioCommitResult SetSceneBinding(Guid sceneId, string slotId, IReadOnlyList<Guid> elementIds, Guid expectedStateId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(slotId);
@@ -197,7 +193,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return Commit(new ScenarioChangeSet([new SetSceneSlotBindingOperation(sceneId, new SceneSlotBinding(slotId, elementIds))]), expectedStateId);
     }
 
-    /// <inheritdoc />
     internal ScenarioCommitResult ClearSceneBinding(Guid sceneId, string slotId, Guid expectedStateId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(slotId);
@@ -210,7 +205,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return Commit(new ScenarioChangeSet([new ClearSceneSlotBindingOperation(sceneId, slotId)]), expectedStateId);
     }
 
-    /// <inheritdoc />
     internal ScenarioCommitResult BeginSceneProcessing(Guid sceneId, Guid expectedStateId)
     {
         ExecuteQuery(scenario =>
@@ -226,7 +220,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return Commit(new ScenarioChangeSet([new UpdateSceneStateOperation(sceneId, SceneState.Processing)]), expectedStateId);
     }
 
-    /// <inheritdoc />
     internal SceneContextView GetProcessingContext(Guid sceneId) => ExecuteQuery(scenario =>
     {
         Scene scene = scenario.GetScene(sceneId);
@@ -234,7 +227,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return ScenarioExtensibilityAdapter.ToSceneContext(scenario.CreateSnapshot(), scene);
     });
 
-    /// <inheritdoc />
     internal async Task<ScenarioCommitResult> SettleSceneByRulesAsync(Guid sceneId, long randomSeed, Guid expectedStateId, CancellationToken cancellationToken = default)
     {
         (ScenarioSnapshot Snapshot, Scene Scene) captured = ExecuteQuery(scenario =>
@@ -251,7 +243,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return SettleScene(sceneId, proposal, expectedStateId);
     }
 
-    /// <inheritdoc />
     internal ScenarioCommitResult SettleScene(Guid sceneId, SceneSettlementProposal proposal, Guid expectedStateId)
     {
         ArgumentNullException.ThrowIfNull(proposal);
@@ -268,13 +259,10 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return Commit(new ScenarioChangeSet(new ScenarioOperation[] { new UpdateSceneStateOperation(sceneId, SceneState.Settled) }.Concat(proposed.Operations)), expectedStateId);
     }
 
-    /// <inheritdoc />
     internal ScenarioCommitResult RemoveScene(Guid sceneId, Guid expectedStateId) => Commit(new ScenarioChangeSet([new RemoveSceneOperation(sceneId)]), expectedStateId);
 
-    /// <inheritdoc />
     internal ScenarioCommitResult ClearSettledScenes(Guid expectedStateId) => Commit(new ScenarioChangeSet([new ClearSettledScenesOperation()]), expectedStateId);
 
-    /// <inheritdoc />
     internal ScenarioCommitResult Undo(Guid expectedStateId)
     {
         ScenarioCommitResult result = _workspace.ExecuteExclusive(() =>
@@ -287,7 +275,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return result;
     }
 
-    /// <inheritdoc />
     internal ScenarioCommitResult Redo(Guid expectedStateId)
     {
         ScenarioCommitResult result = _workspace.ExecuteExclusive(() =>
@@ -300,7 +287,6 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         return result;
     }
 
-    /// <inheritdoc />
     internal Task SaveAsync(CancellationToken cancellationToken = default)
     {
         CancelPendingAutoSave();
