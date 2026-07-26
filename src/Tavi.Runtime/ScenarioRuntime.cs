@@ -1,3 +1,4 @@
+using Tavi.Application;
 using Tavi.Application.Scenario;
 using Tavi.Domain.Scenario;
 using Tavi.Domain.World;
@@ -12,6 +13,7 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     private readonly IConfiguration _configuration;
     private readonly ExtensionRuntime _extensions;
     private readonly WorldRuntime _world;
+    private readonly ScenarioEventBroker _events;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly object _disposeSync = new();
     private JsonFileScenarioStore? _store;
@@ -22,11 +24,16 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     private bool _disposed;
 
     /// <summary>创建依赖当前 World 与冻结 Module Runtime 的 Scenario 运行时。</summary>
-    public ScenarioRuntime(IConfiguration configuration, ExtensionRuntime extensions, WorldRuntime world)
+    public ScenarioRuntime(
+        IConfiguration configuration,
+        ExtensionRuntime extensions,
+        WorldRuntime world,
+        ScenarioEventBroker events)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
         _world = world ?? throw new ArgumentNullException(nameof(world));
+        _events = events ?? throw new ArgumentNullException(nameof(events));
     }
 
     /// <summary>从当前 World 快照创建或恢复默认 Scenario 会话。</summary>
@@ -39,8 +46,19 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
         WorldSnapshot world = await _world.ReadAsync(workspace => workspace.Queries.CreateSnapshot(), cancellationToken);
         _store = new JsonFileScenarioStore(saveDirectory);
         var session = new ScenarioSession(_store, _extensions.Frozen, world, _slot);
-        await session.InitializeAsync(cancellationToken);
         Attach(session);
+        try
+        {
+            await session.InitializeAsync(cancellationToken);
+        }
+        catch
+        {
+            DetachEvents(session);
+            _workspace = null;
+            _lifecycle = null;
+            await session.DiscardAsync();
+            throw;
+        }
     }
 
     /// <summary>停止运行时并刷新尚未保存的 Scenario。</summary>
@@ -95,7 +113,9 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
             ScenarioSnapshot imported = ScenarioWorldBridge.Import(world, _extensions.Frozen.Catalog, _extensions.Frozen.Parameters);
             var candidate = new ScenarioSession(new SeededScenarioStore(RequireStore(), imported), _extensions.Frozen, world.Id, _slot);
             await candidate.InitializeAsync(cancellationToken);
-            await RequireLifecycle().DiscardAsync();
+            IScenarioSessionLifecycle lifecycle = RequireLifecycle();
+            DetachEvents(lifecycle);
+            await lifecycle.DiscardAsync();
             _workspace = null;
             _lifecycle = null;
             try
@@ -128,7 +148,10 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     {
         _disposed = true;
         if (_lifecycle is not null)
+        {
+            DetachEvents(_lifecycle);
             await _lifecycle.DisposeAsync();
+        }
         _store?.Dispose();
         _accessGate.Dispose();
     }
@@ -137,6 +160,42 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     {
         _workspace = session;
         _lifecycle = session;
+        _lifecycle.Changed += OnScenarioChanged;
+        _lifecycle.StateChanged += OnScenarioStateChanged;
+    }
+
+    private void DetachEvents(IScenarioSessionLifecycle lifecycle)
+    {
+        lifecycle.Changed -= OnScenarioChanged;
+        lifecycle.StateChanged -= OnScenarioStateChanged;
+    }
+
+    private void OnScenarioChanged(
+        object? sender,
+        ScenarioSessionChangedEventArgs eventArgs)
+    {
+        IScenarioWorkspace workspace = RequireWorkspace();
+        _events.Publish(new ScenarioRuntimeEvent(
+            "scenario.changed",
+            eventArgs.Commit.StateId,
+            workspace.IsDirty,
+            eventArgs.Commit.CommitId,
+            eventArgs.Operation,
+            null));
+    }
+
+    private void OnScenarioStateChanged(
+        object? sender,
+        SessionStateChangedEventArgs eventArgs)
+    {
+        Guid stateId = _workspace?.StateId ?? Guid.Empty;
+        _events.Publish(new ScenarioRuntimeEvent(
+            $"scenario.{RuntimeEventNames.ToKebabCase(eventArgs.Change.ToString())}",
+            stateId,
+            eventArgs.IsDirty,
+            null,
+            null,
+            eventArgs.Exception?.Message));
     }
 
     private async Task RestorePersistedAsync(CancellationToken cancellationToken)

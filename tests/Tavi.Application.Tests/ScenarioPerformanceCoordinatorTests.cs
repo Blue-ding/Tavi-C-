@@ -20,6 +20,9 @@ public sealed class ScenarioPerformanceCoordinatorTests
     {
         TestFixture fixture = CreateFixture(SceneSettlementCapabilities.Performance);
         await using ScenarioSession scenario = await CreateScenarioAsync(fixture);
+        var changedOperations = new List<string>();
+        scenario.Changed += (_, eventArgs) =>
+            changedOperations.Add(eventArgs.Operation);
         Guid sceneId = BeginScene(scenario, fixture);
         var coordinator = new ScenarioPerformanceCoordinator();
         SceneContextView context = coordinator.PrepareStart(scenario, sceneId, scenario.StateId);
@@ -56,6 +59,7 @@ public sealed class ScenarioPerformanceCoordinatorTests
         Assert.True(completion.PerformanceCommit.Changed);
         Assert.Equal(SceneState.Settled, scenario.Queries.GetScene(sceneId).State);
         Assert.Equal(PerformanceStatus.Completed, performance.Status);
+        Assert.Contains("SettleScene", changedOperations);
     }
 
     [Fact]

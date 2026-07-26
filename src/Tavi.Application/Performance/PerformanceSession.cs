@@ -27,6 +27,7 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
     private IPerformanceExtension? _extension;
     private SceneContextView? _sourceScene;
     private Guid _savedStateId;
+    private int _reportedDirty;
     private bool _disposed;
 
     /// <summary>创建用于恢复 Store 中唯一活动 Performance 的 Session。</summary>
@@ -66,6 +67,7 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
     }
 
     public event EventHandler<PerformanceSessionChangedEventArgs>? Changed;
+    public event EventHandler<SessionStateChangedEventArgs>? StateChanged;
 
     public Guid Id => Read(value => value.Id);
     public Guid StateId => Read(value => value.StateId);
@@ -157,17 +159,17 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
                 definition.Description,
                 definition.Slots.Select(value => new BeatSlotSpecification(value.Id, value.Name, value.Description, value.Minimum, value.Maximum)).ToArray(),
                 _extensions.FindWritingProfile(definition.Module)?.GetRawText())
-        ]), expectedStateId);
+        ]), expectedStateId, nameof(CreateBeat));
     }
 
     internal PerformanceCommitResult SetBeatBinding(Guid beatId, string slotId, IReadOnlyList<Guid> elementIds, Guid expectedStateId)
-        => Commit(new PerformanceChangeSet([new SetBeatSlotBindingOperation(beatId, new BeatSlotBinding(slotId, elementIds))]), expectedStateId);
+        => Commit(new PerformanceChangeSet([new SetBeatSlotBindingOperation(beatId, new BeatSlotBinding(slotId, elementIds))]), expectedStateId, nameof(SetBeatBinding));
 
     internal PerformanceCommitResult ClearBeatBinding(Guid beatId, string slotId, Guid expectedStateId)
-        => Commit(new PerformanceChangeSet([new ClearBeatSlotBindingOperation(beatId, slotId)]), expectedStateId);
+        => Commit(new PerformanceChangeSet([new ClearBeatSlotBindingOperation(beatId, slotId)]), expectedStateId, nameof(ClearBeatBinding));
 
     internal PerformanceCommitResult BeginBeatProcessing(Guid beatId, Guid expectedStateId)
-        => Commit(new PerformanceChangeSet([new BeginBeatProcessingOperation(beatId)]), expectedStateId);
+        => Commit(new PerformanceChangeSet([new BeginBeatProcessingOperation(beatId)]), expectedStateId, nameof(BeginBeatProcessing));
 
     internal async Task<PerformanceCommitResult> ResolveBeatAsync(Guid beatId, string interaction, long randomSeed, Guid expectedStateId, CancellationToken cancellationToken)
     {
@@ -202,7 +204,7 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
                 beatId,
                 PerformanceExtensibilityAdapter.ToChangeSet(proposal.Operations),
                 paragraphs)
-        ]), expectedStateId);
+        ]), expectedStateId, nameof(ResolveBeatAsync));
     }
 
     internal PerformanceCommitResult PublishBeat(Guid beatId, Guid expectedStateId, Guid expectedManuscriptStateId)
@@ -219,7 +221,7 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
         PerformanceCommitResult result = Commit(new PerformanceChangeSet(
         [
             new MarkBeatPublishedOperation(beatId, new BeatPublicationReceipt(publication.ManuscriptId, publication.ManuscriptStateId))
-        ]), expectedStateId);
+        ]), expectedStateId, nameof(PublishBeat));
         RuntimePerformance checkpoint = RequirePerformance();
         _workspace.Reset(checkpoint);
         return result;
@@ -245,17 +247,17 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
     }
 
     internal PerformanceCommitResult Complete(Guid expectedStateId)
-        => Commit(new PerformanceChangeSet([new CompletePerformanceOperation()]), expectedStateId);
+        => Commit(new PerformanceChangeSet([new CompletePerformanceOperation()]), expectedStateId, nameof(Complete));
 
     internal PerformanceCommitResult Abandon(Guid expectedStateId)
-        => Commit(new PerformanceChangeSet([new AbandonPerformanceOperation()]), expectedStateId);
+        => Commit(new PerformanceChangeSet([new AbandonPerformanceOperation()]), expectedStateId, nameof(Abandon));
 
     internal PerformanceCommitResult Undo(Guid expectedStateId)
     {
         if (!_workspace.CanUndo)
             throw new InvalidOperationException("没有可撤销的 Performance 操作。");
         PerformanceCommitResult result = Convert(_workspace.Undo(expectedStateId));
-        Publish(result);
+        Publish(result, nameof(Undo));
         return result;
     }
 
@@ -264,7 +266,7 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
         if (!_workspace.CanRedo)
             throw new InvalidOperationException("没有可重做的 Performance 操作。");
         PerformanceCommitResult result = Convert(_workspace.Redo(expectedStateId));
-        Publish(result);
+        Publish(result, nameof(Redo));
         return result;
     }
 
@@ -292,24 +294,31 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
         }
     }
 
-    private PerformanceCommitResult Commit(PerformanceChangeSet changes, Guid expectedStateId)
+    private PerformanceCommitResult Commit(
+        PerformanceChangeSet changes,
+        Guid expectedStateId,
+        string operation)
     {
         PerformanceCommitResult result = Convert(_workspace.Commit(changes, expectedStateId));
-        Publish(result);
+        Publish(result, operation);
         return result;
     }
 
-    private void Publish(PerformanceCommitResult result)
+    private void Publish(
+        PerformanceCommitResult result,
+        string operation)
     {
         if (!result.Changed)
             return;
         ScheduleAutoSave();
-        Changed?.Invoke(this, new PerformanceSessionChangedEventArgs(Id, result));
+        Changed?.Invoke(this, new PerformanceSessionChangedEventArgs(Id, result, operation));
+        NotifyDirtyChanged();
     }
 
     private async Task SaveCoreAsync(CancellationToken cancellationToken)
     {
         PerformanceSnapshot snapshot = CreateSnapshot();
+        NotifyState(SessionStateChange.SaveStarted);
         await _saveGate.WaitAsync(cancellationToken);
         try
         {
@@ -320,6 +329,19 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
                 LastAutoSaveException = null;
                 return true;
             });
+            NotifyDirtyChanged();
+            NotifyState(SessionStateChange.SaveCompleted);
+        }
+        catch (OperationCanceledException exception)
+        {
+            NotifyState(SessionStateChange.SaveCancelled, exception);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LastAutoSaveException = exception;
+            NotifyState(SessionStateChange.SaveFailed, exception);
+            throw;
         }
         finally
         {
@@ -382,6 +404,25 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
         }
         if (tasks.Length > 0)
             await Task.WhenAll(tasks);
+    }
+
+    private void NotifyState(
+        SessionStateChange change,
+        Exception? exception = null) =>
+        StateChanged?.Invoke(
+            this,
+            new SessionStateChangedEventArgs(change, IsDirty, exception));
+
+    private void NotifyDirtyChanged()
+    {
+        bool isDirty = IsDirty;
+        int value = isDirty ? 1 : 0;
+        if (Interlocked.Exchange(ref _reportedDirty, value) != value)
+            StateChanged?.Invoke(
+                this,
+                new SessionStateChangedEventArgs(
+                    SessionStateChange.DirtyChanged,
+                    isDirty));
     }
 
     private TResult Read<TResult>(Func<RuntimePerformance, TResult> reader)

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Tavi.Application.Writing;
 using Tavi.Domain.Story;
 using Tavi.Host.Mapping;
@@ -8,6 +9,9 @@ namespace Tavi.Host.Endpoints;
 
 internal static class WritingEndpoints
 {
+    private static readonly JsonSerializerOptions EventJsonOptions =
+        new(JsonSerializerDefaults.Web);
+
     internal static IEndpointRouteBuilder MapWritingEndpoints(this IEndpointRouteBuilder endpoints)
     {
         RouteGroupBuilder writing = endpoints.MapGroup("/api/v1/writing");
@@ -24,6 +28,7 @@ internal static class WritingEndpoints
         writing.MapPost("/session/redo", RedoAsync);
         writing.MapPost("/session/save", SaveAsync);
         writing.MapPost("/session/archive", ArchiveAsync);
+        writing.MapGet("/events", StreamEventsAsync);
         return endpoints;
     }
 
@@ -48,4 +53,32 @@ internal static class WritingEndpoints
     private static Task<WritingSnapshotViewModel> SaveAsync(WritingRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(async workspace => { await workspace.Commands.SaveAsync(cancellationToken); return WritingViewModelMapper.ToSnapshot(workspace.Queries.CreateSnapshot()); }, cancellationToken);
     private static Task<ManuscriptViewModel> ArchiveAsync(WritingStateRequest request, WritingRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(async workspace => WritingViewModelMapper.ToManuscript(await workspace.Commands.ArchiveAsync(request.ExpectedStateId, cancellationToken)), cancellationToken);
     private static Task<WritingSnapshotViewModel> ApplyAsync(WritingRuntime runtime, ManuscriptOperation operation, Guid expectedStateId, CancellationToken cancellationToken) => runtime.ExecuteAsync(workspace => { workspace.Commands.Apply(operation, expectedStateId); return WritingViewModelMapper.ToSnapshot(workspace.Queries.CreateSnapshot()); }, cancellationToken);
+
+    private static async Task StreamEventsAsync(
+        HttpContext context,
+        WritingEventBroker broker,
+        CancellationToken cancellationToken)
+    {
+        context.Response.Headers.ContentType = "text/event-stream";
+        context.Response.Headers.CacheControl = "no-cache";
+        context.Response.Headers.Connection = "keep-alive";
+        await foreach (WritingRuntimeEvent runtimeEvent in
+            broker.SubscribeAsync(cancellationToken))
+        {
+            var viewModel = new WritingEventViewModel(
+                runtimeEvent.Type,
+                runtimeEvent.StateId,
+                runtimeEvent.IsDirty,
+                runtimeEvent.CommitId,
+                runtimeEvent.Operation,
+                runtimeEvent.Error);
+            await context.Response.WriteAsync(
+                $"event: {viewModel.Type}\n",
+                cancellationToken);
+            await context.Response.WriteAsync(
+                $"data: {JsonSerializer.Serialize(viewModel, EventJsonOptions)}\n\n",
+                cancellationToken);
+            await context.Response.Body.FlushAsync(cancellationToken);
+        }
+    }
 }

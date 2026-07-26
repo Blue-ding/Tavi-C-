@@ -65,7 +65,7 @@
 		<ProjectReference Include="..\Tavi.Host\Tavi.Host.csproj" />
 	</ItemGroup>
 
-	<Target Name="BuildWebForDesktop" BeforeTargets="BeforeBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+	<Target Name="BuildWebForDesktop" BeforeTargets="BeforeBuild" Condition="'$(DesignTimeBuild)' != 'true' And Exists('..\Tavi.Web\package.json')">
 		<Exec WorkingDirectory="..\Tavi.Web" Command="npm run build" />
 	</Target>
 

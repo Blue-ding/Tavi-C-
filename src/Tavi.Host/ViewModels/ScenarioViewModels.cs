@@ -54,3 +54,12 @@ public sealed record StageScenarioOutcomeRequest(Guid ExpectedWorldStateId, Guid
 
 /// <summary>表示 Scenario 结果暂存到 World 后的状态。</summary>
 public sealed record ScenarioWorldStageViewModel(Guid WorldStateId, Guid ScenarioStateId, Guid? ChangeId, bool Changed);
+
+/// <summary>表示推送给前端的 Scenario 状态事件。</summary>
+public sealed record ScenarioEventViewModel(
+    string Type,
+    Guid StateId,
+    bool IsDirty,
+    Guid? CommitId,
+    string? Operation,
+    string? Error);

@@ -34,6 +34,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E933C244
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Application.Tests", "tests\Tavi.Application.Tests\Tavi.Application.Tests.csproj", "{C31E5E0A-EF15-4869-864E-55DEE02875CB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tavi.Host.Tests", "tests\Tavi.Host.Tests\Tavi.Host.Tests.csproj", "{6E32040F-F266-4825-943A-C2C6CAC1223F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -100,8 +102,13 @@ Global
 		{C31E5E0A-EF15-4869-864E-55DEE02875CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C31E5E0A-EF15-4869-864E-55DEE02875CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C31E5E0A-EF15-4869-864E-55DEE02875CB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E32040F-F266-4825-943A-C2C6CAC1223F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E32040F-F266-4825-943A-C2C6CAC1223F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E32040F-F266-4825-943A-C2C6CAC1223F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E32040F-F266-4825-943A-C2C6CAC1223F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{C31E5E0A-EF15-4869-864E-55DEE02875CB} = {E933C244-8BF8-422D-AF7E-F259D4B79B6C}
+		{6E32040F-F266-4825-943A-C2C6CAC1223F} = {E933C244-8BF8-422D-AF7E-F259D4B79B6C}
 	EndGlobalSection
 EndGlobal

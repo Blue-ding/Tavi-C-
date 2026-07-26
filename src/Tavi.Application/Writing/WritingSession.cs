@@ -19,6 +19,7 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
     private CancellationTokenSource? _debounceSource;
     private Guid _savedStateId;
     private long _stagingRevision;
+    private int _reportedDirty;
     private bool _initialized;
     private bool _transitioning;
     private bool _disposed;
@@ -40,6 +41,12 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
 
     /// <inheritdoc />
     public WritingCommands Commands { get; }
+
+    /// <inheritdoc />
+    public event EventHandler<WritingSessionChangedEventArgs>? Changed;
+
+    /// <inheritdoc />
+    public event EventHandler<SessionStateChangedEventArgs>? StateChanged;
 
     /// <inheritdoc />
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -132,18 +139,46 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
             _savedStateId = Guid.Empty;
             return created;
         });
+        NotifyDirtyChanged();
         try
         {
+            NotifyState(SessionStateChange.SaveStarted);
             await _store.SaveActiveAsync(created, cancellationToken);
-            return _workspace.ExecuteExclusive(() =>
+            WritingSnapshot snapshot = _workspace.ExecuteExclusive(() =>
             {
                 _savedStateId = created.StateId;
                 _transitioning = false;
                 return CreateSnapshotLocked();
             });
+            Changed?.Invoke(
+                this,
+                new WritingSessionChangedEventArgs(
+                    created.Id,
+                    new WritingCommitResult(
+                        Guid.NewGuid(),
+                        Guid.Empty,
+                        created.StateId,
+                        true),
+                    nameof(CreateAsync)));
+            NotifyDirtyChanged();
+            NotifyState(SessionStateChange.SaveCompleted);
+            return snapshot;
         }
-        catch
+        catch (OperationCanceledException exception)
         {
+            NotifyState(SessionStateChange.SaveCancelled, exception);
+            _workspace.ExecuteExclusive(() =>
+            {
+                _workspace.Reset(new WritingWorkspaceState(null));
+                _savedStateId = Guid.Empty;
+                _transitioning = false;
+                return true;
+            });
+            throw;
+        }
+        catch (Exception exception)
+        {
+            NotifyState(SessionStateChange.SaveFailed, exception);
             _workspace.ExecuteExclusive(() =>
             {
                 _workspace.Reset(new WritingWorkspaceState(null));
@@ -198,7 +233,7 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
         Guid[] selectedIds = changeIds.Distinct().ToArray();
         ThrowIfDisposed();
         EnsureInitialized();
-        return _workspace.ExecuteExclusive(() =>
+        (WritingCommitResult Commit, Guid ManuscriptId) transaction = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("CommitStaged");
             Manuscript current = RequireCurrentLocked("CommitStaged");
@@ -211,8 +246,10 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
             WritingCommitResult result = CommitLocked(selected.Select(change => change.Operation), expectedStateId);
             _staged.RemoveAll(change => selectedIds.Contains(change.Id));
             _stagingRevision++;
-            return result;
+            return (result, RequireCurrentLocked(nameof(CommitStaged)).Id);
         });
+        PublishCommit(transaction.Commit, transaction.ManuscriptId, nameof(CommitStaged));
+        return transaction.Commit;
     }
 
     /// <inheritdoc />
@@ -223,11 +260,14 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
             throw new ArgumentOutOfRangeException(nameof(source));
         ThrowIfDisposed();
         EnsureInitialized();
-        return _workspace.ExecuteExclusive(() =>
+        (WritingCommitResult Commit, Guid ManuscriptId) transaction = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Apply");
-            return CommitLocked([operation], expectedStateId);
+            WritingCommitResult commit = CommitLocked([operation], expectedStateId);
+            return (commit, RequireCurrentLocked(nameof(Apply)).Id);
         });
+        PublishCommit(transaction.Commit, transaction.ManuscriptId, nameof(Apply));
+        return transaction.Commit;
     }
 
     /// <inheritdoc />
@@ -241,7 +281,7 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
         ArgumentNullException.ThrowIfNull(paragraphs);
         ThrowIfDisposed();
         EnsureInitialized();
-        return _workspace.ExecuteExclusive(() =>
+        (BeatPublicationResult Publication, WritingCommitResult? Commit) transaction = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked(nameof(PublishBeat));
             Manuscript current = RequireCurrentLocked(nameof(PublishBeat));
@@ -251,7 +291,9 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
                 Guid[] requestedIds = paragraphs.Select(value => value.Id).ToArray();
                 if (!existing.ParagraphIds.SequenceEqual(requestedIds))
                     throw WritingException.StagingInvalid($"Beat {beatId} 已使用不同段落集合发布。");
-                return new BeatPublicationResult(current.Id, current.StateId, true);
+                return (
+                    new BeatPublicationResult(current.Id, current.StateId, true),
+                    (WritingCommitResult?)null);
             }
             var operation = new PublishBeatOperation(performanceId, beatId, paragraphs.Select(value => new ManuscriptParagraph(value.Id, value.Text)).ToArray());
             Manuscript candidate = ManuscriptEditor.Apply(current, [operation]);
@@ -260,8 +302,11 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
             Manuscript updated = RequireCurrentLocked(nameof(PublishBeat));
             // Beat 发布跨越 Performance 与 Writing；建立不可撤销检查点，避免单边 Undo 破坏已发布状态。
             _workspace.Reset(new WritingWorkspaceState(updated));
-            return new BeatPublicationResult(updated.Id, committed.StateId, false);
+            return (new BeatPublicationResult(updated.Id, committed.StateId, false), committed);
         });
+        if (transaction.Commit is not null)
+            PublishCommit(transaction.Commit, transaction.Publication.ManuscriptId, nameof(PublishBeat));
+        return transaction.Publication;
     }
 
     /// <inheritdoc />
@@ -269,18 +314,19 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        WritingCommitResult result = _workspace.ExecuteExclusive(() =>
+        (WritingCommitResult Commit, Guid ManuscriptId) transaction = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Undo");
             if (_staged.Count > 0)
                 throw WritingException.StagingInvalid("存在尚未提交的修改，不能撤销已提交历史。");
             if (!_workspace.CanUndo)
                 throw new InvalidOperationException("没有可撤销的手稿操作。");
-            return ExecuteWorkspace(() => _workspace.Undo(expectedStateId));
+            return (
+                ExecuteWorkspace(() => _workspace.Undo(expectedStateId)),
+                RequireCurrentLocked(nameof(Undo)).Id);
         });
-        if (result.Changed)
-            ScheduleAutoSave();
-        return result;
+        PublishCommit(transaction.Commit, transaction.ManuscriptId, nameof(Undo));
+        return transaction.Commit;
     }
 
     /// <inheritdoc />
@@ -288,18 +334,19 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
     {
         ThrowIfDisposed();
         EnsureInitialized();
-        WritingCommitResult result = _workspace.ExecuteExclusive(() =>
+        (WritingCommitResult Commit, Guid ManuscriptId) transaction = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Redo");
             if (_staged.Count > 0)
                 throw WritingException.StagingInvalid("存在尚未提交的修改，不能重做已提交历史。");
             if (!_workspace.CanRedo)
                 throw new InvalidOperationException("没有可重做的手稿操作。");
-            return ExecuteWorkspace(() => _workspace.Redo(expectedStateId));
+            return (
+                ExecuteWorkspace(() => _workspace.Redo(expectedStateId)),
+                RequireCurrentLocked(nameof(Redo)).Id);
         });
-        if (result.Changed)
-            ScheduleAutoSave();
-        return result;
+        PublishCommit(transaction.Commit, transaction.ManuscriptId, nameof(Redo));
+        return transaction.Commit;
     }
 
     /// <inheritdoc />
@@ -332,6 +379,8 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
         ThrowIfDisposed();
         CancelPendingAutoSave();
         EnsureInitialized();
+        WritingCommitResult? stagedCommit = null;
+        Guid archivedPreviousStateId = Guid.Empty;
         Manuscript archived = _workspace.ExecuteExclusive(() =>
         {
             EnsureEditableLocked("Archive");
@@ -340,16 +389,20 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
                 throw WritingException.Conflict(expectedStateId, current.StateId);
             if (_staged.Count > 0)
             {
-                _ = CommitLocked(_staged.Select(change => change.Operation), expectedStateId);
+                stagedCommit = CommitLocked(
+                    _staged.Select(change => change.Operation),
+                    expectedStateId);
                 _staged.Clear();
                 _stagingRevision++;
                 current = RequireCurrentLocked("Archive");
             }
             _transitioning = true;
+            archivedPreviousStateId = current.StateId;
             return ManuscriptEditor.Apply(current, [], false, ManuscriptStatus.Archived);
         });
         try
         {
+            NotifyState(SessionStateChange.SaveStarted);
             await _saveGate.WaitAsync(cancellationToken);
             try
             {
@@ -357,7 +410,7 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
             }
             finally
             {
-                _saveGate.Release();
+                    _saveGate.Release();
             }
             _workspace.ExecuteExclusive(() =>
             {
@@ -366,15 +419,48 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
                 _transitioning = false;
                 return true;
             });
+            Changed?.Invoke(
+                this,
+                new WritingSessionChangedEventArgs(
+                    archived.Id,
+                    new WritingCommitResult(
+                        Guid.NewGuid(),
+                        archivedPreviousStateId,
+                        archived.StateId,
+                        true),
+                    nameof(ArchiveAsync)));
+            NotifyDirtyChanged();
+            NotifyState(SessionStateChange.SaveCompleted);
             return archived;
         }
-        catch
+        catch (OperationCanceledException exception)
         {
+            NotifyState(SessionStateChange.SaveCancelled, exception);
             _workspace.ExecuteExclusive(() =>
             {
                 _transitioning = false;
                 return true;
             });
+            if (stagedCommit is not null)
+                PublishCommit(
+                    stagedCommit,
+                    archived.Id,
+                    nameof(CommitStaged));
+            throw;
+        }
+        catch (Exception exception)
+        {
+            NotifyState(SessionStateChange.SaveFailed, exception);
+            _workspace.ExecuteExclusive(() =>
+            {
+                _transitioning = false;
+                return true;
+            });
+            if (stagedCommit is not null)
+                PublishCommit(
+                    stagedCommit,
+                    archived.Id,
+                    nameof(CommitStaged));
             throw;
         }
     }
@@ -422,12 +508,7 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
     public Exception? LastAutoSaveException { get; private set; }
 
     private WritingCommitResult CommitLocked(IEnumerable<ManuscriptOperation> operations, Guid expectedStateId)
-    {
-        WritingCommitResult result = ExecuteWorkspace(() => _workspace.Commit(new WritingOperationBatch(operations), expectedStateId));
-        if (result.Changed)
-            ScheduleAutoSave();
-        return result;
-    }
+        => ExecuteWorkspace(() => _workspace.Commit(new WritingOperationBatch(operations), expectedStateId));
 
     private async Task SaveCoreAsync(CancellationToken cancellationToken)
     {
@@ -438,6 +519,7 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
             EnsureEditableLocked("Save");
             return RequireCurrentLocked("Save");
         });
+        NotifyState(SessionStateChange.SaveStarted);
         await _saveGate.WaitAsync(cancellationToken);
         try
         {
@@ -448,6 +530,19 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
                 LastAutoSaveException = null;
                 return true;
             });
+            NotifyDirtyChanged();
+            NotifyState(SessionStateChange.SaveCompleted);
+        }
+        catch (OperationCanceledException exception)
+        {
+            NotifyState(SessionStateChange.SaveCancelled, exception);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LastAutoSaveException = exception;
+            NotifyState(SessionStateChange.SaveFailed, exception);
+            throw;
         }
         finally
         {
@@ -523,6 +618,53 @@ public sealed class WritingSession : IWritingWorkspace, IWritingSessionLifecycle
         Manuscript? projection = current is null ? null : CreateProjectionLocked();
         return new WritingSnapshot { Manuscript = projection, StagingRevision = _stagingRevision, IsDirty = current is not null && current.StateId != _savedStateId, CanUndo = _workspace.CanUndo && _staged.Count == 0, CanRedo = _workspace.CanRedo && _staged.Count == 0, StagedChanges = _staged.ToArray(), LastAutoSaveException = LastAutoSaveException };
     }
+
+    private void PublishCommit(
+        WritingCommitResult result,
+        Guid manuscriptId,
+        string operation)
+    {
+        if (!result.Changed)
+            return;
+        ScheduleAutoSave();
+        Changed?.Invoke(
+            this,
+            new WritingSessionChangedEventArgs(manuscriptId, result, operation));
+        NotifyDirtyChanged();
+    }
+
+    private void NotifyDirtyChanged()
+    {
+        bool isDirty =
+            _workspace.IsInitialized &&
+            _workspace.ExecuteExclusive(() =>
+            {
+                Manuscript? current = CurrentLocked();
+                return current is not null && current.StateId != _savedStateId;
+            });
+        int value = isDirty ? 1 : 0;
+        if (Interlocked.Exchange(ref _reportedDirty, value) != value)
+            StateChanged?.Invoke(
+                this,
+                new SessionStateChangedEventArgs(
+                    SessionStateChange.DirtyChanged,
+                    isDirty));
+    }
+
+    private void NotifyState(
+        SessionStateChange change,
+        Exception? exception = null) =>
+        StateChanged?.Invoke(
+            this,
+            new SessionStateChangedEventArgs(
+                change,
+                _workspace.IsInitialized &&
+                _workspace.ExecuteExclusive(() =>
+                {
+                    Manuscript? current = CurrentLocked();
+                    return current is not null && current.StateId != _savedStateId;
+                }),
+                exception));
 
     private Manuscript CreateProjectionLocked() => _staged.Count == 0 ? RequireCurrentLocked("Read") : ManuscriptEditor.Apply(RequireCurrentLocked("Read"), _staged.Select(change => change.Operation), true);
     private static ManuscriptSummary ToSummary(Manuscript manuscript) => new(manuscript.Id, manuscript.Title, manuscript.Status, manuscript.Paragraphs.Count, CreatePreview(manuscript), manuscript.CreatedAtUtc, manuscript.UpdatedAtUtc);

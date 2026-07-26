@@ -27,6 +27,7 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
     private readonly List<Task> _autoSaveTasks = [];
     private CancellationTokenSource? _debounceSource;
     private Guid _savedStateId;
+    private int _reportedDirty;
     private bool _disposed;
 
     /// <summary>创建持有独立 Scenario 的 ScenarioSession。</summary>
@@ -78,6 +79,9 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
     public event EventHandler<ScenarioSessionChangedEventArgs>? Changed;
 
     /// <inheritdoc />
+    public event EventHandler<SessionStateChangedEventArgs>? StateChanged;
+
+    /// <inheritdoc />
     public ScenarioQueries Queries { get; }
 
     /// <inheritdoc />
@@ -125,6 +129,11 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
             _savedStateId = loaded is null ? Guid.Empty : scenario.StateId;
             return true;
         });
+        if (loaded is null)
+        {
+            NotifyDirtyChanged();
+            ScheduleAutoSave();
+        }
     }
 
     internal ScenarioCommitResult Apply(ScenarioChangeSet changeSet, Guid expectedStateId)
@@ -132,13 +141,18 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         ArgumentNullException.ThrowIfNull(changeSet);
         if (changeSet.Operations.Any(operation => operation is AddSceneOperation or RemoveSceneOperation or SetSceneSlotBindingOperation or ClearSceneSlotBindingOperation or UpdateSceneStateOperation or ClearSettledScenesOperation))
             throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.InvalidSessionState, TaviErrorCategory.Protocol, nameof(Apply), "Scene 生命周期操作必须通过 ScenarioSession 的专用方法提交。");
-        return Commit(changeSet, expectedStateId);
+        return Commit(changeSet, expectedStateId, nameof(Apply));
     }
 
-    private ScenarioCommitResult Commit(ScenarioChangeSet changeSet, Guid expectedStateId)
+    private ScenarioCommitResult Commit(
+        ScenarioChangeSet changeSet,
+        Guid expectedStateId,
+        string operation)
     {
-        ScenarioCommitResult result = ExecuteWorkspace(() => _workspace.Commit(changeSet, expectedStateId), nameof(Apply));
-        Publish(result);
+        ScenarioCommitResult result = ExecuteWorkspace(
+            () => _workspace.Commit(changeSet, expectedStateId),
+            operation);
+        Publish(result, operation);
         return result;
     }
 
@@ -173,7 +187,7 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
         });
         ValidateSceneDefinitionAvailability(definition, snapshot, expectedStateId, nameof(CreateScene));
         Guid sceneId = Guid.NewGuid();
-        return Commit(new ScenarioChangeSet([new AddSceneOperation(sceneId, new SceneDefinitionType(definition.Id.Value), definition.Module.Value, definition.ModuleVersion.Value, expectedStateId, definition.Name, definition.Description, ScenarioExtensibilityAdapter.ToDomain(definition.SettlementCapabilities), ScenarioExtensibilityAdapter.ToDomainSlots(definition))]), expectedStateId);
+        return Commit(new ScenarioChangeSet([new AddSceneOperation(sceneId, new SceneDefinitionType(definition.Id.Value), definition.Module.Value, definition.ModuleVersion.Value, expectedStateId, definition.Name, definition.Description, ScenarioExtensibilityAdapter.ToDomain(definition.SettlementCapabilities), ScenarioExtensibilityAdapter.ToDomainSlots(definition))]), expectedStateId, nameof(CreateScene));
     }
 
     internal ScenarioCommitResult SetSceneBinding(Guid sceneId, string slotId, IReadOnlyList<Guid> elementIds, Guid expectedStateId)
@@ -190,7 +204,7 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
             ValidateSlotBinding(slot, elementIds, scenario.CreateSnapshot(), nameof(SetSceneBinding));
             return true;
         });
-        return Commit(new ScenarioChangeSet([new SetSceneSlotBindingOperation(sceneId, new SceneSlotBinding(slotId, elementIds))]), expectedStateId);
+        return Commit(new ScenarioChangeSet([new SetSceneSlotBindingOperation(sceneId, new SceneSlotBinding(slotId, elementIds))]), expectedStateId, nameof(SetSceneBinding));
     }
 
     internal ScenarioCommitResult ClearSceneBinding(Guid sceneId, string slotId, Guid expectedStateId)
@@ -202,7 +216,7 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
             EnsureSceneState(scenario.GetScene(sceneId), SceneState.Binding, nameof(ClearSceneBinding));
             return true;
         });
-        return Commit(new ScenarioChangeSet([new ClearSceneSlotBindingOperation(sceneId, slotId)]), expectedStateId);
+        return Commit(new ScenarioChangeSet([new ClearSceneSlotBindingOperation(sceneId, slotId)]), expectedStateId, nameof(ClearSceneBinding));
     }
 
     internal ScenarioCommitResult BeginSceneProcessing(Guid sceneId, Guid expectedStateId)
@@ -217,7 +231,7 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
             ValidateBindings(ScenarioExtensibilityAdapter.ToDefinition(scene), scene.GetBindings().ToDictionary(binding => binding.SlotId, binding => binding.ElementIds), scenario.CreateSnapshot(), nameof(BeginSceneProcessing));
             return true;
         });
-        return Commit(new ScenarioChangeSet([new UpdateSceneStateOperation(sceneId, SceneState.Processing)]), expectedStateId);
+        return Commit(new ScenarioChangeSet([new UpdateSceneStateOperation(sceneId, SceneState.Processing)]), expectedStateId, nameof(BeginSceneProcessing));
     }
 
     internal SceneContextView GetProcessingContext(Guid sceneId) => ExecuteQuery(scenario =>
@@ -264,12 +278,12 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
             return (scenario.CreateSnapshot(), scene);
         });
         ScenarioChangeSet proposed = ScenarioExtensibilityAdapter.ToLocalChangeSet(proposal, captured.Snapshot, captured.Scene);
-        return Commit(new ScenarioChangeSet(new ScenarioOperation[] { new UpdateSceneStateOperation(sceneId, SceneState.Settled) }.Concat(proposed.Operations)), expectedStateId);
+        return Commit(new ScenarioChangeSet(new ScenarioOperation[] { new UpdateSceneStateOperation(sceneId, SceneState.Settled) }.Concat(proposed.Operations)), expectedStateId, nameof(SettleScene));
     }
 
-    internal ScenarioCommitResult RemoveScene(Guid sceneId, Guid expectedStateId) => Commit(new ScenarioChangeSet([new RemoveSceneOperation(sceneId)]), expectedStateId);
+    internal ScenarioCommitResult RemoveScene(Guid sceneId, Guid expectedStateId) => Commit(new ScenarioChangeSet([new RemoveSceneOperation(sceneId)]), expectedStateId, nameof(RemoveScene));
 
-    internal ScenarioCommitResult ClearSettledScenes(Guid expectedStateId) => Commit(new ScenarioChangeSet([new ClearSettledScenesOperation()]), expectedStateId);
+    internal ScenarioCommitResult ClearSettledScenes(Guid expectedStateId) => Commit(new ScenarioChangeSet([new ClearSettledScenesOperation()]), expectedStateId, nameof(ClearSettledScenes));
 
     internal ScenarioCommitResult Undo(Guid expectedStateId)
     {
@@ -279,7 +293,7 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
                 throw InvalidState(nameof(Undo), "没有可撤销的 Scenario 操作。");
             return ExecuteWorkspace(() => _workspace.Undo(expectedStateId), nameof(Undo));
         });
-        Publish(result);
+        Publish(result, nameof(Undo));
         return result;
     }
 
@@ -291,7 +305,7 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
                 throw InvalidState(nameof(Redo), "没有可重做的 Scenario 操作。");
             return ExecuteWorkspace(() => _workspace.Redo(expectedStateId), nameof(Redo));
         });
-        Publish(result);
+        Publish(result, nameof(Redo));
         return result;
     }
 
@@ -362,12 +376,16 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
     private async Task SaveCoreAsync(bool force, CancellationToken cancellationToken)
     {
         EnsureUsable();
+        NotifyState(SessionStateChange.SaveStarted);
         await _saveGate.WaitAsync(cancellationToken);
         try
         {
             (ScenarioSnapshot Snapshot, Guid StateId, bool Saved) state = ExecuteQuery(scenario => (scenario.CreateSnapshot(), scenario.StateId, scenario.StateId == _savedStateId));
             if (!force && state.Saved)
+            {
+                NotifyState(SessionStateChange.SaveCompleted);
                 return;
+            }
             await _store.SaveAsync(_slot, state.Snapshot, cancellationToken);
             _workspace.ExecuteExclusive(() =>
             {
@@ -375,6 +393,19 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
                 return true;
             });
             LastAutoSaveException = null;
+            NotifyDirtyChanged();
+            NotifyState(SessionStateChange.SaveCompleted);
+        }
+        catch (OperationCanceledException exception)
+        {
+            NotifyState(SessionStateChange.SaveCancelled, exception);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LastAutoSaveException = exception;
+            NotifyState(SessionStateChange.SaveFailed, exception);
+            throw;
         }
         finally
         {
@@ -466,14 +497,36 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
             throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.StateConflict, TaviErrorCategory.Conflict, operation, $"Scenario 状态冲突：期望 {expectedStateId}，实际 {scenario.StateId}。");
     }
 
-    private void Publish(ScenarioCommitResult result)
+    private void Publish(
+        ScenarioCommitResult result,
+        string operation)
     {
         if (result.Changed)
         {
             ScheduleAutoSave();
-            Changed?.Invoke(this, new ScenarioSessionChangedEventArgs(result));
+            Changed?.Invoke(this, new ScenarioSessionChangedEventArgs(result, operation));
+            NotifyDirtyChanged();
         }
     }
+
+    private void NotifyDirtyChanged()
+    {
+        bool isDirty = IsDirty;
+        int value = isDirty ? 1 : 0;
+        if (Interlocked.Exchange(ref _reportedDirty, value) != value)
+            StateChanged?.Invoke(
+                this,
+                new SessionStateChangedEventArgs(
+                    SessionStateChange.DirtyChanged,
+                    isDirty));
+    }
+
+    private void NotifyState(
+        SessionStateChange change,
+        Exception? exception = null) =>
+        StateChanged?.Invoke(
+            this,
+            new SessionStateChangedEventArgs(change, IsDirty, exception));
 
     private void ScheduleAutoSave()
     {

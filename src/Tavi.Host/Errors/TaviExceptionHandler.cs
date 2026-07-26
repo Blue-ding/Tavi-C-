@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Tavi.Host.ViewModels;
 using Tavi.Extensibility;
+using Tavi.Utilities.Concurrency;
 
 namespace Tavi.Host.Errors;
 
@@ -66,6 +67,24 @@ public sealed class TaviExceptionHandler : IExceptionHandler
             return (StatusCodes.Status400BadRequest, new ErrorViewModel("TAVI.HOST.REQUEST.INVALID_ARGUMENT", argumentException.Message, "Validation", null, false, EmptyDetails, context.TraceIdentifier));
         if (exception is KeyNotFoundException)
             return (StatusCodes.Status404NotFound, new ErrorViewModel("TAVI.HOST.RESOURCE.NOT_FOUND", exception.Message, "NotFound", null, false, EmptyDetails, context.TraceIdentifier));
+        if (exception is OptimisticConcurrencyConflictException conflict)
+        {
+            var details = new Dictionary<string, string>
+            {
+                ["expectedStateId"] = conflict.ExpectedStateId.ToString(),
+                ["actualStateId"] = conflict.ActualStateId.ToString()
+            };
+            return (
+                StatusCodes.Status409Conflict,
+                new ErrorViewModel(
+                    "TAVI.CONCURRENCY.STATE_CONFLICT",
+                    conflict.Message,
+                    "Conflict",
+                    null,
+                    false,
+                    details,
+                    context.TraceIdentifier));
+        }
         if (exception is InvalidOperationException invalidOperationException)
             return (StatusCodes.Status409Conflict, new ErrorViewModel("TAVI.HOST.REQUEST.INVALID_STATE", invalidOperationException.Message, "InvalidState", null, false, EmptyDetails, context.TraceIdentifier));
         return (StatusCodes.Status500InternalServerError, new ErrorViewModel("TAVI.HOST.INTERNAL.UNEXPECTED", "Tavi 遇到了未预期的内部错误。", "InternalFailure", null, false, EmptyDetails, context.TraceIdentifier));

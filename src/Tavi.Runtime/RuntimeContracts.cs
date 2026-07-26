@@ -15,6 +15,33 @@ public sealed record WorldRuntimeEvent(
     string? Operation,
     string? Error);
 
+/// <summary>描述 Scenario Runtime 向进程内 Adapter 发布的状态变化。</summary>
+public sealed record ScenarioRuntimeEvent(
+    string Type,
+    Guid StateId,
+    bool IsDirty,
+    Guid? CommitId,
+    string? Operation,
+    string? Error);
+
+/// <summary>描述 Performance Runtime 向进程内 Adapter 发布的状态变化。</summary>
+public sealed record PerformanceRuntimeEvent(
+    string Type,
+    Guid StateId,
+    bool IsDirty,
+    Guid? CommitId,
+    string? Operation,
+    string? Error);
+
+/// <summary>描述 Writing Runtime 向进程内 Adapter 发布的状态变化。</summary>
+public sealed record WritingRuntimeEvent(
+    string Type,
+    Guid StateId,
+    bool IsDirty,
+    Guid? CommitId,
+    string? Operation,
+    string? Error);
+
 /// <summary>描述 Guidance Runtime 当前是否可用。</summary>
 public sealed record GuidanceAvailability(
     bool Available,

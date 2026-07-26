@@ -43,6 +43,12 @@ public sealed class PerformanceSessionTests
         await using var session = new PerformanceSession(performanceStore, scene, 1, writing, extensions, TimeSpan.FromHours(1));
 
         await session.InitializeAsync();
+        var changedOperations = new List<string>();
+        var stateChanges = new List<(SessionStateChange Change, bool IsDirty)>();
+        session.Changed += (_, eventArgs) =>
+            changedOperations.Add(eventArgs.Operation);
+        session.StateChanged += (_, eventArgs) =>
+            stateChanges.Add((eventArgs.Change, eventArgs.IsDirty));
         Guid performanceId = session.Id;
         BeatDefinition definition = Assert.Single(await session.Commands.GetBeatDefinitionsAsync(1));
         session.Commands.CreateBeat(definition, session.StateId);
@@ -59,6 +65,15 @@ public sealed class PerformanceSessionTests
         Assert.Equal(PerformanceStatus.Completed, session.Status);
         Assert.Equal("A readable beat.", Assert.Single(writing.GetSnapshot().Manuscript!.Paragraphs).Text);
         Assert.Equal(performanceId, (await performanceStore.LoadActiveAsync())!.PerformanceId);
+        Assert.Contains(nameof(PerformanceCommands.CreateBeat), changedOperations);
+        Assert.Contains(nameof(PerformanceCommands.ResolveBeatAsync), changedOperations);
+        Assert.Contains(nameof(PerformanceCommands.Complete), changedOperations);
+        Assert.Contains((SessionStateChange.DirtyChanged, true), stateChanges);
+        Assert.Contains((SessionStateChange.DirtyChanged, false), stateChanges);
+        Assert.Contains(stateChanges, value =>
+            value.Change == SessionStateChange.SaveStarted);
+        Assert.Contains(stateChanges, value =>
+            value.Change == SessionStateChange.SaveCompleted);
 
         await using var restored = new PerformanceSession(performanceStore, writing, extensions, TimeSpan.FromHours(1));
         await restored.InitializeAsync();

@@ -60,6 +60,7 @@ public static class TaviHost
         builder.Services.AddSingleton<WorldRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<WorldRuntime>());
         builder.Services.AddSingleton<ScenarioRuntime>();
+        builder.Services.AddSingleton<ScenarioEventBroker>();
         builder.Services.AddHostedService(services => services.GetRequiredService<ScenarioRuntime>());
         builder.Services.AddSingleton<ScenarioWorldRuntime>();
         builder.Services.AddSingleton<GuidanceEventBroker>();
@@ -67,8 +68,10 @@ public static class TaviHost
         builder.Services.AddHostedService(services => services.GetRequiredService<GuidanceRuntime>());
         builder.Services.AddSingleton<SettingsRuntime>();
         builder.Services.AddSingleton<WritingRuntime>();
+        builder.Services.AddSingleton<WritingEventBroker>();
         builder.Services.AddHostedService(services => services.GetRequiredService<WritingRuntime>());
         builder.Services.AddSingleton<PerformanceRuntime>();
+        builder.Services.AddSingleton<PerformanceEventBroker>();
         builder.Services.AddHostedService(services => services.GetRequiredService<PerformanceRuntime>());
         builder.Services.AddSingleton<ScenarioPerformanceRuntime>();
 
@@ -94,6 +97,7 @@ public static class TaviHost
         app.MapExtensionEndpoints();
         app.MapWorldEndpoints();
         app.MapScenarioEndpoints();
+        app.MapPerformanceEndpoints();
         app.MapGuidanceEndpoints();
         app.MapSettingsEndpoints();
         app.MapWritingEndpoints();

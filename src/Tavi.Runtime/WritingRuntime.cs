@@ -1,3 +1,4 @@
+using Tavi.Application;
 using Tavi.Application.Writing;
 using Tavi.Infrastructure.Persistence;
 
@@ -7,6 +8,7 @@ namespace Tavi.Runtime;
 public sealed class WritingRuntime : IHostedService, IAsyncDisposable
 {
     private readonly IConfiguration _configuration;
+    private readonly WritingEventBroker _events;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly object _disposeSync = new();
     private JsonFileManuscriptStore? _store;
@@ -17,7 +19,13 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
     private bool _disposed;
 
     /// <summary>创建使用指定 Host 配置的 Writing 运行时。</summary>
-    public WritingRuntime(IConfiguration configuration) => _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+    public WritingRuntime(
+        IConfiguration configuration,
+        WritingEventBroker events)
+    {
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _events = events ?? throw new ArgumentNullException(nameof(events));
+    }
 
     /// <summary>创建专用手稿存储并恢复上次未归档的活动手稿。</summary>
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -33,6 +41,8 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
         _workspace = session;
         _lifecycle = session;
         _beatPublisher = session;
+        _lifecycle.Changed += OnWritingChanged;
+        _lifecycle.StateChanged += OnWritingStateChanged;
     }
 
     /// <summary>停止运行时并刷新未保存的活动手稿。</summary>
@@ -84,10 +94,43 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
     {
         _disposed = true;
         if (_lifecycle is not null)
+        {
+            _lifecycle.Changed -= OnWritingChanged;
+            _lifecycle.StateChanged -= OnWritingStateChanged;
             await _lifecycle.DisposeAsync();
+        }
         _store?.Dispose();
         _accessGate.Dispose();
     }
     private IWritingWorkspace RequireWorkspace() => _workspace ?? throw new InvalidOperationException("Writing 运行时尚未初始化。");
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+
+    private void OnWritingChanged(
+        object? sender,
+        WritingSessionChangedEventArgs eventArgs)
+    {
+        WritingSnapshot snapshot = RequireWorkspace().Queries.CreateSnapshot();
+        _events.Publish(new WritingRuntimeEvent(
+            "writing.changed",
+            eventArgs.Commit.StateId,
+            snapshot.IsDirty,
+            eventArgs.Commit.CommitId,
+            eventArgs.Operation,
+            null));
+    }
+
+    private void OnWritingStateChanged(
+        object? sender,
+        SessionStateChangedEventArgs eventArgs)
+    {
+        Guid stateId = _workspace?.Queries.CreateSnapshot().Manuscript?.StateId
+            ?? Guid.Empty;
+        _events.Publish(new WritingRuntimeEvent(
+            $"writing.{RuntimeEventNames.ToKebabCase(eventArgs.Change.ToString())}",
+            stateId,
+            eventArgs.IsDirty,
+            null,
+            null,
+            eventArgs.Exception?.Message));
+    }
 }

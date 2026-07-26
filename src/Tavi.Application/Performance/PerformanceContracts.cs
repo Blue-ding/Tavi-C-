@@ -16,19 +16,22 @@ public sealed record PerformanceCommitResult(Guid CommitId, Guid PreviousStateId
 
 public sealed class PerformanceSessionChangedEventArgs : EventArgs
 {
-    public PerformanceSessionChangedEventArgs(Guid performanceId, PerformanceCommitResult commit)
+    public PerformanceSessionChangedEventArgs(Guid performanceId, PerformanceCommitResult commit, string operation)
     {
         if (performanceId == Guid.Empty)
             throw new ArgumentException("Performance 标识不能为空。", nameof(performanceId));
         ArgumentNullException.ThrowIfNull(commit);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
         if (!commit.Changed)
             throw new ArgumentException("未变化提交不能产生 Changed 事件。", nameof(commit));
         PerformanceId = performanceId;
         Commit = commit;
+        Operation = operation;
     }
 
     public Guid PerformanceId { get; }
     public PerformanceCommitResult Commit { get; }
+    public string Operation { get; }
 }
 
 /// <summary>定义唯一活动 Performance 快照及历史记录的持久化端口。</summary>
@@ -60,6 +63,7 @@ public interface IPerformanceWorkspace
 public interface IPerformanceSessionLifecycle : IAsyncDisposable
 {
     event EventHandler<PerformanceSessionChangedEventArgs>? Changed;
+    event EventHandler<SessionStateChangedEventArgs>? StateChanged;
     Task InitializeAsync(CancellationToken cancellationToken = default);
     Task FlushAsync(CancellationToken cancellationToken = default);
 }

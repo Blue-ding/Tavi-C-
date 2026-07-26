@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Tavi.Application.Scenario;
 using Tavi.Extensibility;
 using Tavi.Host.Mapping;
@@ -8,6 +9,9 @@ namespace Tavi.Host.Endpoints;
 
 internal static class ScenarioEndpoints
 {
+    private static readonly JsonSerializerOptions EventJsonOptions =
+        new(JsonSerializerDefaults.Web);
+
     internal static IEndpointRouteBuilder MapScenarioEndpoints(this IEndpointRouteBuilder endpoints)
     {
         RouteGroupBuilder scenario = endpoints.MapGroup("/api/v1/scenario");
@@ -25,6 +29,7 @@ internal static class ScenarioEndpoints
         scenario.MapPost("/undo", UndoAsync);
         scenario.MapPost("/redo", RedoAsync);
         scenario.MapPost("/save", SaveAsync);
+        scenario.MapGet("/events", StreamEventsAsync);
         return endpoints;
     }
 
@@ -82,4 +87,32 @@ internal static class ScenarioEndpoints
         _ = operation(workspace.Commands);
         return ScenarioViewModelMapper.ToWorkspace(workspace, await workspace.Queries.GetSceneDefinitionsAsync(0, cancellationToken));
     }, cancellationToken);
+
+    private static async Task StreamEventsAsync(
+        HttpContext context,
+        ScenarioEventBroker broker,
+        CancellationToken cancellationToken)
+    {
+        context.Response.Headers.ContentType = "text/event-stream";
+        context.Response.Headers.CacheControl = "no-cache";
+        context.Response.Headers.Connection = "keep-alive";
+        await foreach (ScenarioRuntimeEvent runtimeEvent in
+            broker.SubscribeAsync(cancellationToken))
+        {
+            var viewModel = new ScenarioEventViewModel(
+                runtimeEvent.Type,
+                runtimeEvent.StateId,
+                runtimeEvent.IsDirty,
+                runtimeEvent.CommitId,
+                runtimeEvent.Operation,
+                runtimeEvent.Error);
+            await context.Response.WriteAsync(
+                $"event: {viewModel.Type}\n",
+                cancellationToken);
+            await context.Response.WriteAsync(
+                $"data: {JsonSerializer.Serialize(viewModel, EventJsonOptions)}\n\n",
+                cancellationToken);
+            await context.Response.Body.FlushAsync(cancellationToken);
+        }
+    }
 }

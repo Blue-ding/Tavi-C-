@@ -63,3 +63,12 @@ public sealed record UpdateParagraphRequest(Guid ExpectedStateId, string Text);
 /// <summary>表示依赖当前手稿状态的操作请求。</summary>
 /// <param name="ExpectedStateId">调用方观察到的活动手稿状态。</param>
 public sealed record WritingStateRequest(Guid ExpectedStateId);
+
+/// <summary>表示推送给前端的 Writing 状态事件。</summary>
+public sealed record WritingEventViewModel(
+    string Type,
+    Guid StateId,
+    bool IsDirty,
+    Guid? CommitId,
+    string? Operation,
+    string? Error);

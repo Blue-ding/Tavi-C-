@@ -1,3 +1,4 @@
+using Tavi.Application;
 using Tavi.Application.Performance;
 using Tavi.Domain.Performance;
 using Tavi.Extensibility;
@@ -12,6 +13,7 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
     private readonly ExtensionRuntime _extensions;
     private readonly WritingRuntime _writing;
     private readonly LanguageModelRuntime _languageModels;
+    private readonly PerformanceEventBroker _events;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly object _disposeSync = new();
     private JsonFilePerformanceStore? _store;
@@ -24,12 +26,14 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
         IConfiguration configuration,
         ExtensionRuntime extensions,
         WritingRuntime writing,
-        LanguageModelRuntime languageModels)
+        LanguageModelRuntime languageModels,
+        PerformanceEventBroker events)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
         _writing = writing ?? throw new ArgumentNullException(nameof(writing));
         _languageModels = languageModels ?? throw new ArgumentNullException(nameof(languageModels));
+        _events = events ?? throw new ArgumentNullException(nameof(events));
     }
 
     public bool HasSession => _workspace is not null;
@@ -81,7 +85,15 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
             {
                 await session.InitializeAsync(cancellationToken);
                 Attach(session);
-                return session.Queries.CreateSnapshot();
+                PerformanceSnapshot snapshot = session.Queries.CreateSnapshot();
+                _events.Publish(new PerformanceRuntimeEvent(
+                    "performance.started",
+                    snapshot.StateId,
+                    session.IsDirty,
+                    null,
+                    nameof(StartPerformanceAsync),
+                    null));
+                return snapshot;
             }
             catch
             {
@@ -138,8 +150,52 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
             await workspace.Commands.SaveAsync(cancellationToken);
             PerformanceSnapshot snapshot = workspace.Queries.CreateSnapshot();
             await RequireStore().ArchiveAsync(snapshot, cancellationToken);
+            _events.Publish(new PerformanceRuntimeEvent(
+                "performance.archived",
+                snapshot.StateId,
+                false,
+                null,
+                nameof(ArchiveEndedAsync),
+                null));
             await DetachAsync();
             return snapshot;
+        }
+        finally
+        {
+            _accessGate.Release();
+        }
+    }
+
+    /// <summary>列出全部已归档 Performance 的独立快照。</summary>
+    public async Task<IReadOnlyList<PerformanceSnapshot>> ListArchivedAsync(
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        await _accessGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await RequireStore().ListArchivedAsync(cancellationToken);
+        }
+        finally
+        {
+            _accessGate.Release();
+        }
+    }
+
+    /// <summary>读取指定已归档 Performance；不存在时返回空。</summary>
+    public async Task<PerformanceSnapshot?> LoadArchivedAsync(
+        Guid performanceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (performanceId == Guid.Empty)
+            throw new ArgumentException("Performance 标识不能为空。", nameof(performanceId));
+        ThrowIfDisposed();
+        await _accessGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await RequireStore().LoadArchivedAsync(
+                performanceId,
+                cancellationToken);
         }
         finally
         {
@@ -173,14 +229,48 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
     {
         _workspace = session;
         _lifecycle = session;
+        _lifecycle.Changed += OnPerformanceChanged;
+        _lifecycle.StateChanged += OnPerformanceStateChanged;
     }
 
     private async Task DetachAsync()
     {
         if (_lifecycle is not null)
+        {
+            _lifecycle.Changed -= OnPerformanceChanged;
+            _lifecycle.StateChanged -= OnPerformanceStateChanged;
             await _lifecycle.DisposeAsync();
+        }
         _workspace = null;
         _lifecycle = null;
+    }
+
+    private void OnPerformanceChanged(
+        object? sender,
+        PerformanceSessionChangedEventArgs eventArgs)
+    {
+        IPerformanceWorkspace workspace = RequireWorkspace();
+        _events.Publish(new PerformanceRuntimeEvent(
+            "performance.changed",
+            eventArgs.Commit.StateId,
+            workspace.IsDirty,
+            eventArgs.Commit.CommitId,
+            eventArgs.Operation,
+            null));
+    }
+
+    private void OnPerformanceStateChanged(
+        object? sender,
+        SessionStateChangedEventArgs eventArgs)
+    {
+        Guid stateId = _workspace?.StateId ?? Guid.Empty;
+        _events.Publish(new PerformanceRuntimeEvent(
+            $"performance.{RuntimeEventNames.ToKebabCase(eventArgs.Change.ToString())}",
+            stateId,
+            eventArgs.IsDirty,
+            null,
+            null,
+            eventArgs.Exception?.Message));
     }
 
     private JsonFilePerformanceStore RequireStore() => _store ?? throw new InvalidOperationException("Performance 运行时尚未初始化。");

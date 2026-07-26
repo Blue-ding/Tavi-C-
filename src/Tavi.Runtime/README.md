@@ -1,7 +1,7 @@
 # Tavi.Runtime 运行期约定
 
 `Tavi.Runtime` 持有一个 Tavi 进程中的活动 Session、持久化 Adapter、并发访问和生命周期，
-并协调 World、Scenario、Guidance、Writing 与 Extension。
+并协调 World、Scenario、Performance、Guidance、Writing 与 Extension。
 
 ## 依赖约定
 
@@ -21,6 +21,11 @@
   至多存在一个 Performance Session，但已结束 Performance 可以保留为历史记录。
 - `ScenarioRuntime` 与 `WritingRuntime` 同样仅通过各自的 `I*SessionLifecycle`
   管理 Session，并通过 `I*Workspace` 向上层 Adapter 提供业务能力。
+- World、Scenario、Performance 与 Writing 的提交及持久化状态事件统一为
+  `type/stateId/isDirty/commitId/operation/error` 形状；各模块 EventBroker 共用
+  有界、丢弃最旧事件的进程内扇出实现。
+- Runtime 事件只用于提示 Adapter 重新读取权威工作区；事件流不承担持久化或
+  完整状态重放。
 - `WritingRuntime` 另向 `PerformanceRuntime` 暴露最小的 `IBeatPublisher` 能力，
   不授予活动手稿编辑或归档库管理权限。
 - `ScenarioPerformanceRuntime` 统一采用 Scenario 后 Performance 的锁顺序，从

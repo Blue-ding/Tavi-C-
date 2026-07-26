@@ -45,6 +45,30 @@ public sealed record WritingSnapshot
 /// <param name="Changed">提交是否实际改变手稿。</param>
 public sealed record WritingCommitResult(Guid CommitId, Guid PreviousStateId, Guid StateId, bool Changed);
 
+/// <summary>提供 Writing 原子提交后的独立通知数据。</summary>
+public sealed class WritingSessionChangedEventArgs : EventArgs
+{
+    public WritingSessionChangedEventArgs(
+        Guid manuscriptId,
+        WritingCommitResult commit,
+        string operation)
+    {
+        if (manuscriptId == Guid.Empty)
+            throw new ArgumentException("Manuscript 标识不能为空。", nameof(manuscriptId));
+        ArgumentNullException.ThrowIfNull(commit);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
+        if (!commit.Changed)
+            throw new ArgumentException("未变化提交不能产生 Changed 事件。", nameof(commit));
+        ManuscriptId = manuscriptId;
+        Commit = commit;
+        Operation = operation;
+    }
+
+    public Guid ManuscriptId { get; }
+    public WritingCommitResult Commit { get; }
+    public string Operation { get; }
+}
+
 /// <summary>描述 Beat 正文的幂等发布结果。</summary>
 public sealed record BeatPublicationResult(Guid ManuscriptId, Guid ManuscriptStateId, bool AlreadyPublished);
 
@@ -68,6 +92,12 @@ public interface IWritingWorkspace
 /// <summary>定义 Runtime 管理 Writing Session 恢复和最终刷新的生命周期角色。</summary>
 public interface IWritingSessionLifecycle : IAsyncDisposable
 {
+    /// <summary>在一次原子正文提交完成且锁已释放后触发。</summary>
+    event EventHandler<WritingSessionChangedEventArgs>? Changed;
+
+    /// <summary>在脏状态或保存状态发生变化后触发。</summary>
+    event EventHandler<SessionStateChangedEventArgs>? StateChanged;
+
     /// <summary>从持久化存储恢复唯一活动手稿；同一 Session 实例只能初始化一次。</summary>
     Task InitializeAsync(CancellationToken cancellationToken = default);
 

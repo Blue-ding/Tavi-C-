@@ -134,7 +134,7 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     private void OnWorldStateChanged(object? sender, WorldBuildStateChangedEventArgs eventArgs)
     {
         Guid stateId = _workspace?.StateId ?? Guid.Empty;
-        _events.Publish(new WorldRuntimeEvent($"world.{ToKebabCase(eventArgs.Change.ToString())}", stateId, eventArgs.IsDirty, null, null, eventArgs.Exception?.Message));
+        _events.Publish(new WorldRuntimeEvent($"world.{RuntimeEventNames.ToKebabCase(eventArgs.Change.ToString())}", stateId, eventArgs.IsDirty, null, null, eventArgs.Exception?.Message));
     }
 
     private IWorldBuildWorkspace RequireWorkspace() => _workspace ?? throw new InvalidOperationException("世界运行时尚未初始化。");
@@ -145,16 +145,4 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    private static string ToKebabCase(string value)
-    {
-        var characters = new List<char>(value.Length + 4);
-        for (int index = 0; index < value.Length; index++)
-        {
-            char character = value[index];
-            if (index > 0 && char.IsUpper(character))
-                characters.Add('-');
-            characters.Add(char.ToLowerInvariant(character));
-        }
-        return new string(characters.ToArray());
-    }
 }

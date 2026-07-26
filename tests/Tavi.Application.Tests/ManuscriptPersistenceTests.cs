@@ -18,10 +18,29 @@ public sealed class ManuscriptPersistenceTests
             await using var session = new WritingSession(store);
             await session.InitializeAsync();
             Guid stateId = (await session.CreateAsync("Story")).Manuscript!.StateId;
+            var changedOperations = new List<string>();
+            var stateChanges =
+                new List<(SessionStateChange Change, bool IsDirty)>();
+            session.Changed += (_, eventArgs) =>
+                changedOperations.Add(eventArgs.Operation);
+            session.StateChanged += (_, eventArgs) =>
+                stateChanges.Add((eventArgs.Change, eventArgs.IsDirty));
             Guid performanceId = Guid.NewGuid();
             Guid beatId = Guid.NewGuid();
             session.PublishBeat(performanceId, beatId, [new BeatParagraph(Guid.NewGuid(), "Text")], stateId);
             await session.SaveAsync();
+
+            Assert.Contains("PublishBeat", changedOperations);
+            Assert.Contains(
+                (SessionStateChange.DirtyChanged, true),
+                stateChanges);
+            Assert.Contains(
+                (SessionStateChange.DirtyChanged, false),
+                stateChanges);
+            Assert.Contains(stateChanges, value =>
+                value.Change == SessionStateChange.SaveStarted);
+            Assert.Contains(stateChanges, value =>
+                value.Change == SessionStateChange.SaveCompleted);
 
             using var secondStore = new JsonFileManuscriptStore(directory);
             await using var restored = new WritingSession(secondStore);

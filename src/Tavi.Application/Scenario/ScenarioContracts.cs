@@ -27,16 +27,21 @@ public sealed record ScenarioCommitResult(Guid CommitId, Guid PreviousStateId, G
 public sealed class ScenarioSessionChangedEventArgs : EventArgs
 {
     /// <summary>创建一次已提交变化的通知数据。</summary>
-    public ScenarioSessionChangedEventArgs(ScenarioCommitResult commit)
+    public ScenarioSessionChangedEventArgs(ScenarioCommitResult commit, string operation)
     {
         ArgumentNullException.ThrowIfNull(commit);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
         if (!commit.Changed)
             throw new ArgumentException("未变化提交不能产生 Changed 事件。", nameof(commit));
         Commit = commit;
+        Operation = operation;
     }
 
     /// <summary>获取本次 Scenario 提交结果。</summary>
     public ScenarioCommitResult Commit { get; }
+
+    /// <summary>获取产生提交的 Application 操作。</summary>
+    public string Operation { get; }
 }
 
 /// <summary>定义 Scenario 快照的异步持久化边界。</summary>
@@ -82,6 +87,9 @@ public interface IScenarioSessionLifecycle : IAsyncDisposable
 {
     /// <summary>在一次 Scenario 原子提交完成且锁已释放后触发。</summary>
     event EventHandler<ScenarioSessionChangedEventArgs>? Changed;
+
+    /// <summary>在脏状态或保存状态发生变化后触发。</summary>
+    event EventHandler<SessionStateChangedEventArgs>? StateChanged;
 
     /// <summary>从 Store 初始化 Scenario；存档不存在时创建绑定指定 World StateId 的新 Scenario。</summary>
     Task InitializeAsync(CancellationToken cancellationToken = default);

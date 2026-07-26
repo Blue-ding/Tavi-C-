@@ -21,7 +21,7 @@
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
-  <Target Name="BuildWebForPublish" BeforeTargets="Publish">
+  <Target Name="BuildWebForPublish" BeforeTargets="Publish" Condition="Exists('..\Tavi.Web\package.json')">
     <!-- 发布约定：Host 始终携带由锁文件还原并重新构建的前端静态资源。 -->
     <Exec WorkingDirectory="..\Tavi.Web" Command="npm ci" />
     <Exec WorkingDirectory="..\Tavi.Web" Command="npm run build" />
