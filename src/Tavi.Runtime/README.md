@@ -14,6 +14,8 @@
 
 - `WorldRuntime` 仅通过 `IWorldSessionLifecycle` 管理 Session，并通过 `IWorldWorkspace`
   向上层 Adapter 提供活动工作区。
+- `PerformanceRuntime` 与 `WorldRuntime` 一样分别持有 Workspace 和 Lifecycle；进程内
+  至多存在一个 Performance Session，但已结束 Performance 可以保留为历史记录。
 - `ScenarioRuntime` 与 `WritingRuntime` 的 `ExecuteAsync` seam 暂时仍接受各自的
   `I*Service` 操作，以保持迁移行为不变。
 - 不为 Runtime 创建与现有 `I*Service` 一一对应的转发接口。

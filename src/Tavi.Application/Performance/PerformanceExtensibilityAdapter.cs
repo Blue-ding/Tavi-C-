@@ -16,7 +16,20 @@ internal static class PerformanceExtensibilityAdapter
         return new PerformanceSnapshot
         {
             SourceScenarioStateId = context.ScenarioStateId,
-            SourceSceneId = context.Scene.Id,
+            SourceScene = new PerformanceSourceScene
+            {
+                Id = context.Scene.Id,
+                DefinitionId = context.Scene.DefinitionId.Value,
+                ModuleId = context.Scene.Module.Value,
+                ModuleVersion = context.Scene.ModuleVersion.Value,
+                BasedOnScenarioStateId = context.Scene.BasedOnScenarioStateId,
+                State = context.Scene.State,
+                Bindings = context.Scene.Bindings.Select(value => new PerformanceSourceSceneBinding(value.SlotId, value.ElementIds)).ToArray(),
+                Elements = context.Elements.Select(value => new Element(value.Id, value.Name, value.Description, new ElementType(value.Type.Value))).ToArray(),
+                Scopes = context.Scopes.Select(value => new Scope(value.Id, value.Quantity, new ScopeType(value.Type.Value), value.OwnerElementId)).ToArray(),
+                Aspects = context.Aspects.Select(value => new Aspect(value.Id, value.Quantity, new AspectType(value.Type.Value), value.ElementId, value.ScopeId)).ToArray(),
+                Relations = context.Relations.Select(value => new Relation(value.Id, value.Quantity, new RelationType(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId)).ToArray()
+            },
             Modules = [new PerformanceModuleReference(module.Value, context.Scene.ModuleVersion.Value, parameters)],
             ImportedElementIds = context.Elements.Select(value => value.Id).ToHashSet(),
             Elements = context.Elements.ToDictionary(value => value.Id, value => new Element(value.Id, value.Name, value.Description, new ElementType(value.Type.Value))),
@@ -60,9 +73,10 @@ internal static class PerformanceExtensibilityAdapter
     {
         internal SnapshotView(PerformanceSnapshot snapshot)
         {
-            StateId = snapshot.Id;
+            Id = snapshot.PerformanceId;
+            StateId = snapshot.StateId;
             SourceScenarioStateId = snapshot.SourceScenarioStateId;
-            SourceSceneId = snapshot.SourceSceneId;
+            SourceSceneId = snapshot.SourceScene.Id;
             Status = snapshot.Status.ToString();
             Elements = snapshot.Elements.Values.Select(value => new ElementView(value.Id, value.Name, value.Description, new SemanticKey(value.Type.Value))).ToArray();
             Scopes = snapshot.Scopes.Values.Select(value => new ScopeView(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.OwnerElementId)).ToArray();
@@ -71,6 +85,7 @@ internal static class PerformanceExtensibilityAdapter
             Beats = snapshot.Beats.Values.Select(PerformanceExtensibilityAdapter.ToView).ToArray();
         }
 
+        public Guid Id { get; }
         public Guid StateId { get; }
         public Guid SourceScenarioStateId { get; }
         public Guid SourceSceneId { get; }
@@ -80,5 +95,27 @@ internal static class PerformanceExtensibilityAdapter
         public IReadOnlyCollection<AspectView> Aspects { get; }
         public IReadOnlyCollection<RelationView> Relations { get; }
         public IReadOnlyCollection<PerformanceBeatView> Beats { get; }
+    }
+
+    internal static SceneContextView ToSourceSceneContext(PerformanceSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        PerformanceSourceScene scene = snapshot.SourceScene;
+        return new SceneContextView
+        {
+            ScenarioStateId = snapshot.SourceScenarioStateId,
+            Scene = new ScenarioSceneView(
+                scene.Id,
+                new SemanticKey(scene.DefinitionId),
+                new ModuleId(scene.ModuleId),
+                new ModuleVersion(scene.ModuleVersion),
+                scene.BasedOnScenarioStateId,
+                scene.State,
+                scene.Bindings.Select(value => new SceneSlotBindingView(value.SlotId, value.ElementIds)).ToArray()),
+            Elements = scene.Elements.Select(value => new ElementView(value.Id, value.Name, value.Description, new SemanticKey(value.Type.Value))).ToArray(),
+            Scopes = scene.Scopes.Select(value => new ScopeView(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.OwnerElementId)).ToArray(),
+            Aspects = scene.Aspects.Select(value => new AspectView(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.ElementId, value.ScopeId)).ToArray(),
+            Relations = scene.Relations.Select(value => new RelationView(value.Id, value.Quantity, new SemanticKey(value.Type.Value), value.SourceElementId, value.TargetElementId, value.ScopeId)).ToArray()
+        };
     }
 }

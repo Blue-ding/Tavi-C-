@@ -48,8 +48,15 @@ public sealed record WritingCommitResult(Guid CommitId, Guid PreviousStateId, Gu
 /// <summary>描述 Beat 正文的幂等发布结果。</summary>
 public sealed record BeatPublicationResult(Guid ManuscriptId, Guid ManuscriptStateId, bool AlreadyPublished);
 
+/// <summary>定义 Performance 将已解决 Beat 幂等发布到当前活动手稿所需的最小能力。</summary>
+public interface IBeatPublisher
+{
+    /// <summary>把已解决 Beat 的稳定段落幂等追加到活动 Manuscript。</summary>
+    BeatPublicationResult PublishBeat(Guid performanceId, Guid beatId, IReadOnlyList<BeatParagraph> paragraphs, Guid expectedStateId);
+}
+
 /// <summary>定义单活动手稿、归档库、编辑历史和持久化的 Application 服务。</summary>
-public interface IWritingService : IAsyncDisposable
+public interface IWritingService : IBeatPublisher, IAsyncDisposable
 {
     /// <summary>从持久化存储恢复唯一活动手稿；同一服务实例只能初始化一次。</summary>
     Task InitializeAsync(CancellationToken cancellationToken = default);
@@ -77,9 +84,6 @@ public interface IWritingService : IAsyncDisposable
 
     /// <summary>原子提交一项操作，供不需要展示暂存区的段落编辑界面使用。</summary>
     WritingCommitResult Apply(ManuscriptOperation operation, Guid expectedStateId, WritingChangeSource source = WritingChangeSource.Player);
-
-    /// <summary>把已解决 Beat 的稳定段落幂等追加到活动 Manuscript；重复 BeatId 返回原发布结果。</summary>
-    BeatPublicationResult PublishBeat(Guid performanceId, Guid beatId, IReadOnlyList<BeatParagraph> paragraphs, Guid expectedStateId);
 
     /// <summary>撤销最近一次已提交修改；撤销本身会生成新的状态标识。</summary>
     WritingCommitResult Undo(Guid expectedStateId);

@@ -65,6 +65,9 @@ public sealed class WritingRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <summary>向同一 Runtime 内的 Performance 暴露最小 Beat 发布能力。</summary>
+    internal IBeatPublisher BeatPublisher => RequireService();
+
     /// <summary>释放会话、文件存储和运行时访问锁。</summary>
     public ValueTask DisposeAsync()
     {

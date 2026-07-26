@@ -1,7 +1,12 @@
 using Tavi.Domain.Performance;
-using Tavi.Extensibility;
 
 namespace Tavi.Application.Performance;
+
+public enum PerformanceSessionHealth
+{
+    Healthy,
+    Faulted
+}
 
 public sealed record PerformanceCommitResult(Guid CommitId, Guid PreviousStateId, Guid StateId, AppliedPerformanceChangeSet? ChangeSet)
 {
@@ -9,28 +14,52 @@ public sealed record PerformanceCommitResult(Guid CommitId, Guid PreviousStateId
     public static PerformanceCommitResult Unchanged(Guid stateId) => new(Guid.Empty, stateId, stateId, null);
 }
 
-/// <summary>定义单个 Processing Scene 的临时 Performance 演绎接口。</summary>
-public interface IPerformanceService
+public sealed class PerformanceSessionChangedEventArgs : EventArgs
 {
+    public PerformanceSessionChangedEventArgs(Guid performanceId, PerformanceCommitResult commit)
+    {
+        if (performanceId == Guid.Empty)
+            throw new ArgumentException("Performance 标识不能为空。", nameof(performanceId));
+        ArgumentNullException.ThrowIfNull(commit);
+        if (!commit.Changed)
+            throw new ArgumentException("未变化提交不能产生 Changed 事件。", nameof(commit));
+        PerformanceId = performanceId;
+        Commit = commit;
+    }
+
+    public Guid PerformanceId { get; }
+    public PerformanceCommitResult Commit { get; }
+}
+
+/// <summary>定义唯一活动 Performance 快照及历史记录的持久化端口。</summary>
+public interface IPerformanceStore
+{
+    Task<PerformanceSnapshot?> LoadActiveAsync(CancellationToken cancellationToken = default);
+    Task SaveActiveAsync(PerformanceSnapshot snapshot, CancellationToken cancellationToken = default);
+    Task ArchiveAsync(PerformanceSnapshot snapshot, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PerformanceSnapshot>> ListArchivedAsync(CancellationToken cancellationToken = default);
+    Task<PerformanceSnapshot?> LoadArchivedAsync(Guid performanceId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>定义调用方可查询和推进的唯一活动 Performance 工作区。</summary>
+public interface IPerformanceWorkspace
+{
+    Guid Id { get; }
     Guid StateId { get; }
     PerformanceStatus Status { get; }
+    PerformanceSessionHealth Health { get; }
+    bool IsDirty { get; }
+    bool CanUndo { get; }
+    bool CanRedo { get; }
+    Exception? LastAutoSaveException { get; }
+    PerformanceQueries Queries { get; }
+    PerformanceCommands Commands { get; }
+}
 
-    /// <summary>导入冻结 Scene 上下文并应用所属 Module 的 Performance 展开规则。</summary>
-    Task InitializeAsync(long randomSeed, CancellationToken cancellationToken = default);
-    PerformanceSnapshot GetSnapshot();
-    Task<IReadOnlyList<BeatDefinition>> GetBeatDefinitionsAsync(long randomSeed, CancellationToken cancellationToken = default);
-    PerformanceCommitResult CreateBeat(BeatDefinition definition, Guid expectedStateId);
-    PerformanceCommitResult SetBeatBinding(Guid beatId, string slotId, IReadOnlyList<Guid> elementIds, Guid expectedStateId);
-    PerformanceCommitResult ClearBeatBinding(Guid beatId, string slotId, Guid expectedStateId);
-    PerformanceCommitResult BeginBeatProcessing(Guid beatId, Guid expectedStateId);
-    Task<PerformanceCommitResult> ResolveBeatAsync(Guid beatId, string interaction, long randomSeed, Guid expectedStateId, CancellationToken cancellationToken = default);
-
-    /// <summary>幂等发布 Resolved Beat 的正文，并在成功后标记为 Published。</summary>
-    PerformanceCommitResult PublishBeat(Guid beatId, Guid expectedStateId, Guid expectedManuscriptStateId);
-
-    /// <summary>让 Module 根据完整 Performance 生成 Scene 的局部结算提案；不会自行修改 Scenario。</summary>
-    Task<SceneSettlementProposal> PrepareSettlementAsync(CancellationToken cancellationToken = default);
-    /// <summary>仅在调用方已成功把准备好的提案提交给 Scenario 后确认 Performance 完成。</summary>
-    PerformanceCommitResult Complete(Guid expectedStateId);
-    PerformanceCommitResult Abandon(Guid expectedStateId);
+/// <summary>定义 Runtime 管理 Performance Session 恢复、通知和最终刷新的生命周期角色。</summary>
+public interface IPerformanceSessionLifecycle : IAsyncDisposable
+{
+    event EventHandler<PerformanceSessionChangedEventArgs>? Changed;
+    Task InitializeAsync(CancellationToken cancellationToken = default);
+    Task FlushAsync(CancellationToken cancellationToken = default);
 }

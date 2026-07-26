@@ -165,7 +165,16 @@ public sealed class PerformanceTests
         Guid scenarioStateId = Guid.NewGuid();
         return PerformanceAggregate.Create(new PerformanceSnapshot
         {
-            SourceSceneId = sceneId,
+            SourceScene = new PerformanceSourceScene
+            {
+                Id = sceneId,
+                DefinitionId = "test.scene",
+                ModuleId = "test",
+                ModuleVersion = "1.0.0",
+                BasedOnScenarioStateId = scenarioStateId,
+                State = "Processing",
+                Elements = elements
+            },
             SourceScenarioStateId = scenarioStateId,
             Elements = elements.ToDictionary(value => value.Id),
             ImportedElementIds = elements.Select(value => value.Id).ToHashSet()

@@ -14,9 +14,10 @@ public sealed class Performance
         return new Performance(snapshot);
     }
 
-    public Guid StateId => _data.Id;
+    public Guid Id => _data.PerformanceId;
+    public Guid StateId => _data.StateId;
     public Guid SourceScenarioStateId => _data.SourceScenarioStateId;
-    public Guid SourceSceneId => _data.SourceSceneId;
+    public Guid SourceSceneId => _data.SourceScene.Id;
     public PerformanceStatus Status => _data.Status;
     public PerformanceSnapshot CreateSnapshot() => CloneSnapshot(_data);
     public Element GetElement(Guid id) => Clone(GetElementCore(id, nameof(GetElement)));
@@ -55,7 +56,7 @@ public sealed class Performance
         if (!changed)
             return PerformanceApplyResult.Unchanged(StateId);
         Guid previous = StateId;
-        _data.Id = Guid.NewGuid();
+        _data.StateId = Guid.NewGuid();
         return new PerformanceApplyResult(previous, StateId, new AppliedPerformanceChangeSet(changeSet, new PerformanceChangeSet([new RestorePerformanceSnapshotOperation(before)])));
     }
 
@@ -421,8 +422,28 @@ public sealed class Performance
     private static void ValidateSnapshot(PerformanceSnapshot snapshot)
     {
         var errors = new List<string>();
-        if (snapshot.Id == Guid.Empty || snapshot.SourceScenarioStateId == Guid.Empty || snapshot.SourceSceneId == Guid.Empty)
+        if (snapshot.PerformanceId == Guid.Empty || snapshot.StateId == Guid.Empty || snapshot.SourceScenarioStateId == Guid.Empty || snapshot.SourceScene is null || snapshot.SourceScene.Id == Guid.Empty)
             errors.Add("Performance、Scenario 和 Scene 标识均不能为空。");
+        if (snapshot.SourceScene is not null)
+        {
+            if (string.IsNullOrWhiteSpace(snapshot.SourceScene.DefinitionId) ||
+                string.IsNullOrWhiteSpace(snapshot.SourceScene.ModuleId) ||
+                string.IsNullOrWhiteSpace(snapshot.SourceScene.ModuleVersion) ||
+                snapshot.SourceScene.BasedOnScenarioStateId == Guid.Empty ||
+                string.IsNullOrWhiteSpace(snapshot.SourceScene.State))
+                errors.Add("Performance 来源 Scene 身份不完整。");
+            if (snapshot.SourceScene.Bindings.Select(value => value.SlotId).Distinct(StringComparer.Ordinal).Count() != snapshot.SourceScene.Bindings.Count)
+                errors.Add("Performance 来源 Scene 包含重复槽位。");
+            HashSet<Guid> sourceElementIds = snapshot.SourceScene.Elements.Select(value => value.Id).ToHashSet();
+            HashSet<Guid> sourceScopeIds = snapshot.SourceScene.Scopes.Select(value => value.Id).ToHashSet();
+            if (sourceElementIds.Count != snapshot.SourceScene.Elements.Count ||
+                sourceScopeIds.Count != snapshot.SourceScene.Scopes.Count ||
+                snapshot.SourceScene.Bindings.SelectMany(value => value.ElementIds).Any(value => !sourceElementIds.Contains(value)) ||
+                snapshot.SourceScene.Scopes.Any(value => !sourceElementIds.Contains(value.OwnerElementId)) ||
+                snapshot.SourceScene.Aspects.Any(value => !sourceElementIds.Contains(value.ElementId) || !sourceScopeIds.Contains(value.ScopeId)) ||
+                snapshot.SourceScene.Relations.Any(value => !sourceElementIds.Contains(value.SourceElementId) || !sourceElementIds.Contains(value.TargetElementId) || !sourceScopeIds.Contains(value.ScopeId)))
+                errors.Add("Performance 来源 Scene 的冻结 EARS 图不完整。");
+        }
         if (!Enum.IsDefined(snapshot.Status))
             errors.Add("PerformanceStatus 无效。");
         foreach ((Guid id, Scope scope) in snapshot.Scopes)
@@ -462,9 +483,10 @@ public sealed class Performance
     private void Restore(PerformanceSnapshot snapshot)
     {
         PerformanceSnapshot copy = CloneSnapshot(snapshot);
-        _data.Id = copy.Id;
+        _data.PerformanceId = copy.PerformanceId;
+        _data.StateId = copy.StateId;
         _data.SourceScenarioStateId = copy.SourceScenarioStateId;
-        _data.SourceSceneId = copy.SourceSceneId;
+        _data.SourceScene = copy.SourceScene;
         _data.Status = copy.Status;
         Replace(_data.Modules, copy.Modules);
         _data.ImportedElementIds = copy.ImportedElementIds;
@@ -477,9 +499,10 @@ public sealed class Performance
 
     private static PerformanceSnapshot CloneSnapshot(PerformanceSnapshot source) => new()
     {
-        Id = source.Id,
+        PerformanceId = source.PerformanceId,
+        StateId = source.StateId,
         SourceScenarioStateId = source.SourceScenarioStateId,
-        SourceSceneId = source.SourceSceneId,
+        SourceScene = Clone(source.SourceScene),
         Status = source.Status,
         Modules = source.Modules.Select(value => new PerformanceModuleReference(value.Id, value.Version, value.Parameters)).ToList(),
         ImportedElementIds = source.ImportedElementIds.ToHashSet(),
@@ -491,6 +514,20 @@ public sealed class Performance
     };
 
     private static Beat Clone(Beat value) => new(value.Id, value.DefinitionId, value.ModuleId, value.ModuleVersion, value.BasedOnPerformanceStateId, value.Name, value.Description, value.State, value.GetSlotSpecifications(), value.GetBindings(), value.Paragraphs, value.Publication);
+    private static PerformanceSourceScene Clone(PerformanceSourceScene value) => new()
+    {
+        Id = value.Id,
+        DefinitionId = value.DefinitionId,
+        ModuleId = value.ModuleId,
+        ModuleVersion = value.ModuleVersion,
+        BasedOnScenarioStateId = value.BasedOnScenarioStateId,
+        State = value.State,
+        Bindings = value.Bindings.Select(binding => new PerformanceSourceSceneBinding(binding.SlotId, binding.ElementIds)).ToArray(),
+        Elements = value.Elements.Select(Clone).ToArray(),
+        Scopes = value.Scopes.Select(Clone).ToArray(),
+        Aspects = value.Aspects.Select(Clone).ToArray(),
+        Relations = value.Relations.Select(Clone).ToArray()
+    };
     private static Element Clone(Element value) => new(value.Id, value.Name, value.Description, value.Type);
     private static Scope Clone(Scope value) => new(value.Id, value.Quantity, value.Type, value.OwnerElementId);
     private static Aspect Clone(Aspect value) => new(value.Id, value.Quantity, value.Type, value.ElementId, value.ScopeId);

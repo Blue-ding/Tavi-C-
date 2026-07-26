@@ -41,12 +41,21 @@ public sealed class TaviCore
         return new GuidanceSession(worldWorkspace, LanguageModels, Logger, extensions);
     }
 
-    /// <summary>创建从 Processing Scene 冻结上下文展开并向 Writing 发布 Beat 的 Performance 服务。</summary>
-    public IPerformanceService CreatePerformanceService(SceneContextView scene, IWritingService writing, FrozenModuleRuntime extensions)
+    /// <summary>创建、初始化并持久化从 Processing Scene 冻结上下文展开的 Performance 工作区。</summary>
+    public async Task<PerformanceSession> CreatePerformanceSessionAsync(
+        IPerformanceStore store,
+        SceneContextView scene,
+        long randomSeed,
+        IBeatPublisher beatPublisher,
+        FrozenModuleRuntime extensions,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(scene);
-        ArgumentNullException.ThrowIfNull(writing);
+        ArgumentNullException.ThrowIfNull(beatPublisher);
         ArgumentNullException.ThrowIfNull(extensions);
-        return new PerformanceSession(scene, writing, extensions);
+        var session = new PerformanceSession(store, scene, randomSeed, beatPublisher, extensions);
+        await session.InitializeAsync(cancellationToken);
+        return session;
     }
 }

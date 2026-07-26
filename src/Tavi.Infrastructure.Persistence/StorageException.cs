@@ -21,6 +21,12 @@ public static class StorageErrorCodes
     /// <summary>写入或归档手稿失败。</summary>
     public const string ManuscriptWriteFailed = "TAVI.STORAGE.MANUSCRIPT.WRITE_FAILED";
 
+    /// <summary>读取 Performance 存储失败。</summary>
+    public const string PerformanceReadFailed = "TAVI.STORAGE.PERFORMANCE.READ_FAILED";
+
+    /// <summary>写入或归档 Performance 失败。</summary>
+    public const string PerformanceWriteFailed = "TAVI.STORAGE.PERFORMANCE.WRITE_FAILED";
+
     /// <summary>读取语言模型设置失败。</summary>
     public const string LanguageModelSettingsReadFailed = "TAVI.STORAGE.LM_SETTINGS.READ_FAILED";
 

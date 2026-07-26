@@ -16,6 +16,7 @@ public sealed record PerformanceBeatView(
 /// <summary>表示与运行中 Performance 隔离的只读 Module 投影。</summary>
 public interface IPerformanceView
 {
+    Guid Id { get; }
     Guid StateId { get; }
     Guid SourceScenarioStateId { get; }
     Guid SourceSceneId { get; }
