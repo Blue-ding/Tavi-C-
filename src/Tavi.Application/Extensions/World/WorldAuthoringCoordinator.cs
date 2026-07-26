@@ -7,14 +7,22 @@ namespace Tavi.Application.Extensions.World;
 /// <summary>协调活动 Module 的 World Authoring 查询、提案验证与原子暂存。</summary>
 public sealed class WorldAuthoringCoordinator
 {
-    private readonly IWorldWorkspace _world;
+    private readonly IWorldBuildView _world;
+    private readonly IWorldBuildContributor _contributor;
     private readonly FrozenModuleRuntime _runtime;
 
-    /// <summary>创建只通过 World Application 接口工作的协调器。</summary>
-    public WorldAuthoringCoordinator(IWorldWorkspace world, FrozenModuleRuntime runtime)
+    /// <summary>创建仅持有 World 读取与提案权限的协调器。</summary>
+    public WorldAuthoringCoordinator(IWorldBuildView world, IWorldBuildContributor contributor, FrozenModuleRuntime runtime)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
+        _contributor = contributor ?? throw new ArgumentNullException(nameof(contributor));
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+    }
+
+    /// <summary>为受信任的完整工作区创建协调器。</summary>
+    public WorldAuthoringCoordinator(IWorldBuildWorkspace world, FrozenModuleRuntime runtime)
+        : this(world, world, runtime)
+    {
     }
 
     /// <summary>获取所有活动 Module 对当前 World 提供的操作。</summary>
@@ -38,7 +46,7 @@ public sealed class WorldAuthoringCoordinator
         return actions.OrderBy(action => action.Id.Value, StringComparer.Ordinal).ToArray();
     }
 
-    /// <summary>调用指定操作，验证完整候选状态，并把全部 Intent 作为一个原子暂存项写入 WorldSession。</summary>
+    /// <summary>调用指定操作，验证完整候选状态，并把全部 Intent 作为一个原子提案写入 WorldBuildSession。</summary>
     public async ValueTask<Guid> ProposeAndStageAsync(SemanticKey actionId, string arguments, WorldStagedChangeSource source = WorldStagedChangeSource.Module, CancellationToken cancellationToken = default)
     {
         (ModuleId module, IWorldAuthoringExtension extension) = _runtime.WorldAuthoringExtensions.SingleOrDefault(value => value.Module == actionId.Namespace);
@@ -48,7 +56,7 @@ public sealed class WorldAuthoringCoordinator
         var request = new WorldAuthoringRequest { World = WorldExtensibilityAdapter.ToView(snapshot), ActionId = actionId, Arguments = arguments ?? throw new ArgumentNullException(nameof(arguments)), Parameters = _runtime.GetParameters(module) };
         WorldAuthoringProposal proposal = await Invoke(module, () => extension.ProposeAsync(request, cancellationToken));
         WorldChangeSet changeSet = WorldExtensibilityAdapter.ToChangeSet(proposal, snapshot);
-        return _world.Commands.Stage(changeSet, source);
+        return _contributor.Stage(changeSet, source, snapshot.Id);
     }
 
     private static async ValueTask<T> Invoke<T>(ModuleId module, Func<ValueTask<T>> action)

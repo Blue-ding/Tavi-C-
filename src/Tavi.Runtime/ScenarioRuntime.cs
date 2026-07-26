@@ -11,7 +11,7 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
 {
     private readonly IConfiguration _configuration;
     private readonly ExtensionRuntime _extensions;
-    private readonly WorldRuntime _world;
+    private readonly WorldCoordinator _world;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly object _disposeSync = new();
     private JsonFileScenarioStore? _store;
@@ -22,7 +22,7 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     private bool _disposed;
 
     /// <summary>创建依赖当前 World 与冻结 Module Runtime 的 Scenario 运行时。</summary>
-    public ScenarioRuntime(IConfiguration configuration, ExtensionRuntime extensions, WorldRuntime world)
+    public ScenarioRuntime(IConfiguration configuration, ExtensionRuntime extensions, WorldCoordinator world)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
@@ -36,7 +36,7 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
         string defaultDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tavi", "Saves");
         string saveDirectory = _configuration["Tavi:ScenarioDirectory"] ?? _configuration["Tavi:SaveDirectory"] ?? Environment.GetEnvironmentVariable("TAVI_SCENARIO_DIRECTORY") ?? defaultDirectory;
         _slot = _configuration["Tavi:ScenarioSlot"] ?? "default";
-        WorldSnapshot world = await _world.ExecuteAsync(workspace => workspace.Queries.CreateSnapshot(), cancellationToken);
+        WorldSnapshot world = await _world.ReadAsync(workspace => workspace.Queries.CreateSnapshot(), cancellationToken);
         _store = new JsonFileScenarioStore(saveDirectory);
         var session = new ScenarioSession(_store, _extensions.Frozen, world, _slot);
         await session.InitializeAsync(cancellationToken);

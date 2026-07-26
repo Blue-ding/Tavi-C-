@@ -24,7 +24,7 @@ internal sealed class GuidanceSession : IGuidanceService
         """;
     private const string LogCategory = "GuidanceSession";
     private readonly object _sync = new();
-    private readonly IWorldWorkspace _world;
+    private readonly WorldGuidanceCoordinator _world;
     private readonly ILanguageModelService _languageModels;
     private readonly ILogger _logger;
     private readonly FrozenModuleRuntime? _extensions;
@@ -36,15 +36,17 @@ internal sealed class GuidanceSession : IGuidanceService
     private GuidanceMessage? _retryMessage;
     private CancellationTokenSource? _activeCancellation;
     private WorldProposal? _latestProposal;
+    private Guid _baseWorldStateId;
 
     /// <summary>创建绑定到指定 World 工作区和语言模型执行器的长期 Guidance Session。</summary>
-    public GuidanceSession(IWorldWorkspace world, ILanguageModelService languageModels, ILogger? logger = null, FrozenModuleRuntime? extensions = null)
+    public GuidanceSession(WorldGuidanceCoordinator world, ILanguageModelService languageModels, ILogger? logger = null, FrozenModuleRuntime? extensions = null)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _languageModels = languageModels ?? throw new ArgumentNullException(nameof(languageModels));
         _logger = logger ?? NullLogger.Instance;
         _extensions = extensions;
-        _authoring = extensions is null ? null : new WorldAuthoringCoordinator(world, extensions);
+        _authoring = extensions is null ? null : world.CreateAuthoringCoordinator(extensions);
+        _baseWorldStateId = world.CurrentWorldStateId;
         Id = Guid.NewGuid();
     }
 
@@ -113,7 +115,7 @@ internal sealed class GuidanceSession : IGuidanceService
         }
         try
         {
-            WorldStagingCommitResult result = _world.Commands.CommitStaged(ids, _world.StateId);
+            WorldStagingCommitResult result = _world.Commit(ids);
             lock (_sync)
             {
                 string committed = string.Join(", ", result.ConsumedChangeIds);
@@ -159,6 +161,7 @@ internal sealed class GuidanceSession : IGuidanceService
             _failure = null;
             _retryMessage = null;
             _latestProposal = null;
+            _baseWorldStateId = _world.CurrentWorldStateId;
             _state = GuidanceState.Idle;
         }
     }
@@ -194,7 +197,9 @@ internal sealed class GuidanceSession : IGuidanceService
                 if (index >= 0)
                     _messages[index] = message;
             }
-            workspace = _world.CreateStagingSnapshot();
+            workspace = _world.CaptureBasis();
+            if (initial || _messages.Count == 1)
+                _baseWorldStateId = workspace.WorldStateId;
             string state = CreateWorkspaceContext(workspace);
             bool firstMessage = initial || _conversation.Messages.Count == 0;
             conversation = firstMessage ? new LanguageModelConversation { Messages = [ModelMessage.System(SystemInstruction), ModelMessage.System(state), ModelMessage.User(message.Text)] }
@@ -213,7 +218,7 @@ internal sealed class GuidanceSession : IGuidanceService
         try
         {
             ModuleCatalog catalog = _extensions?.Catalog ?? ModuleCatalog.Create([]);
-            var tools = WorldGuidanceTool.CreateQueryTools(_world).Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld, catalog)).ToList();
+            var tools = _world.CreateQueryTools().Concat(GuidanceProposalTool.CreateTools(draft, workspace.ProjectedWorld, catalog)).ToList();
             if (_extensions is not null && _authoring is not null)
             {
                 IWorldView worldView = WorldExtensibilityAdapter.ToView(workspace.ProjectedWorld);
@@ -235,24 +240,7 @@ internal sealed class GuidanceSession : IGuidanceService
             modelOperation.TextReceived += (_, text) => operation.ReportText(text);
             LanguageModelRunResult result = await modelOperation.Completion;
             WorldProposal proposal = draft.CreateProposal();
-            WorldProposal published = proposal;
-            if (proposal.Changes.Count > 0)
-            {
-                ProposalCompilationResult compilation = WorldProposalCompiler.Compile(proposal, proposal.Changes.Select(change => change.Id), _world);
-                IReadOnlyList<Guid> stagedIds = _world.Commands.Stage(compilation.ChangeSet.Operations, WorldStagedChangeSource.Guidance);
-                Dictionary<string, Guid> stagedIdsByChangeId = compilation.OperationChangeIds.Select((changeId, index) => (changeId, stagedId: stagedIds[index])).ToDictionary(item => item.changeId, item => item.stagedId, StringComparer.Ordinal);
-                ProposalChange[] changes = proposal.Changes.Select(change => change switch
-                {
-                    ProposeAddElement element => (ProposalChange)(element with { Id = stagedIdsByChangeId[element.Id].ToString() }),
-                    ProposeAddScope scope => scope with { Id = stagedIdsByChangeId[scope.Id].ToString() },
-                    ProposeAddAspect aspect => aspect with { Id = stagedIdsByChangeId[aspect.Id].ToString() },
-                    ProposeAddRelation relation => relation with { Id = stagedIdsByChangeId[relation.Id].ToString() },
-                    ProposeAddLocalAspect localAspect => localAspect with { Id = stagedIdsByChangeId[localAspect.Id].ToString() },
-                    ProposeAddLocalRelation localRelation => localRelation with { Id = stagedIdsByChangeId[localRelation.Id].ToString() },
-                    _ => throw new InvalidOperationException($"不支持的提案类型 {change.GetType().Name}。")
-                }).ToArray();
-                published = proposal with { Changes = Array.AsReadOnly(changes) };
-            }
+            WorldProposal published = _world.StageProposal(proposal);
             lock (_sync)
             {
                 _conversation = result.Conversation;
@@ -305,7 +293,7 @@ internal sealed class GuidanceSession : IGuidanceService
     {
         SessionId = Id,
         State = _state,
-        BaseWorldStateId = _world.StateId,
+        BaseWorldStateId = _baseWorldStateId,
         Messages = Array.AsReadOnly(_messages.ToArray()),
         Proposal = _latestProposal,
         Failure = _failure,

@@ -14,7 +14,7 @@ public sealed record ProposalCompilationResult(WorldChangeSet ChangeSet, IReadOn
 public static class WorldProposalCompiler
 {
     /// <summary>编译指定提案；被接受的断言必须同时接受其引用的临时 Element 和 Scope。</summary>
-    public static ProposalCompilationResult Compile(WorldProposal proposal, IEnumerable<string> acceptedChangeIds, IWorldWorkspace worldWorkspace)
+    public static ProposalCompilationResult Compile(WorldProposal proposal, IEnumerable<string> acceptedChangeIds, IWorldBuildView worldWorkspace)
     {
         ArgumentNullException.ThrowIfNull(proposal);
         ArgumentNullException.ThrowIfNull(acceptedChangeIds);

@@ -6,12 +6,12 @@ namespace Tavi.Runtime;
 /// <summary>串行协调活动 World 与 Scenario 的显式分叉和结果回写。</summary>
 public sealed class ScenarioWorldRuntime
 {
-    private readonly WorldRuntime _world;
+    private readonly WorldCoordinator _world;
     private readonly ScenarioRuntime _scenario;
     private readonly ScenarioWorldCoordinator _coordinator = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public ScenarioWorldRuntime(WorldRuntime world, ScenarioRuntime scenario)
+    public ScenarioWorldRuntime(WorldCoordinator world, ScenarioRuntime scenario)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
@@ -23,7 +23,7 @@ public sealed class ScenarioWorldRuntime
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            return await _world.ExecuteAsync(
+            return await _world.ReadAsync(
                 world => _scenario.ExecuteAsync(
                     scenario => _coordinator.GetLink(world, scenario),
                     cancellationToken),
@@ -41,7 +41,7 @@ public sealed class ScenarioWorldRuntime
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            return await _world.ExecuteAsync(async world =>
+            return await _world.ReadAsync(async world =>
             {
                 if (world.StateId != expectedWorldStateId)
                     throw new ScenarioApplicationException(ScenarioApplicationErrorCodes.StateConflict, TaviErrorCategory.Conflict, nameof(StartFromWorldAsync), $"World 状态冲突：期望 {expectedWorldStateId}，实际 {world.StateId}。");
@@ -63,8 +63,8 @@ public sealed class ScenarioWorldRuntime
         try
         {
             return await _scenario.ExecuteAsync(
-                scenario => _world.ExecuteAsync(
-                    world => _coordinator.StageOutcome(world, scenario, expectedWorldStateId, expectedScenarioStateId),
+                scenario => _world.ContributeAsync(
+                    world => _coordinator.StageOutcome(world, world, scenario, expectedWorldStateId, expectedScenarioStateId),
                     cancellationToken),
                 cancellationToken);
         }

@@ -5,12 +5,12 @@ namespace Tavi.Application.World;
 /// <summary>
 /// 提供世界会话一次原子提交的信息。
 /// </summary>
-public sealed class WorldSessionChangedEventArgs : EventArgs
+public sealed class WorldBuildChangedEventArgs : EventArgs
 {
     /// <summary>
     /// 创建世界会话变化事件参数；ChangeSet 是已确定的正向与反向操作记录。
     /// </summary>
-    public WorldSessionChangedEventArgs(Guid commitId, Guid stateId, WorldSessionOperation operation, AppliedWorldChangeSet changeSet)
+    public WorldBuildChangedEventArgs(Guid commitId, Guid stateId, WorldBuildOperation operation, AppliedWorldChangeSet changeSet)
     {
         CommitId = commitId;
         StateId = stateId;
@@ -31,7 +31,7 @@ public sealed class WorldSessionChangedEventArgs : EventArgs
     /// <summary>
     /// 获取本次提交来源。
     /// </summary>
-    public WorldSessionOperation Operation { get; }
+    public WorldBuildOperation Operation { get; }
 
     /// <summary>
     /// 获取本次提交的正向与反向操作。

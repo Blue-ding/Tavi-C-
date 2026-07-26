@@ -13,8 +13,8 @@ public enum ScenarioWorldLinkState
     /// <summary>Scenario 仍基于当前 World，可以生成回写提案。</summary>
     ReadyToPublish,
 
-    /// <summary>World 中存在其他暂存修改，必须先处理后才能回写。</summary>
-    WorldStagingPending,
+    /// <summary>World 构筑日志中存在其他来源的提案；Scenario 仍可回写并由统一日志判定是否冲突。</summary>
+    WorldBuildPending,
 
     /// <summary>当前 Scenario 的演绎结果已经进入 World 暂存区。</summary>
     OutcomeStaged,
@@ -47,7 +47,7 @@ public sealed record ScenarioWorldStageResult(
 public sealed class ScenarioWorldCoordinator
 {
     /// <summary>读取当前 World/Scenario 连接状态。</summary>
-    public ScenarioWorldLink GetLink(IWorldWorkspace world, IScenarioWorkspace scenario)
+    public ScenarioWorldLink GetLink(IWorldBuildView world, IScenarioWorkspace scenario)
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(scenario);
@@ -59,7 +59,7 @@ public sealed class ScenarioWorldCoordinator
             : staging.Changes.Any(change => change.Source == WorldStagedChangeSource.Scenario)
                 ? ScenarioWorldLinkState.OutcomeStaged
                 : staging.Changes.Count > 0
-                    ? ScenarioWorldLinkState.WorldStagingPending
+                    ? ScenarioWorldLinkState.WorldBuildPending
             : binding > 0 || processing > 0
                 ? ScenarioWorldLinkState.InProgress
                 : ScenarioWorldLinkState.ReadyToPublish;
@@ -68,20 +68,19 @@ public sealed class ScenarioWorldCoordinator
 
     /// <summary>把已完成 Scenario 相对来源 World 的差异作为一个原子暂存项写入 World。</summary>
     public ScenarioWorldStageResult StageOutcome(
-        IWorldWorkspace world,
+        IWorldBuildView world,
+        IWorldBuildContributor contributor,
         IScenarioWorkspace scenario,
         Guid expectedWorldStateId,
         Guid expectedScenarioStateId)
     {
         ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(contributor);
         ArgumentNullException.ThrowIfNull(scenario);
         if (world.StateId != expectedWorldStateId)
             throw Conflict(nameof(StageOutcome), $"World 状态冲突：期望 {expectedWorldStateId}，实际 {world.StateId}。");
         if (scenario.StateId != expectedScenarioStateId)
             throw Conflict(nameof(StageOutcome), $"Scenario 状态冲突：期望 {expectedScenarioStateId}，实际 {scenario.StateId}。");
-        WorldStagingSnapshot staging = world.CreateStagingSnapshot();
-        if (staging.Changes.Count > 0)
-            throw Invalid(nameof(StageOutcome), "World 暂存区必须为空，才能写入 Scenario 演绎结果。");
         ScenarioSnapshot scenarioSnapshot = scenario.Queries.CreateSnapshot();
         Scene? unfinished = scenarioSnapshot.Scenes.Values.FirstOrDefault(scene => scene.State is SceneState.Binding or SceneState.Processing);
         if (unfinished is not null)
@@ -90,7 +89,7 @@ public sealed class ScenarioWorldCoordinator
         ScenarioWorldProposal proposal = ScenarioWorldBridge.CreateProposal(worldSnapshot, scenarioSnapshot);
         if (proposal.ChangeSet.IsEmpty)
             return new ScenarioWorldStageResult(worldSnapshot.Id, scenarioSnapshot.Id, null);
-        Guid changeId = world.Commands.Stage(proposal.ChangeSet, WorldStagedChangeSource.Scenario);
+        Guid changeId = contributor.Stage(proposal.ChangeSet, WorldStagedChangeSource.Scenario, expectedWorldStateId);
         return new ScenarioWorldStageResult(worldSnapshot.Id, scenarioSnapshot.Id, changeId);
     }
 

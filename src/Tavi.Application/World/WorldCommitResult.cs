@@ -2,14 +2,14 @@ using Tavi.Domain.World;
 
 namespace Tavi.Application.World;
 
-/// <summary>定义遵循 <c>TAVI.&lt;AREA&gt;.&lt;SUBJECT&gt;.&lt;REASON&gt;</c> 约定的 WorldSession 稳定错误码。</summary>
-public static class WorldSessionErrorCodes
+/// <summary>定义 WorldBuildSession 稳定错误码。</summary>
+public static class WorldBuildErrorCodes
 {
     /// <summary>提交所基于的状态标识与当前 World 状态标识不一致。</summary>
     public const string StateConflict = "TAVI.WORLD.STATE.CONFLICT";
 }
 
-/// <summary>表示 WorldSession 的一次原子提交结果；状态标识只用于识别提交前后的完整状态，不表达顺序。</summary>
+/// <summary>表示 WorldBuildSession 的一次原子提交结果；状态标识只用于识别提交前后的完整状态，不表达顺序。</summary>
 public sealed record WorldCommitResult(Guid CommitId, Guid PreviousStateId, Guid StateId, AppliedWorldChangeSet? ChangeSet)
 {
     /// <summary>获取操作组是否产生了实际修改。</summary>
@@ -19,9 +19,9 @@ public sealed record WorldCommitResult(Guid CommitId, Guid PreviousStateId, Guid
 }
 
 /// <summary>
-/// 指定 WorldSession 已提交操作的来源。
+/// 指定 WorldBuildSession 已提交操作的来源。
 /// </summary>
-public enum WorldSessionOperation
+public enum WorldBuildOperation
 {
     Apply,
     Undo,
@@ -36,7 +36,7 @@ public sealed class WorldStateConflictException : TaviException
     /// <param name="actualStateId">World 当前状态标识。</param>
     public WorldStateConflictException(Guid expectedStateId, Guid actualStateId)
         : base(
-            WorldSessionErrorCodes.StateConflict,
+            WorldBuildErrorCodes.StateConflict,
             TaviErrorCategory.Conflict,
             $"World 状态冲突：期望 {expectedStateId}，实际 {actualStateId}。",
             "Commit",
@@ -58,9 +58,9 @@ public sealed class WorldStateConflictException : TaviException
 }
 
 /// <summary>
-/// 指定 WorldSession 的内存状态是否仍然可靠。
+/// 指定 WorldBuildSession 的内存状态是否仍然可靠。
 /// </summary>
-public enum WorldSessionHealth
+public enum WorldBuildHealth
 {
     Healthy,
     Faulted

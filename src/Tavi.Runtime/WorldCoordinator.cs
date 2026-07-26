@@ -3,22 +3,22 @@ using Tavi.Infrastructure.Persistence;
 
 namespace Tavi.Runtime;
 
-/// <summary>持有当前世界会话，并为所有展示层读写提供统一的串行访问和生命周期边界。</summary>
-public sealed class WorldRuntime : IHostedService, IAsyncDisposable
+/// <summary>持有唯一 WorldBuildSession，并按读取、提案和审批权限协调所有运行期访问。</summary>
+public sealed class WorldCoordinator : IHostedService, IAsyncDisposable
 {
     private readonly IConfiguration _configuration;
     private readonly WorldEventBroker _events;
     private readonly ExtensionRuntime _extensions;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private JsonFileWorldStore? _store;
-    private IWorldWorkspace? _workspace;
-    private IWorldSessionLifecycle? _lifecycle;
+    private IWorldBuildWorkspace? _workspace;
+    private IWorldBuildSessionLifecycle? _lifecycle;
     private bool _disposed;
     private readonly object _disposeSync = new();
     private Task? _disposeTask;
 
     /// <summary>创建使用指定配置和事件代理的世界运行时。</summary>
-    public WorldRuntime(IConfiguration configuration, WorldEventBroker events, ExtensionRuntime extensions)
+    public WorldCoordinator(IConfiguration configuration, WorldEventBroker events, ExtensionRuntime extensions)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _events = events ?? throw new ArgumentNullException(nameof(events));
@@ -33,7 +33,7 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
         string saveDirectory = _configuration["Tavi:SaveDirectory"] ?? Environment.GetEnvironmentVariable("TAVI_SAVE_DIRECTORY") ?? defaultDirectory;
         string slot = _configuration["Tavi:WorldSlot"] ?? "default";
         _store = new JsonFileWorldStore(saveDirectory);
-        var session = new WorldSession(_store, _extensions.Frozen.Catalog, slot);
+        var session = new WorldBuildSession(_store, _extensions.Frozen.Catalog, slot);
         _workspace = session;
         _lifecycle = session;
         _lifecycle.Changed += OnWorldChanged;
@@ -44,15 +44,39 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     /// <summary>停止运行时并刷新尚未保存的世界修改。</summary>
     public Task StopAsync(CancellationToken cancellationToken) => DisposeAsync().AsTask();
 
-    /// <summary>在运行时访问锁内执行同步 World 工作区操作。</summary>
-    public async Task<TResult> ExecuteAsync<TResult>(Func<IWorldWorkspace, TResult> operation, CancellationToken cancellationToken = default)
+    /// <summary>在协调锁内执行只读操作。</summary>
+    public Task<TResult> ReadAsync<TResult>(Func<IWorldBuildView, TResult> operation, CancellationToken cancellationToken = default)
+        => ExecuteAsync(operation, cancellationToken);
+
+    /// <summary>在协调锁内执行异步只读操作。</summary>
+    public Task<TResult> ReadAsync<TResult>(Func<IWorldBuildView, Task<TResult>> operation, CancellationToken cancellationToken = default)
+        => ExecuteAsync(operation, cancellationToken);
+
+    /// <summary>在协调锁内执行只能提出修改的操作。</summary>
+    public Task<TResult> ContributeAsync<TResult>(Func<IWorldBuildContributor, TResult> operation, CancellationToken cancellationToken = default)
+        => ExecuteAsync(operation, cancellationToken);
+
+    /// <summary>在协调锁内执行异步提案操作。</summary>
+    public Task<TResult> ContributeAsync<TResult>(Func<IWorldBuildContributor, Task<TResult>> operation, CancellationToken cancellationToken = default)
+        => ExecuteAsync(operation, cancellationToken);
+
+    /// <summary>在协调锁内执行玩家审批、历史或保存操作。</summary>
+    public Task<TResult> ControlAsync<TResult>(Func<IWorldBuildController, TResult> operation, CancellationToken cancellationToken = default)
+        => ExecuteAsync(operation, cancellationToken);
+
+    /// <summary>在协调锁内执行异步玩家控制操作。</summary>
+    public Task<TResult> ControlAsync<TResult>(Func<IWorldBuildController, Task<TResult>> operation, CancellationToken cancellationToken = default)
+        => ExecuteAsync(operation, cancellationToken);
+
+    private async Task<TResult> ExecuteAsync<TCapability, TResult>(Func<TCapability, TResult> operation, CancellationToken cancellationToken)
+        where TCapability : class
     {
         ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
         await _accessGate.WaitAsync(cancellationToken);
         try
         {
-            return operation(RequireWorkspace());
+            return operation(RequireCapability<TCapability>());
         }
         finally
         {
@@ -60,15 +84,15 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
         }
     }
 
-    /// <summary>在运行时访问锁内执行异步 World 工作区操作。</summary>
-    public async Task<TResult> ExecuteAsync<TResult>(Func<IWorldWorkspace, Task<TResult>> operation, CancellationToken cancellationToken = default)
+    private async Task<TResult> ExecuteAsync<TCapability, TResult>(Func<TCapability, Task<TResult>> operation, CancellationToken cancellationToken)
+        where TCapability : class
     {
         ArgumentNullException.ThrowIfNull(operation);
         ThrowIfDisposed();
         await _accessGate.WaitAsync(cancellationToken);
         try
         {
-            return await operation(RequireWorkspace());
+            return await operation(RequireCapability<TCapability>());
         }
         finally
         {
@@ -77,7 +101,9 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>获取已初始化的 World Application 工作区。</summary>
-    internal IWorldWorkspace Workspace => RequireWorkspace();
+    internal IWorldBuildView View => RequireWorkspace();
+    internal IWorldBuildContributor Contributor => RequireWorkspace();
+    internal IWorldBuildController Controller => RequireWorkspace();
 
     /// <summary>释放世界会话、存储和访问同步资源。</summary>
     public ValueTask DisposeAsync()
@@ -99,19 +125,23 @@ public sealed class WorldRuntime : IHostedService, IAsyncDisposable
         _accessGate.Dispose();
     }
 
-    private void OnWorldChanged(object? sender, WorldSessionChangedEventArgs eventArgs)
+    private void OnWorldChanged(object? sender, WorldBuildChangedEventArgs eventArgs)
     {
-        IWorldWorkspace workspace = RequireWorkspace();
+        IWorldBuildWorkspace workspace = RequireWorkspace();
         _events.Publish(new WorldRuntimeEvent("world.changed", eventArgs.StateId, workspace.IsDirty, eventArgs.CommitId, eventArgs.Operation.ToString(), null));
     }
 
-    private void OnWorldStateChanged(object? sender, WorldSessionStateChangedEventArgs eventArgs)
+    private void OnWorldStateChanged(object? sender, WorldBuildStateChangedEventArgs eventArgs)
     {
         Guid stateId = _workspace?.StateId ?? Guid.Empty;
         _events.Publish(new WorldRuntimeEvent($"world.{ToKebabCase(eventArgs.Change.ToString())}", stateId, eventArgs.IsDirty, null, null, eventArgs.Exception?.Message));
     }
 
-    private IWorldWorkspace RequireWorkspace() => _workspace ?? throw new InvalidOperationException("世界运行时尚未初始化。");
+    private IWorldBuildWorkspace RequireWorkspace() => _workspace ?? throw new InvalidOperationException("世界运行时尚未初始化。");
+
+    private TCapability RequireCapability<TCapability>() where TCapability : class
+        => RequireWorkspace() as TCapability
+           ?? throw new InvalidOperationException($"WorldBuildSession 不提供 {typeof(TCapability).Name} 权限。");
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 

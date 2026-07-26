@@ -2,12 +2,12 @@ using Tavi.Domain.World;
 
 namespace Tavi.Application.World;
 
-/// <summary>提供通过 WorldSession 同步和事务边界修改当前 World 的命令。</summary>
+/// <summary>提供通过 WorldBuildSession 同步和事务边界修改当前 World 的兼容命令入口。</summary>
 public sealed class WorldCommands
 {
-    private readonly WorldSession _session;
+    private readonly WorldBuildSession _session;
 
-    internal WorldCommands(WorldSession session) => _session = session;
+    internal WorldCommands(WorldBuildSession session) => _session = session;
 
     /// <summary>以预期状态标识为乐观并发条件原子提交操作组。</summary>
     public WorldCommitResult Apply(WorldChangeSet changeSet, Guid expectedStateId)

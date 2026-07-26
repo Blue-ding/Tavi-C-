@@ -3,7 +3,7 @@ namespace Tavi.Application.World;
 /// <summary>
 /// 指定世界会话发生的状态变化。
 /// </summary>
-public enum WorldSessionStateChange
+public enum WorldBuildStateChange
 {
     DirtyChanged,
     SaveStarted,
@@ -15,13 +15,13 @@ public enum WorldSessionStateChange
 /// <summary>
 /// 提供世界会话的脏状态和保存状态变化信息。
 /// </summary>
-public sealed class WorldSessionStateChangedEventArgs : EventArgs
+public sealed class WorldBuildStateChangedEventArgs : EventArgs
 {
     /// <summary>
     /// 创建世界会话状态变化事件参数。
     /// </summary>
-    public WorldSessionStateChangedEventArgs(
-        WorldSessionStateChange change,
+    public WorldBuildStateChangedEventArgs(
+        WorldBuildStateChange change,
         bool isDirty,
         Exception? exception = null)
     {
@@ -33,7 +33,7 @@ public sealed class WorldSessionStateChangedEventArgs : EventArgs
     /// <summary>
     /// 获取发生的状态变化。
     /// </summary>
-    public WorldSessionStateChange Change { get; }
+    public WorldBuildStateChange Change { get; }
 
     /// <summary>
     /// 获取事件发生时会话是否包含尚未保存的修改。

@@ -18,7 +18,7 @@ public sealed class ScenarioWorldCoordinatorTests
         TestGraph graph = CreateGraph();
         var catalog = ModuleCatalog.Create([]);
         var worldStore = new MemoryWorldStore(graph.World);
-        await using var world = new WorldSession(worldStore, catalog, autoSaveDelay: TimeSpan.FromHours(1));
+        await using var world = new WorldBuildSession(worldStore, catalog, autoSaveDelay: TimeSpan.FromHours(1));
         await world.InitializeAsync();
         var scenarioStore = new MemoryScenarioStore();
         await using var scenario = new ScenarioSession(scenarioStore, catalog, world.Queries.CreateSnapshot(), autoSaveDelay: TimeSpan.FromHours(1));
@@ -28,7 +28,7 @@ public sealed class ScenarioWorldCoordinatorTests
         Assert.Single(scenario.Queries.GetAspects());
         scenario.Commands.Apply(new ScenarioChangeSet([new ScenarioUpdateAspectOperation(graph.AspectId, 3, AspectType.None)]), scenario.StateId);
 
-        ScenarioWorldStageResult staged = coordinator.StageOutcome(world, scenario, world.StateId, scenario.StateId);
+        ScenarioWorldStageResult staged = coordinator.StageOutcome(world, world, scenario, world.StateId, scenario.StateId);
 
         Assert.True(staged.Changed);
         WorldStagedChange change = Assert.Single(world.CreateStagingSnapshot().Changes);
@@ -46,7 +46,7 @@ public sealed class ScenarioWorldCoordinatorTests
         TestGraph graph = CreateGraph();
         var catalog = ModuleCatalog.Create([]);
         var worldStore = new MemoryWorldStore(graph.World);
-        await using var world = new WorldSession(worldStore, catalog, autoSaveDelay: TimeSpan.FromHours(1));
+        await using var world = new WorldBuildSession(worldStore, catalog, autoSaveDelay: TimeSpan.FromHours(1));
         await world.InitializeAsync();
         await using var scenario = new ScenarioSession(new MemoryScenarioStore(), catalog, world.Queries.CreateSnapshot(), autoSaveDelay: TimeSpan.FromHours(1));
         await scenario.InitializeAsync();
@@ -55,29 +55,54 @@ public sealed class ScenarioWorldCoordinatorTests
         world.Commands.Apply(new WorldChangeSet([new WorldUpdateAspectQuantityOperation(graph.AspectId, 4)]), world.StateId);
 
         ScenarioApplicationException exception = Assert.Throws<ScenarioApplicationException>(
-            () => coordinator.StageOutcome(world, scenario, world.StateId, scenario.StateId));
+            () => coordinator.StageOutcome(world, world, scenario, world.StateId, scenario.StateId));
 
         Assert.Equal(ScenarioApplicationErrorCodes.StateConflict, exception.ErrorCode);
         Assert.Empty(world.CreateStagingSnapshot().Changes);
     }
 
     [Fact]
-    public async Task OutcomeRequiresAnEmptyWorldStagingArea()
+    public async Task OutcomeConflictsWithPlayerChangeOnTheSameWorldEntity()
     {
         TestGraph graph = CreateGraph();
         var catalog = ModuleCatalog.Create([]);
         var worldStore = new MemoryWorldStore(graph.World);
-        await using var world = new WorldSession(worldStore, catalog, autoSaveDelay: TimeSpan.FromHours(1));
+        await using var world = new WorldBuildSession(worldStore, catalog, autoSaveDelay: TimeSpan.FromHours(1));
         await world.InitializeAsync();
         await using var scenario = new ScenarioSession(new MemoryScenarioStore(), catalog, world.Queries.CreateSnapshot(), autoSaveDelay: TimeSpan.FromHours(1));
         await scenario.InitializeAsync();
         var coordinator = new ScenarioWorldCoordinator();
         _ = world.Commands.Stage(new WorldUpdateAspectQuantityOperation(graph.AspectId, 4));
 
-        ScenarioApplicationException exception = Assert.Throws<ScenarioApplicationException>(
-            () => coordinator.StageOutcome(world, scenario, world.StateId, scenario.StateId));
+        scenario.Commands.Apply(new ScenarioChangeSet([new ScenarioUpdateAspectOperation(graph.AspectId, 3, AspectType.None)]), scenario.StateId);
 
-        Assert.Equal(ScenarioApplicationErrorCodes.InvalidSessionState, exception.ErrorCode);
+        ScenarioWorldStageResult staged = coordinator.StageOutcome(world, world, scenario, world.StateId, scenario.StateId);
+
+        Assert.True(staged.Changed);
+        WorldStagedChange[] changes = world.CreateStagingSnapshot().Changes.ToArray();
+        Assert.Equal(2, changes.Length);
+        Assert.All(changes, change => Assert.Equal(WorldStagedChangeStatus.Conflict, change.Status));
+    }
+
+    [Fact]
+    public async Task OutcomeCoexistsWithPlayerChangeOnAnUnrelatedWorldEntity()
+    {
+        TestGraph graph = CreateGraph();
+        var catalog = ModuleCatalog.Create([]);
+        await using var world = new WorldBuildSession(new MemoryWorldStore(graph.World), catalog, autoSaveDelay: TimeSpan.FromHours(1));
+        await world.InitializeAsync();
+        await using var scenario = new ScenarioSession(new MemoryScenarioStore(), catalog, world.Queries.CreateSnapshot(), autoSaveDelay: TimeSpan.FromHours(1));
+        await scenario.InitializeAsync();
+        var coordinator = new ScenarioWorldCoordinator();
+        LocalAspect local = world.Queries.GetLocalAspect(graph.LocalAspectId).LocalAspect;
+        _ = world.Commands.Stage(new UpdateLocalAspectOperation(local.Id, local.Name, local.Description, 2));
+        scenario.Commands.Apply(new ScenarioChangeSet([new ScenarioUpdateAspectOperation(graph.AspectId, 3, AspectType.None)]), scenario.StateId);
+
+        _ = coordinator.StageOutcome(world, world, scenario, world.StateId, scenario.StateId);
+
+        WorldStagedChange[] changes = world.CreateStagingSnapshot().Changes.ToArray();
+        Assert.Equal(2, changes.Length);
+        Assert.All(changes, change => Assert.Equal(WorldStagedChangeStatus.Valid, change.Status));
     }
 
     private static TestGraph CreateGraph()
@@ -94,10 +119,10 @@ public sealed class ScenarioWorldCoordinatorTests
             Aspects = new Dictionary<Guid, Aspect> { [aspectId] = new(aspectId, 5, AspectType.None, elementId, scopeId) },
             LocalAspects = new Dictionary<Guid, LocalAspect> { [localAspectId] = new(localAspectId, "Secret", string.Empty, 1, elementId, scopeId) }
         };
-        return new TestGraph(snapshot, aspectId);
+        return new TestGraph(snapshot, aspectId, localAspectId);
     }
 
-    private sealed record TestGraph(WorldSnapshot World, Guid AspectId);
+    private sealed record TestGraph(WorldSnapshot World, Guid AspectId, Guid LocalAspectId);
 
     private sealed class MemoryWorldStore(WorldSnapshot snapshot) : IWorldStore
     {

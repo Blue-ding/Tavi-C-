@@ -3,12 +3,12 @@ using RuntimeWorld = Tavi.Domain.World.World;
 
 namespace Tavi.Application.World;
 
-/// <summary>提供始终通过 WorldSession 同步边界读取最新 EARS 与 Local 事实的查询。</summary>
+/// <summary>提供始终通过 WorldBuildSession 同步 seam 读取最新 EARS 与 Local 事实的查询。</summary>
 public sealed class WorldQueries
 {
-    private readonly WorldSession _session;
+    private readonly WorldBuildSession _session;
 
-    internal WorldQueries(WorldSession session) => _session = session;
+    internal WorldQueries(WorldBuildSession session) => _session = session;
 
     /// <summary>创建当前 World 的独立完整快照。</summary>
     public WorldSnapshot CreateSnapshot() => _session.ExecuteQuery(world => world.CreateSnapshot());

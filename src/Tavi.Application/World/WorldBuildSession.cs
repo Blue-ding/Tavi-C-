@@ -5,9 +5,9 @@ using RuntimeWorld = Tavi.Domain.World.World;
 namespace Tavi.Application.World;
 
 /// <summary>
-/// 持有当前运行时世界，并统一控制查询、原子修改、撤销、变化通知、加载和自动保存。真实 World 不向外暴露。
+/// 持有当前 World 构筑会话，并统一协调多来源提案、候选投影、原子提交、撤销、加载和自动保存。
 /// </summary>
-public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
+public sealed class WorldBuildSession : IWorldBuildWorkspace, IWorldBuildSessionLifecycle
 {
     private readonly IWorldStore _store;
     private readonly IWorldTypePolicy _typePolicy;
@@ -29,7 +29,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     /// <summary>
     /// 创建世界会话。
     /// </summary>
-    public WorldSession(IWorldStore store, IWorldTypePolicy typePolicy, string slot = "default", TimeSpan? autoSaveDelay = null)
+    public WorldBuildSession(IWorldStore store, IWorldTypePolicy typePolicy, string slot = "default", TimeSpan? autoSaveDelay = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _typePolicy = typePolicy ?? throw new ArgumentNullException(nameof(typePolicy));
@@ -47,12 +47,12 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     /// <summary>
     /// 在一个原子操作组成功提交后触发；事件处理器在写锁释放后执行。
     /// </summary>
-    public event EventHandler<WorldSessionChangedEventArgs>? Changed;
+    public event EventHandler<WorldBuildChangedEventArgs>? Changed;
 
     /// <summary>
     /// 在脏状态或保存状态发生变化后触发。
     /// </summary>
-    public event EventHandler<WorldSessionStateChangedEventArgs>? StateChanged;
+    public event EventHandler<WorldBuildStateChangedEventArgs>? StateChanged;
 
     /// <summary>
     /// 获取始终通过本会话同步边界读取最新状态的查询工具；查询器自身不缓存 World 数据。
@@ -67,7 +67,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     /// <summary>
     /// 获取当前会话健康状态。回滚失败后会话进入 Faulted，并拒绝继续读写或保存。
     /// </summary>
-    public WorldSessionHealth Health => _workspace.Health == VersionedWorkspaceHealth.Healthy ? WorldSessionHealth.Healthy : WorldSessionHealth.Faulted;
+    public WorldBuildHealth Health => _workspace.Health == VersionedWorkspaceHealth.Healthy ? WorldBuildHealth.Healthy : WorldBuildHealth.Faulted;
 
     /// <summary>获取当前 World 状态标识；每次实际提交都会生成新值，该值不表达提交顺序。</summary>
     public Guid StateId => ExecuteQuery(world => world.StateId);
@@ -102,7 +102,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     {
         ThrowIfDisposed();
         if (_workspace.IsInitialized)
-            throw new InvalidOperationException("WorldSession 已经初始化。");
+            throw new InvalidOperationException("WorldBuildSession 已经初始化。");
         WorldSnapshot? snapshot = await _store.LoadAsync(_slot, cancellationToken);
         RuntimeWorld world = RuntimeWorld.Create(snapshot ?? new WorldSnapshot());
         try
@@ -111,7 +111,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
         }
         catch (InvalidOperationException exception) when (_workspace.IsInitialized)
         {
-            throw new InvalidOperationException("WorldSession 已经初始化。", exception);
+            throw new InvalidOperationException("WorldBuildSession 已经初始化。", exception);
         }
         _workspace.ExecuteExclusive(() =>
         {
@@ -131,7 +131,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
         ArgumentNullException.ThrowIfNull(changeSet);
         ValidateRegisteredTypes(changeSet.Operations);
         WorldCommitResult result = CommitWorkspace(changeSet, expectedStateId);
-        PublishCommit(result, WorldSessionOperation.Apply);
+        PublishCommit(result, WorldBuildOperation.Apply);
         return result;
     }
 
@@ -160,6 +160,40 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
         return ExecuteLocked(() => _staging.Stage(copied, source));
     }
 
+    private Guid Stage(WorldOperation operation, WorldStagedChangeSource source, Guid expectedWorldStateId)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ValidateRegisteredType(operation);
+        return ExecuteLocked(() =>
+        {
+            RequireExpectedState(expectedWorldStateId);
+            return _staging.Stage(operation, source);
+        });
+    }
+
+    private Guid Stage(WorldChangeSet changeSet, WorldStagedChangeSource source, Guid expectedWorldStateId)
+    {
+        ArgumentNullException.ThrowIfNull(changeSet);
+        ValidateRegisteredTypes(changeSet.Operations);
+        return ExecuteLocked(() =>
+        {
+            RequireExpectedState(expectedWorldStateId);
+            return _staging.Stage(changeSet, source);
+        });
+    }
+
+    private IReadOnlyList<Guid> Stage(IEnumerable<WorldOperation> operations, WorldStagedChangeSource source, Guid expectedWorldStateId)
+    {
+        ArgumentNullException.ThrowIfNull(operations);
+        WorldOperation[] copied = operations.ToArray();
+        ValidateRegisteredTypes(copied);
+        return ExecuteLocked(() =>
+        {
+            RequireExpectedState(expectedWorldStateId);
+            return _staging.Stage(copied, source);
+        });
+    }
+
     /// <summary>创建包含全部暂存项及临时 World 投影的不可变快照。</summary>
     public WorldStagingSnapshot CreateStagingSnapshot() => ExecuteLocked(() =>
     {
@@ -185,7 +219,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
             _staging.Consume(selected);
             return (commit, selected);
         });
-        PublishCommit(transaction.Commit, WorldSessionOperation.Apply);
+        PublishCommit(transaction.Commit, WorldBuildOperation.Apply);
         return new WorldStagingCommitResult { Commit = transaction.Commit, ConsumedChangeIds = transaction.Selected };
     }
 
@@ -195,7 +229,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     internal WorldCommitResult Undo(Guid expectedStateId)
     {
         WorldCommitResult result = ExecuteWorkspace(() => _workspace.Undo(expectedStateId));
-        PublishCommit(result, WorldSessionOperation.Undo);
+        PublishCommit(result, WorldBuildOperation.Undo);
         return result;
     }
 
@@ -205,7 +239,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
     internal WorldCommitResult Redo(Guid expectedStateId)
     {
         WorldCommitResult result = ExecuteWorkspace(() => _workspace.Redo(expectedStateId));
-        PublishCommit(result, WorldSessionOperation.Redo);
+        PublishCommit(result, WorldBuildOperation.Redo);
         return result;
     }
 
@@ -218,6 +252,28 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
         CancelPendingAutoSave();
         return SaveCoreAsync(true, cancellationToken);
     }
+
+    Guid IWorldBuildContributor.Stage(WorldOperation operation, WorldStagedChangeSource source, Guid expectedWorldStateId)
+        => Stage(operation, source, expectedWorldStateId);
+
+    Guid IWorldBuildContributor.Stage(WorldChangeSet changeSet, WorldStagedChangeSource source, Guid expectedWorldStateId)
+        => Stage(changeSet, source, expectedWorldStateId);
+
+    IReadOnlyList<Guid> IWorldBuildContributor.Stage(IEnumerable<WorldOperation> operations, WorldStagedChangeSource source, Guid expectedWorldStateId)
+        => Stage(operations, source, expectedWorldStateId);
+
+    bool IWorldBuildController.DeleteStaged(Guid changeId) => DeleteStaged(changeId);
+
+    int IWorldBuildController.DeleteInvalidStaged() => DeleteInvalidStaged();
+
+    WorldStagingCommitResult IWorldBuildController.CommitStaged(IEnumerable<Guid> selectedChangeIds, Guid expectedStateId)
+        => CommitStaged(selectedChangeIds, expectedStateId);
+
+    WorldCommitResult IWorldBuildController.Undo(Guid expectedStateId) => Undo(expectedStateId);
+
+    WorldCommitResult IWorldBuildController.Redo(Guid expectedStateId) => Redo(expectedStateId);
+
+    Task IWorldBuildController.SaveAsync(CancellationToken cancellationToken) => SaveAsync(cancellationToken);
 
     /// <summary>
     /// 如果当前世界包含未保存修改，则立即写入存档。
@@ -243,7 +299,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
         await CancelAndDrainPendingAutoSaveAsync();
         try
         {
-            if (_workspace.IsInitialized && Health == WorldSessionHealth.Healthy)
+            if (_workspace.IsInitialized && Health == WorldBuildHealth.Healthy)
                 await SaveCoreAsync(false, CancellationToken.None);
         }
         finally
@@ -288,12 +344,12 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
         }
     }
 
-    private void PublishCommit(WorldCommitResult result, WorldSessionOperation operation)
+    private void PublishCommit(WorldCommitResult result, WorldBuildOperation operation)
     {
         if (!result.Changed)
             return;
         ScheduleAutoSave();
-        Changed?.Invoke(this, new WorldSessionChangedEventArgs(result.CommitId, result.StateId, operation, result.ChangeSet!));
+        Changed?.Invoke(this, new WorldBuildChangedEventArgs(result.CommitId, result.StateId, operation, result.ChangeSet!));
         NotifyDirtyChanged();
     }
 
@@ -305,19 +361,19 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
             (WorldSnapshot Snapshot, Guid StateId, bool IsSaved) state = ExecuteQuery(world => (world.CreateSnapshot(), world.StateId, world.StateId == _savedStateId));
             if (!force && state.IsSaved)
                 return;
-            RaiseStateChanged(WorldSessionStateChange.SaveStarted);
+            RaiseStateChanged(WorldBuildStateChange.SaveStarted);
             try
             {
                 await _store.SaveAsync(_slot, state.Snapshot, cancellationToken);
             }
             catch (OperationCanceledException exception)
             {
-                RaiseStateChanged(WorldSessionStateChange.SaveCancelled, exception);
+                RaiseStateChanged(WorldBuildStateChange.SaveCancelled, exception);
                 throw;
             }
             catch (Exception exception)
             {
-                RaiseStateChanged(WorldSessionStateChange.SaveFailed, exception);
+                RaiseStateChanged(WorldBuildStateChange.SaveFailed, exception);
                 throw;
             }
             _workspace.ExecuteExclusive(() =>
@@ -327,7 +383,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
             });
             LastAutoSaveException = null;
             NotifyDirtyChanged();
-            RaiseStateChanged(WorldSessionStateChange.SaveCompleted);
+            RaiseStateChanged(WorldBuildStateChange.SaveCompleted);
         }
         finally
         {
@@ -337,7 +393,7 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
 
     private void ScheduleAutoSave()
     {
-        if (Health != WorldSessionHealth.Healthy)
+        if (Health != WorldBuildHealth.Healthy)
             return;
         CancellationTokenSource source;
         lock (_debounceSync)
@@ -404,18 +460,25 @@ public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
         bool isDirty = IsDirty;
         int value = isDirty ? 1 : 0;
         if (Interlocked.Exchange(ref _reportedDirty, value) != value)
-            StateChanged?.Invoke(this, new WorldSessionStateChangedEventArgs(WorldSessionStateChange.DirtyChanged, isDirty));
+            StateChanged?.Invoke(this, new WorldBuildStateChangedEventArgs(WorldBuildStateChange.DirtyChanged, isDirty));
     }
 
-    private void RaiseStateChanged(WorldSessionStateChange change, Exception? exception = null)
+    private void RaiseStateChanged(WorldBuildStateChange change, Exception? exception = null)
     {
-        StateChanged?.Invoke(this, new WorldSessionStateChangedEventArgs(change, IsDirty, exception));
+        StateChanged?.Invoke(this, new WorldBuildStateChangedEventArgs(change, IsDirty, exception));
     }
 
     private void ValidateRegisteredTypes(IEnumerable<WorldOperation> operations)
     {
         foreach (WorldOperation operation in operations)
             ValidateRegisteredType(operation);
+    }
+
+    private void RequireExpectedState(Guid expectedWorldStateId)
+    {
+        Guid actualWorldStateId = _workspace.Read(world => world.StateId);
+        if (expectedWorldStateId != actualWorldStateId)
+            throw new WorldStateConflictException(expectedWorldStateId, actualWorldStateId);
     }
 
     private void ValidateRegisteredType(WorldOperation operation)

@@ -27,18 +27,48 @@ public sealed class TaviCore
     public ILogger Logger { get; }
 
     /// <summary>创建绑定到指定 World 工作区的 Guidance 应用服务。</summary>
-    public IGuidanceService CreateGuidanceService(IWorldWorkspace worldWorkspace)
+    public IGuidanceService CreateGuidanceService(IWorldBuildWorkspace worldWorkspace)
     {
         ArgumentNullException.ThrowIfNull(worldWorkspace);
-        return new GuidanceSession(worldWorkspace, LanguageModels, Logger);
+        return CreateGuidanceService(worldWorkspace, worldWorkspace, worldWorkspace);
+    }
+
+    /// <summary>使用分离的 World 构筑权限创建 Guidance 应用模块。</summary>
+    public IGuidanceService CreateGuidanceService(
+        IWorldBuildView view,
+        IWorldBuildContributor contributor,
+        IWorldBuildController controller)
+    {
+        return new GuidanceSession(
+            new WorldGuidanceCoordinator(view, contributor, controller),
+            LanguageModels,
+            Logger);
     }
 
     /// <summary>创建绑定到指定 World 工作区并使用冻结 Module Runtime 的 Guidance 应用服务。</summary>
-    public IGuidanceService CreateGuidanceService(IWorldWorkspace worldWorkspace, FrozenModuleRuntime extensions)
+    public IGuidanceService CreateGuidanceService(IWorldBuildWorkspace worldWorkspace, FrozenModuleRuntime extensions)
     {
         ArgumentNullException.ThrowIfNull(worldWorkspace);
         ArgumentNullException.ThrowIfNull(extensions);
-        return new GuidanceSession(worldWorkspace, LanguageModels, Logger, extensions);
+        return CreateGuidanceService(worldWorkspace, worldWorkspace, worldWorkspace, extensions);
+    }
+
+    /// <summary>使用分离的 World 构筑权限和冻结 Module Runtime 创建 Guidance 应用模块。</summary>
+    public IGuidanceService CreateGuidanceService(
+        IWorldBuildView view,
+        IWorldBuildContributor contributor,
+        IWorldBuildController controller,
+        FrozenModuleRuntime extensions)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(contributor);
+        ArgumentNullException.ThrowIfNull(controller);
+        ArgumentNullException.ThrowIfNull(extensions);
+        return new GuidanceSession(
+            new WorldGuidanceCoordinator(view, contributor, controller),
+            LanguageModels,
+            Logger,
+            extensions);
     }
 
     /// <summary>创建、初始化并持久化从 Processing Scene 冻结上下文展开的 Performance 工作区。</summary>

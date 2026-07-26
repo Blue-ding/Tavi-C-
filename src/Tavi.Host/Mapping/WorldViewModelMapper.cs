@@ -7,7 +7,7 @@ namespace Tavi.Host.Mapping;
 /// <summary>将 Application World 快照和操作转换为不泄露运行时引用的 Host 契约。</summary>
 internal static class WorldViewModelMapper
 {
-    internal static WorldGraphViewModel ToGraph(IWorldWorkspace workspace)
+    internal static WorldGraphViewModel ToGraph(IWorldBuildView workspace)
     {
         WorldStagingSnapshot staging = workspace.CreateStagingSnapshot();
         WorldSnapshot snapshot = staging.ProjectedWorld;
