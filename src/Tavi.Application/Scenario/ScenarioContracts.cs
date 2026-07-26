@@ -88,4 +88,7 @@ public interface IScenarioSessionLifecycle : IAsyncDisposable
 
     /// <summary>仅在 Scenario 为脏状态时保存当前快照。</summary>
     Task FlushAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>停止当前 Session 且不刷新尚未保存的状态；仅供显式替换整个 Scenario 使用。</summary>
+    ValueTask DiscardAsync();
 }

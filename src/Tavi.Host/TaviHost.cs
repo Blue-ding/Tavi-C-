@@ -58,6 +58,7 @@ public static class TaviHost
         builder.Services.AddHostedService(services => services.GetRequiredService<WorldRuntime>());
         builder.Services.AddSingleton<ScenarioRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<ScenarioRuntime>());
+        builder.Services.AddSingleton<ScenarioWorldRuntime>();
         builder.Services.AddSingleton<GuidanceEventBroker>();
         builder.Services.AddSingleton<GuidanceRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<GuidanceRuntime>());

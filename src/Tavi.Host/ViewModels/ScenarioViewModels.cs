@@ -35,3 +35,22 @@ public sealed record ScenarioStateRequest(Guid ExpectedStateId);
 /// <summary>表示使用 Module 规则结算 Scene 的请求。</summary>
 /// <param name="ExpectedStateId">调用方观察到的 Scenario 状态。</param><param name="RandomSeed">规则结算使用的可复现随机种子。</param>
 public sealed record SettleSceneRequest(Guid ExpectedStateId, long RandomSeed);
+
+/// <summary>表示当前 Scenario 与活动 World 的连接状态。</summary>
+public sealed record ScenarioWorldLinkViewModel(
+    string State,
+    Guid CurrentWorldStateId,
+    Guid SourceWorldStateId,
+    Guid ScenarioStateId,
+    int BindingScenes,
+    int ProcessingScenes,
+    int SettledScenes);
+
+/// <summary>请求从当前已提交 World 重建空 Scenario。</summary>
+public sealed record StartScenarioFromWorldRequest(Guid ExpectedWorldStateId, Guid ExpectedScenarioStateId);
+
+/// <summary>请求把已完成 Scenario 的结果写入 World 暂存区。</summary>
+public sealed record StageScenarioOutcomeRequest(Guid ExpectedWorldStateId, Guid ExpectedScenarioStateId);
+
+/// <summary>表示 Scenario 结果暂存到 World 后的状态。</summary>
+public sealed record ScenarioWorldStageViewModel(Guid WorldStateId, Guid ScenarioStateId, Guid? ChangeId, bool Changed);

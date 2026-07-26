@@ -12,6 +12,9 @@ internal static class ScenarioEndpoints
     {
         RouteGroupBuilder scenario = endpoints.MapGroup("/api/v1/scenario");
         scenario.MapGet("/", GetAsync);
+        scenario.MapGet("/world-link", GetWorldLinkAsync);
+        scenario.MapPost("/start-from-world", StartFromWorldAsync);
+        scenario.MapPost("/stage-outcome", StageOutcomeAsync);
         scenario.MapPost("/scenes", CreateSceneAsync);
         scenario.MapPut("/scenes/{sceneId:guid}/bindings/{slotId}", SetBindingAsync);
         scenario.MapDelete("/scenes/{sceneId:guid}/bindings/{slotId}", ClearBindingAsync);
@@ -26,6 +29,24 @@ internal static class ScenarioEndpoints
     }
 
     private static Task<ScenarioWorkspaceViewModel> GetAsync(long? randomSeed, ScenarioRuntime runtime, CancellationToken cancellationToken) => WorkspaceAsync(runtime, randomSeed ?? 0, cancellationToken);
+
+    private static async Task<ScenarioWorldLinkViewModel> GetWorldLinkAsync(ScenarioWorldRuntime runtime, CancellationToken cancellationToken)
+    {
+        ScenarioWorldLink link = await runtime.GetLinkAsync(cancellationToken);
+        return new ScenarioWorldLinkViewModel(link.State.ToString(), link.CurrentWorldStateId, link.SourceWorldStateId, link.ScenarioStateId, link.BindingScenes, link.ProcessingScenes, link.SettledScenes);
+    }
+
+    private static async Task<ScenarioWorkspaceViewModel> StartFromWorldAsync(StartScenarioFromWorldRequest request, ScenarioWorldRuntime coordinator, ScenarioRuntime scenario, CancellationToken cancellationToken)
+    {
+        _ = await coordinator.StartFromWorldAsync(request.ExpectedWorldStateId, request.ExpectedScenarioStateId, cancellationToken);
+        return await WorkspaceAsync(scenario, 0, cancellationToken);
+    }
+
+    private static async Task<ScenarioWorldStageViewModel> StageOutcomeAsync(StageScenarioOutcomeRequest request, ScenarioWorldRuntime runtime, CancellationToken cancellationToken)
+    {
+        ScenarioWorldStageResult result = await runtime.StageOutcomeAsync(request.ExpectedWorldStateId, request.ExpectedScenarioStateId, cancellationToken);
+        return new ScenarioWorldStageViewModel(result.WorldStateId, result.ScenarioStateId, result.ChangeId, result.Changed);
+    }
 
     private static Task<ScenarioWorkspaceViewModel> CreateSceneAsync(CreateSceneRequest request, ScenarioRuntime runtime, CancellationToken cancellationToken) => runtime.ExecuteAsync(async workspace =>
     {

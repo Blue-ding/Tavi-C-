@@ -316,13 +316,20 @@ public sealed class ScenarioSession : IScenarioWorkspace, IScenarioSessionLifecy
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
+        => await DisposeCoreAsync(flush: true);
+
+    /// <inheritdoc />
+    public async ValueTask DiscardAsync()
+        => await DisposeCoreAsync(flush: false);
+
+    private async ValueTask DisposeCoreAsync(bool flush)
     {
         if (_disposed)
             return;
         try
         {
             await CancelAndDrainAutoSaveAsync();
-            if (_workspace.IsInitialized && Health == ScenarioSessionHealth.Healthy)
+            if (flush && _workspace.IsInitialized && Health == ScenarioSessionHealth.Healthy)
                 await SaveCoreAsync(false, CancellationToken.None);
         }
         finally
