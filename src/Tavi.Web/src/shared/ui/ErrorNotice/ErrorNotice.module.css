@@ -1,0 +1,42 @@
+.root {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: rgb(223 128 120 / 12%);
+  border: 1px solid rgb(223 128 120 / 25%);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-danger);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+
+.icon {
+  font-size: 16px;
+}
+
+.message {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.retry {
+  margin-top: var(--space-3);
+  color: var(--color-accent);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.retry:hover {
+  color: var(--color-accent-hover);
+}
+
+.details {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid rgb(223 128 120 / 15%);
+}

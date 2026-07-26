@@ -1,0 +1,40 @@
+.container {
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--shadow-popover);
+  animation: slideUp 0.2s ease;
+  cursor: pointer;
+  max-width: 360px;
+}
+
+.success {
+  background: var(--color-surface-2);
+  color: var(--color-success);
+  border: 1px solid rgb(119 198 154 / 25%);
+}
+
+.warning {
+  background: var(--color-surface-2);
+  color: var(--color-warning);
+  border: 1px solid rgb(216 182 108 / 25%);
+}
+
+.error {
+  background: var(--color-surface-2);
+  color: var(--color-danger);
+  border: 1px solid rgb(223 128 120 / 25%);
+}
