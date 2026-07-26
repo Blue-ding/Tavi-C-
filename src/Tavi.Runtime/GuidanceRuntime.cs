@@ -9,7 +9,7 @@ namespace Tavi.Runtime;
 
 public sealed class GuidanceRuntime : IHostedService
 {
-    private readonly WorldCoordinator _world;
+    private readonly WorldRuntime _world;
     private readonly ExtensionRuntime _extensions;
     private readonly IConfiguration _configuration;
     private readonly ApplicationLoggerAdapter _applicationLogger;
@@ -23,7 +23,7 @@ public sealed class GuidanceRuntime : IHostedService
     private string _availabilityMessage = "Guidance 尚未初始化。";
     private string? _provider;
 
-    public GuidanceRuntime(WorldCoordinator world, ExtensionRuntime extensions, IConfiguration configuration, ApplicationLoggerAdapter applicationLogger, ILogger<GuidanceRuntime> logger, GuidanceEventBroker events, IHostApplicationLifetime lifetime, IEnumerable<ILanguageModelService> providedLanguageModels)
+    public GuidanceRuntime(WorldRuntime world, ExtensionRuntime extensions, IConfiguration configuration, ApplicationLoggerAdapter applicationLogger, ILogger<GuidanceRuntime> logger, GuidanceEventBroker events, IHostApplicationLifetime lifetime, IEnumerable<ILanguageModelService> providedLanguageModels)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));

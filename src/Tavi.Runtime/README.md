@@ -12,12 +12,12 @@
 
 ## 接口约定
 
-- `WorldCoordinator` 仅通过 `IWorldBuildSessionLifecycle` 管理 `WorldBuildSession`，
+- `WorldRuntime` 仅通过 `IWorldBuildSessionLifecycle` 管理 `WorldBuildSession`，
   并按 `IWorldBuildView`、`IWorldBuildContributor`、`IWorldBuildController`
   三种权限协调读取、提案和玩家审批。
 - Guidance 与 Scenario 只通过各自的 World Coordinator 向统一构筑日志提交提案；
   同一 World 实体上的竞争写入由 `WorldBuildSession` 标记为冲突。
-- `PerformanceRuntime` 与 `WorldCoordinator` 一样分别持有 Workspace 和 Lifecycle；进程内
+- `PerformanceRuntime` 与 `WorldRuntime` 一样分别持有 Workspace 和 Lifecycle；进程内
   至多存在一个 Performance Session，但已结束 Performance 可以保留为历史记录。
 - `ScenarioRuntime` 与 `WritingRuntime` 同样仅通过各自的 `I*SessionLifecycle`
   管理 Session，并通过 `I*Workspace` 向上层 Adapter 提供业务能力。

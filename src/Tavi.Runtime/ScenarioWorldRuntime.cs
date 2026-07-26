@@ -6,12 +6,12 @@ namespace Tavi.Runtime;
 /// <summary>串行协调活动 World 与 Scenario 的显式分叉和结果回写。</summary>
 public sealed class ScenarioWorldRuntime
 {
-    private readonly WorldCoordinator _world;
+    private readonly WorldRuntime _world;
     private readonly ScenarioRuntime _scenario;
     private readonly ScenarioWorldCoordinator _coordinator = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public ScenarioWorldRuntime(WorldCoordinator world, ScenarioRuntime scenario)
+    public ScenarioWorldRuntime(WorldRuntime world, ScenarioRuntime scenario)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));

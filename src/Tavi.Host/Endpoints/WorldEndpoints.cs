@@ -51,7 +51,7 @@ internal static class WorldEndpoints
         return endpoints;
     }
 
-    private static Task<WorldGraphViewModel> GetWorldAsync(WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ReadAsync(WorldViewModelMapper.ToGraph, cancellationToken);
+    private static Task<WorldGraphViewModel> GetWorldAsync(WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ReadAsync(WorldViewModelMapper.ToGraph, cancellationToken);
 
     private static WorldTypeLibraryViewModel GetTypes(ExtensionRuntime extensions)
     {
@@ -65,9 +65,9 @@ internal static class WorldEndpoints
             catalog.GetRelationTypes().Select(value => new RelationTypeDefinitionViewModel(value.Key.Value, value.Module.Value, ModuleName(value.Module), value.Name, value.Description)).ToArray());
     }
 
-    private static Task<WorldStagingResultViewModel> AddElementAsync(AddElementRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddElement(request.Name, request.Description, new ElementType(request.Type)), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddElementAsync(AddElementRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddElement(request.Name, request.Description, new ElementType(request.Type)), request.ExpectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> UpdateElementAsync(Guid elementId, UpdateElementRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
+    private static Task<WorldStagingResultViewModel> UpdateElementAsync(Guid elementId, UpdateElementRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
         var operations = new List<WorldOperation>(3);
@@ -80,11 +80,11 @@ internal static class WorldEndpoints
         return Stage(session, operations, request.ExpectedStateId);
     }, cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> RemoveElementAsync(Guid elementId, Guid expectedStateId, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveElementOperation(elementId), expectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveElementAsync(Guid elementId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveElementOperation(elementId), expectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> AddScopeAsync(AddScopeRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddScope(request.Quantity, new ScopeType(request.Type), request.OwnerElementId), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddScopeAsync(AddScopeRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddScope(request.Quantity, new ScopeType(request.Type), request.OwnerElementId), request.ExpectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> UpdateScopeAsync(Guid scopeId, UpdateScopeRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
+    private static Task<WorldStagingResultViewModel> UpdateScopeAsync(Guid scopeId, UpdateScopeRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
         var operations = new List<WorldOperation>(2);
@@ -95,11 +95,11 @@ internal static class WorldEndpoints
         return Stage(session, operations, request.ExpectedStateId);
     }, cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> RemoveScopeAsync(Guid scopeId, Guid expectedStateId, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveScopeOperation(scopeId), expectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveScopeAsync(Guid scopeId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveScopeOperation(scopeId), expectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> AddAspectAsync(AddAspectRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddAspect(request.Quantity, new AspectType(request.Type), request.ElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddAspectAsync(AddAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddAspect(request.Quantity, new AspectType(request.Type), request.ElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> UpdateAspectAsync(Guid aspectId, UpdateAspectRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
+    private static Task<WorldStagingResultViewModel> UpdateAspectAsync(Guid aspectId, UpdateAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
         var operations = new List<WorldOperation>(2);
@@ -110,11 +110,11 @@ internal static class WorldEndpoints
         return Stage(session, operations, request.ExpectedStateId);
     }, cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> RemoveAspectAsync(Guid aspectId, Guid expectedStateId, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveAspectOperation(aspectId), expectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveAspectAsync(Guid aspectId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveAspectOperation(aspectId), expectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> AddRelationAsync(AddRelationRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddRelation(request.Quantity, new RelationType(request.Type), request.SourceElementId, request.TargetElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddRelationAsync(AddRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddRelation(request.Quantity, new RelationType(request.Type), request.SourceElementId, request.TargetElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> UpdateRelationAsync(Guid relationId, UpdateRelationRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
+    private static Task<WorldStagingResultViewModel> UpdateRelationAsync(Guid relationId, UpdateRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
         var operations = new List<WorldOperation>(2);
@@ -125,11 +125,11 @@ internal static class WorldEndpoints
         return Stage(session, operations, request.ExpectedStateId);
     }, cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> RemoveRelationAsync(Guid relationId, Guid expectedStateId, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveRelationOperation(relationId), expectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveRelationAsync(Guid relationId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveRelationOperation(relationId), expectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> AddLocalAspectAsync(AddLocalAspectRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddLocalAspect(request.Name, request.Description, request.Quantity, request.ElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddLocalAspectAsync(AddLocalAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddLocalAspect(request.Name, request.Description, request.Quantity, request.ElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> UpdateLocalAspectAsync(Guid localAspectId, UpdateLocalAspectRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
+    private static Task<WorldStagingResultViewModel> UpdateLocalAspectAsync(Guid localAspectId, UpdateLocalAspectRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
         if (!session.CreateStagingSnapshot().ProjectedWorld.LocalAspects.TryGetValue(localAspectId, out LocalAspect? current))
@@ -139,11 +139,11 @@ internal static class WorldEndpoints
         return Stage(session, [new UpdateLocalAspectOperation(localAspectId, request.Name ?? current.Name, request.Description ?? current.Description, request.Quantity ?? current.Quantity)], request.ExpectedStateId);
     }, cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> RemoveLocalAspectAsync(Guid localAspectId, Guid expectedStateId, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveLocalAspectOperation(localAspectId), expectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveLocalAspectAsync(Guid localAspectId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveLocalAspectOperation(localAspectId), expectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> AddLocalRelationAsync(AddLocalRelationRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddLocalRelation(request.Name, request.Description, request.Quantity, request.SourceElementId, request.TargetElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> AddLocalRelationAsync(AddLocalRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, WorldOperations.AddLocalRelation(request.Name, request.Description, request.Quantity, request.SourceElementId, request.TargetElementId, request.ScopeId), request.ExpectedStateId), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> UpdateLocalRelationAsync(Guid localRelationId, UpdateLocalRelationRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
+    private static Task<WorldStagingResultViewModel> UpdateLocalRelationAsync(Guid localRelationId, UpdateLocalRelationRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
         if (!session.CreateStagingSnapshot().ProjectedWorld.LocalRelations.TryGetValue(localRelationId, out LocalRelation? current))
@@ -153,32 +153,32 @@ internal static class WorldEndpoints
         return Stage(session, [new UpdateLocalRelationOperation(localRelationId, request.Name ?? current.Name, request.Description ?? current.Description, request.Quantity ?? current.Quantity)], request.ExpectedStateId);
     }, cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> RemoveLocalRelationAsync(Guid localRelationId, Guid expectedStateId, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveLocalRelationOperation(localRelationId), expectedStateId), cancellationToken);
+    private static Task<WorldStagingResultViewModel> RemoveLocalRelationAsync(Guid localRelationId, Guid expectedStateId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ContributeAsync(session => Stage(session, new RemoveLocalRelationOperation(localRelationId), expectedStateId), cancellationToken);
 
-    private static Task<WorldCommitViewModel> CommitStagedAsync(CommitStagedRequest request, WorldCoordinator runtime, CancellationToken cancellationToken)
+    private static Task<WorldCommitViewModel> CommitStagedAsync(CommitStagedRequest request, WorldRuntime runtime, CancellationToken cancellationToken)
         => runtime.ControlAsync(session => WorldViewModelMapper.ToCommit(session.CommitStaged(request.ChangeIds, request.ExpectedStateId).Commit), cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> DeleteStagedAsync(Guid changeId, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ControlAsync(session =>
+    private static Task<WorldStagingResultViewModel> DeleteStagedAsync(Guid changeId, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ControlAsync(session =>
     {
         if (!session.DeleteStaged(changeId))
             throw new ArgumentException($"不存在暂存项 {changeId}。", nameof(changeId));
         return new WorldStagingResultViewModel([changeId], WorldViewModelMapper.ToGraph(session));
     }, cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> DeleteInvalidStagedAsync(WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ControlAsync(session =>
+    private static Task<WorldStagingResultViewModel> DeleteInvalidStagedAsync(WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ControlAsync(session =>
     {
         session.DeleteInvalidStaged();
         return new WorldStagingResultViewModel([], WorldViewModelMapper.ToGraph(session));
     }, cancellationToken);
 
-    private static Task<WorldAuthoringActionViewModel[]> GetModuleActionsAsync(WorldCoordinator runtime, ExtensionRuntime extensions, CancellationToken cancellationToken) => runtime.ContributeAsync(async session =>
+    private static Task<WorldAuthoringActionViewModel[]> GetModuleActionsAsync(WorldRuntime runtime, ExtensionRuntime extensions, CancellationToken cancellationToken) => runtime.ContributeAsync(async session =>
     {
         var coordinator = new WorldAuthoringCoordinator(session, session, extensions.Frozen);
         IReadOnlyList<WorldAuthoringAction> actions = await coordinator.GetActionsAsync(cancellationToken);
         return actions.Select(action => new WorldAuthoringActionViewModel(action.Id.Value, action.Name, action.Description, action.ParameterSchema)).ToArray();
     }, cancellationToken);
 
-    private static Task<WorldStagingResultViewModel> InvokeModuleActionAsync(string module, string action, InvokeWorldAuthoringActionRequest request, WorldCoordinator runtime, ExtensionRuntime extensions, CancellationToken cancellationToken) => runtime.ContributeAsync(async session =>
+    private static Task<WorldStagingResultViewModel> InvokeModuleActionAsync(string module, string action, InvokeWorldAuthoringActionRequest request, WorldRuntime runtime, ExtensionRuntime extensions, CancellationToken cancellationToken) => runtime.ContributeAsync(async session =>
     {
         RequireExpectedState(session, request.ExpectedStateId);
         var coordinator = new WorldAuthoringCoordinator(session, session, extensions.Frozen);
@@ -186,10 +186,10 @@ internal static class WorldEndpoints
         return new WorldStagingResultViewModel([changeId], WorldViewModelMapper.ToGraph(session));
     }, cancellationToken);
 
-    private static Task<WorldCommitViewModel> UndoAsync(WorldStateRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ControlAsync(session => WorldViewModelMapper.ToCommit(session.Undo(request.ExpectedStateId)), cancellationToken);
-    private static Task<WorldCommitViewModel> RedoAsync(WorldStateRequest request, WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ControlAsync(session => WorldViewModelMapper.ToCommit(session.Redo(request.ExpectedStateId)), cancellationToken);
+    private static Task<WorldCommitViewModel> UndoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ControlAsync(session => WorldViewModelMapper.ToCommit(session.Undo(request.ExpectedStateId)), cancellationToken);
+    private static Task<WorldCommitViewModel> RedoAsync(WorldStateRequest request, WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ControlAsync(session => WorldViewModelMapper.ToCommit(session.Redo(request.ExpectedStateId)), cancellationToken);
 
-    private static Task<SaveWorldViewModel> SaveAsync(WorldCoordinator runtime, CancellationToken cancellationToken) => runtime.ControlAsync(async session =>
+    private static Task<SaveWorldViewModel> SaveAsync(WorldRuntime runtime, CancellationToken cancellationToken) => runtime.ControlAsync(async session =>
     {
         await session.SaveAsync(cancellationToken);
         return new SaveWorldViewModel(session.StateId, session.IsDirty);

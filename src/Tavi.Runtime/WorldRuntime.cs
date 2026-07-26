@@ -4,7 +4,7 @@ using Tavi.Infrastructure.Persistence;
 namespace Tavi.Runtime;
 
 /// <summary>持有唯一 WorldBuildSession，并按读取、提案和审批权限协调所有运行期访问。</summary>
-public sealed class WorldCoordinator : IHostedService, IAsyncDisposable
+public sealed class WorldRuntime : IHostedService, IAsyncDisposable
 {
     private readonly IConfiguration _configuration;
     private readonly WorldEventBroker _events;
@@ -18,7 +18,7 @@ public sealed class WorldCoordinator : IHostedService, IAsyncDisposable
     private Task? _disposeTask;
 
     /// <summary>创建使用指定配置和事件代理的世界运行时。</summary>
-    public WorldCoordinator(IConfiguration configuration, WorldEventBroker events, ExtensionRuntime extensions)
+    public WorldRuntime(IConfiguration configuration, WorldEventBroker events, ExtensionRuntime extensions)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _events = events ?? throw new ArgumentNullException(nameof(events));

@@ -11,7 +11,7 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
 {
     private readonly IConfiguration _configuration;
     private readonly ExtensionRuntime _extensions;
-    private readonly WorldCoordinator _world;
+    private readonly WorldRuntime _world;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly object _disposeSync = new();
     private JsonFileScenarioStore? _store;
@@ -22,7 +22,7 @@ public sealed class ScenarioRuntime : IHostedService, IAsyncDisposable
     private bool _disposed;
 
     /// <summary>创建依赖当前 World 与冻结 Module Runtime 的 Scenario 运行时。</summary>
-    public ScenarioRuntime(IConfiguration configuration, ExtensionRuntime extensions, WorldCoordinator world)
+    public ScenarioRuntime(IConfiguration configuration, ExtensionRuntime extensions, WorldRuntime world)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
