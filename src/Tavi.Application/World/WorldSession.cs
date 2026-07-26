@@ -7,7 +7,7 @@ namespace Tavi.Application.World;
 /// <summary>
 /// 持有当前运行时世界，并统一控制查询、原子修改、撤销、变化通知、加载和自动保存。真实 World 不向外暴露。
 /// </summary>
-public sealed class WorldSession : IWorldService
+public sealed class WorldSession : IWorldWorkspace, IWorldSessionLifecycle
 {
     private readonly IWorldStore _store;
     private readonly IWorldTypePolicy _typePolicy;

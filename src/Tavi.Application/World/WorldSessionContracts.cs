@@ -2,19 +2,13 @@ using Tavi.Domain.World;
 
 namespace Tavi.Application.World;
 
-/// <summary>定义当前 World 的查询、暂存、提交、历史和持久化 Application 服务。</summary>
-public interface IWorldService : IAsyncDisposable
+/// <summary>定义调用方可查询和修改的活动 World 工作区。</summary>
+public interface IWorldWorkspace
 {
-    /// <summary>在一个原子操作组成功提交后触发；事件处理器在写锁释放后执行。</summary>
-    event EventHandler<WorldSessionChangedEventArgs>? Changed;
-
-    /// <summary>在脏状态或保存状态发生变化后触发。</summary>
-    event EventHandler<WorldSessionStateChangedEventArgs>? StateChanged;
-
-    /// <summary>获取始终通过服务同步边界读取最新状态的查询工具。</summary>
+    /// <summary>获取始终通过工作区同步边界读取最新状态的查询工具。</summary>
     WorldQueries Queries { get; }
 
-    /// <summary>获取当前服务健康状态。</summary>
+    /// <summary>获取当前工作区健康状态。</summary>
     WorldSessionHealth Health { get; }
 
     /// <summary>获取当前 World 状态标识。</summary>
@@ -34,9 +28,6 @@ public interface IWorldService : IAsyncDisposable
 
     /// <summary>获取最近一次后台自动保存异常。</summary>
     Exception? LastAutoSaveException { get; }
-
-    /// <summary>从存档槽加载 World；存档不存在时创建新 World。</summary>
-    Task InitializeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>以预期状态标识为乐观并发条件原子提交操作组。</summary>
     WorldCommitResult Apply(WorldChangeSet changeSet, Guid expectedStateId);
@@ -70,6 +61,19 @@ public interface IWorldService : IAsyncDisposable
 
     /// <summary>立即保存当前 World，无论当前是否为脏状态。</summary>
     Task SaveAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>定义 Runtime 管理 World Session 启停、通知和最终刷新的生命周期角色。</summary>
+public interface IWorldSessionLifecycle : IAsyncDisposable
+{
+    /// <summary>在一个原子操作组成功提交后触发；事件处理器在写锁释放后执行。</summary>
+    event EventHandler<WorldSessionChangedEventArgs>? Changed;
+
+    /// <summary>在脏状态或保存状态发生变化后触发。</summary>
+    event EventHandler<WorldSessionStateChangedEventArgs>? StateChanged;
+
+    /// <summary>从存档槽加载 World；存档不存在时创建新 World。</summary>
+    Task InitializeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>当前 World 包含未保存修改时立即写入存档。</summary>
     Task FlushAsync(CancellationToken cancellationToken = default);

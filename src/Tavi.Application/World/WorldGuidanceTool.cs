@@ -11,7 +11,7 @@ internal static class WorldGuidanceTool
     private const int MaxResults = 20;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
 
-    internal static IReadOnlyCollection<ITool> CreateTools(IWorldService service)
+    internal static IReadOnlyCollection<ITool> CreateTools(IWorldWorkspace service)
     {
         ArgumentNullException.ThrowIfNull(service);
         return
@@ -22,7 +22,7 @@ internal static class WorldGuidanceTool
         ];
     }
 
-    internal static IReadOnlyCollection<ITool> CreateQueryTools(IWorldService service)
+    internal static IReadOnlyCollection<ITool> CreateQueryTools(IWorldWorkspace service)
     {
         ArgumentNullException.ThrowIfNull(service);
         return [new QueryElementsTool(service), new QueryScopesTool(service), new QueryAspectsTool(service), new QueryRelationsTool(service), new QueryLocalAspectsTool(service), new QueryLocalRelationsTool(service)];
@@ -40,7 +40,7 @@ internal static class WorldGuidanceTool
         return new { total = all.Length, returned = Math.Min(all.Length, MaxResults), truncated = all.Length > MaxResults, items = all.Take(MaxResults).ToArray() };
     }
 
-    private static Guid Apply(IWorldService service, params WorldOperation[] operations) => service.Apply(new WorldChangeSet(operations), service.StateId).StateId;
+    private static Guid Apply(IWorldWorkspace service, params WorldOperation[] operations) => service.Apply(new WorldChangeSet(operations), service.StateId).StateId;
     private static object Output(Element value) => new { value.Id, value.Name, value.Description, Type = value.Type.Value };
     private static object Output(ResolvedScope value) => new { value.Scope.Id, value.Scope.Quantity, Type = value.Scope.Type.Value, value.Scope.OwnerElementId, Owner = Output(value.Owner) };
     private static object Output(ResolvedAspect value) => new { value.Aspect.Id, value.Aspect.Quantity, Type = value.Aspect.Type.Value, value.Aspect.ElementId, value.Aspect.ScopeId, Element = Output(value.Element), Scope = Output(new ResolvedScope(value.Scope, value.ScopeOwner)) };
@@ -60,7 +60,7 @@ internal static class WorldGuidanceTool
         public Guid ScopeId { get; set; }
     }
 
-    private sealed class QueryElementsTool(IWorldService service) : Tool<QueryArguments>
+    private sealed class QueryElementsTool(IWorldWorkspace service) : Tool<QueryArguments>
     {
         public override string name => "query_elements";
         public override string description => "查询 World Element。";
@@ -71,7 +71,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class QueryScopesTool(IWorldService service) : Tool<QueryArguments>
+    private sealed class QueryScopesTool(IWorldWorkspace service) : Tool<QueryArguments>
     {
         public override string name => "query_scopes";
         public override string description => "按 Type、Quantity 和 Owner 查询规则化 Scope。";
@@ -82,7 +82,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class QueryAspectsTool(IWorldService service) : Tool<ScopedQueryArguments>
+    private sealed class QueryAspectsTool(IWorldWorkspace service) : Tool<ScopedQueryArguments>
     {
         public override string name => "query_aspects";
         public override string description => "查询规则化 Aspect。";
@@ -94,7 +94,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class QueryRelationsTool(IWorldService service) : Tool<ScopedQueryArguments>
+    private sealed class QueryRelationsTool(IWorldWorkspace service) : Tool<ScopedQueryArguments>
     {
         public override string name => "query_relations";
         public override string description => "查询规则化 Relation。";
@@ -106,7 +106,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class QueryLocalAspectsTool(IWorldService service) : Tool<ScopedQueryArguments>
+    private sealed class QueryLocalAspectsTool(IWorldWorkspace service) : Tool<ScopedQueryArguments>
     {
         public override string name => "query_local_aspects";
         public override string description => "查询只存在于 World 且不承担 Evolution 语义的 LocalAspect。";
@@ -118,7 +118,7 @@ internal static class WorldGuidanceTool
         }
     }
 
-    private sealed class QueryLocalRelationsTool(IWorldService service) : Tool<ScopedQueryArguments>
+    private sealed class QueryLocalRelationsTool(IWorldWorkspace service) : Tool<ScopedQueryArguments>
     {
         public override string name => "query_local_relations";
         public override string description => "查询只存在于 World 且不承担 Evolution 语义的 LocalRelation。";
@@ -137,7 +137,7 @@ internal static class WorldGuidanceTool
         [Description("已注册 ElementType 键")] public string Type { get; set; } = "core:none";
     }
 
-    private sealed class AddElementTool(IWorldService service) : Tool<AddElementArguments>
+    private sealed class AddElementTool(IWorldWorkspace service) : Tool<AddElementArguments>
     {
         public override string name => "add_element";
         public override string description => "直接添加 Element。";
@@ -155,7 +155,7 @@ internal static class WorldGuidanceTool
         [Description("Owner Element Id")] public Guid OwnerElementId { get; set; }
     }
 
-    private sealed class AddScopeTool(IWorldService service) : Tool<AddScopeArguments>
+    private sealed class AddScopeTool(IWorldWorkspace service) : Tool<AddScopeArguments>
     {
         public override string name => "add_scope";
         public override string description => "直接添加规则化 Scope。";
@@ -178,7 +178,7 @@ internal static class WorldGuidanceTool
         [Description("目标 Element Id")] public Guid ElementId { get; set; }
     }
 
-    private sealed class AddAspectTool(IWorldService service) : Tool<AddAspectArguments>
+    private sealed class AddAspectTool(IWorldWorkspace service) : Tool<AddAspectArguments>
     {
         public override string name => "add_aspect";
         public override string description => "直接添加规则化 Aspect。";
@@ -196,7 +196,7 @@ internal static class WorldGuidanceTool
         [Description("目标 Element Id")] public Guid TargetElementId { get; set; }
     }
 
-    private sealed class AddRelationTool(IWorldService service) : Tool<AddRelationArguments>
+    private sealed class AddRelationTool(IWorldWorkspace service) : Tool<AddRelationArguments>
     {
         public override string name => "add_relation";
         public override string description => "直接添加规则化 Relation。";
@@ -216,7 +216,7 @@ internal static class WorldGuidanceTool
         [Description("所属 Scope Id")] public Guid ScopeId { get; set; }
     }
 
-    private sealed class AddLocalAspectTool(IWorldService service) : Tool<AddLocalAspectArguments>
+    private sealed class AddLocalAspectTool(IWorldWorkspace service) : Tool<AddLocalAspectArguments>
     {
         public override string name => "add_local_aspect";
         public override string description => "添加不会进入 Scenario 或 Evolution 的 LocalAspect。";
@@ -237,7 +237,7 @@ internal static class WorldGuidanceTool
         [Description("所属 Scope Id")] public Guid ScopeId { get; set; }
     }
 
-    private sealed class AddLocalRelationTool(IWorldService service) : Tool<AddLocalRelationArguments>
+    private sealed class AddLocalRelationTool(IWorldWorkspace service) : Tool<AddLocalRelationArguments>
     {
         public override string name => "add_local_relation";
         public override string description => "添加不会进入 Scenario 或 Evolution 的 LocalRelation。";
@@ -249,7 +249,7 @@ internal static class WorldGuidanceTool
     }
 
     private sealed class UpdateElementArguments : AddElementArguments { [Description("Element Id")] public Guid Id { get; set; } }
-    private sealed class UpdateElementTool(IWorldService service) : Tool<UpdateElementArguments>
+    private sealed class UpdateElementTool(IWorldWorkspace service) : Tool<UpdateElementArguments>
     {
         public override string name => "update_element";
         public override string description => "更新 Element 文本和类型。";
@@ -261,7 +261,7 @@ internal static class WorldGuidanceTool
     }
 
     private sealed class UpdateScopeArguments : AddScopeArguments { [Description("Scope Id")] public Guid Id { get; set; } }
-    private sealed class UpdateScopeTool(IWorldService service) : Tool<UpdateScopeArguments>
+    private sealed class UpdateScopeTool(IWorldWorkspace service) : Tool<UpdateScopeArguments>
     {
         public override string name => "update_scope";
         public override string description => "更新规则化 Scope 的 Quantity 和 Type；Owner 不可变。";
@@ -273,7 +273,7 @@ internal static class WorldGuidanceTool
     }
 
     private sealed class UpdateAspectArguments : AddAspectArguments { [Description("Aspect Id")] public Guid Id { get; set; } }
-    private sealed class UpdateAspectTool(IWorldService service) : Tool<UpdateAspectArguments>
+    private sealed class UpdateAspectTool(IWorldWorkspace service) : Tool<UpdateAspectArguments>
     {
         public override string name => "update_aspect";
         public override string description => "更新规则化 Aspect 的 Quantity 和 Type；结构引用不可变。";
@@ -285,7 +285,7 @@ internal static class WorldGuidanceTool
     }
 
     private sealed class UpdateRelationArguments : AddRelationArguments { [Description("Relation Id")] public Guid Id { get; set; } }
-    private sealed class UpdateRelationTool(IWorldService service) : Tool<UpdateRelationArguments>
+    private sealed class UpdateRelationTool(IWorldWorkspace service) : Tool<UpdateRelationArguments>
     {
         public override string name => "update_relation";
         public override string description => "更新规则化 Relation 的 Quantity 和 Type；结构引用不可变。";
@@ -297,7 +297,7 @@ internal static class WorldGuidanceTool
     }
 
     private sealed class UpdateLocalAspectArguments : AddLocalAspectArguments { [Description("LocalAspect Id")] public Guid Id { get; set; } }
-    private sealed class UpdateLocalAspectTool(IWorldService service) : Tool<UpdateLocalAspectArguments>
+    private sealed class UpdateLocalAspectTool(IWorldWorkspace service) : Tool<UpdateLocalAspectArguments>
     {
         public override string name => "update_local_aspect";
         public override string description => "更新 LocalAspect 自由谓词文本和 Quantity；结构引用不可变。";
@@ -309,7 +309,7 @@ internal static class WorldGuidanceTool
     }
 
     private sealed class UpdateLocalRelationArguments : AddLocalRelationArguments { [Description("LocalRelation Id")] public Guid Id { get; set; } }
-    private sealed class UpdateLocalRelationTool(IWorldService service) : Tool<UpdateLocalRelationArguments>
+    private sealed class UpdateLocalRelationTool(IWorldWorkspace service) : Tool<UpdateLocalRelationArguments>
     {
         public override string name => "update_local_relation";
         public override string description => "更新 LocalRelation 自由谓词文本和 Quantity；结构引用不可变。";
@@ -327,7 +327,7 @@ internal static class WorldGuidanceTool
         [Description("实体 Id")] public Guid Id { get; set; }
     }
 
-    private sealed class RemoveEntityTool(IWorldService service) : Tool<RemoveArguments>
+    private sealed class RemoveEntityTool(IWorldWorkspace service) : Tool<RemoveArguments>
     {
         public override string name => "remove_world_entity";
         public override string description => "删除指定 World 实体；删除 Element 或 Scope 会级联其结构依赖。";

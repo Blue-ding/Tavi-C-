@@ -23,18 +23,18 @@ public sealed class TaviCore
     /// <summary>获取 Application 日志端口。</summary>
     public ILogger Logger { get; }
 
-    /// <summary>创建绑定到指定 World 服务的 Guidance 应用服务。</summary>
-    public IGuidanceService CreateGuidanceService(IWorldService worldService)
+    /// <summary>创建绑定到指定 World 工作区的 Guidance 应用服务。</summary>
+    public IGuidanceService CreateGuidanceService(IWorldWorkspace worldWorkspace)
     {
-        ArgumentNullException.ThrowIfNull(worldService);
-        return new GuidanceSession(worldService, LanguageModels, Logger);
+        ArgumentNullException.ThrowIfNull(worldWorkspace);
+        return new GuidanceSession(worldWorkspace, LanguageModels, Logger);
     }
 
-    /// <summary>创建绑定到指定 World 服务并使用冻结 Module Runtime 的 Guidance 应用服务。</summary>
-    public IGuidanceService CreateGuidanceService(IWorldService worldService, FrozenModuleRuntime extensions)
+    /// <summary>创建绑定到指定 World 工作区并使用冻结 Module Runtime 的 Guidance 应用服务。</summary>
+    public IGuidanceService CreateGuidanceService(IWorldWorkspace worldWorkspace, FrozenModuleRuntime extensions)
     {
-        ArgumentNullException.ThrowIfNull(worldService);
+        ArgumentNullException.ThrowIfNull(worldWorkspace);
         ArgumentNullException.ThrowIfNull(extensions);
-        return new GuidanceSession(worldService, LanguageModels, Logger, extensions);
+        return new GuidanceSession(worldWorkspace, LanguageModels, Logger, extensions);
     }
 }

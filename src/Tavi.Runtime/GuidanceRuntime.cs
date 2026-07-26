@@ -239,7 +239,7 @@ public sealed class GuidanceRuntime : IHostedService
     private void InitializeService(ILanguageModelService languageModels)
     {
         _provider = languageModels.Capabilities.Provider;
-        _service = new TaviCore(languageModels, _applicationLogger).CreateGuidanceService(_world.Service, _extensions.Frozen);
+        _service = new TaviCore(languageModels, _applicationLogger).CreateGuidanceService(_world.Workspace, _extensions.Frozen);
     }
 
     private IGuidanceService RequireService() => _service ?? throw LanguageModelConfigurationException.Invalid(_availabilityMessage);

@@ -10,7 +10,7 @@ using System.Text.Json;
 
 namespace Tavi.Application.Guidance;
 
-/// <summary>维护绑定到单一 World 服务的长期 Guidance 对话、可恢复操作和消息重试状态。</summary>
+/// <summary>维护绑定到单一 World 工作区的长期 Guidance 对话、可恢复操作和消息重试状态。</summary>
 internal sealed class GuidanceSession : IGuidanceService
 {
     private const string SystemInstruction = """
@@ -24,7 +24,7 @@ internal sealed class GuidanceSession : IGuidanceService
         """;
     private const string LogCategory = "GuidanceSession";
     private readonly object _sync = new();
-    private readonly IWorldService _world;
+    private readonly IWorldWorkspace _world;
     private readonly ILanguageModelService _languageModels;
     private readonly ILogger _logger;
     private readonly FrozenModuleRuntime? _extensions;
@@ -37,8 +37,8 @@ internal sealed class GuidanceSession : IGuidanceService
     private CancellationTokenSource? _activeCancellation;
     private WorldProposal? _latestProposal;
 
-    /// <summary>创建绑定到指定 World 服务和语言模型执行器的长期 Guidance Session。</summary>
-    public GuidanceSession(IWorldService world, ILanguageModelService languageModels, ILogger? logger = null, FrozenModuleRuntime? extensions = null)
+    /// <summary>创建绑定到指定 World 工作区和语言模型执行器的长期 Guidance Session。</summary>
+    public GuidanceSession(IWorldWorkspace world, ILanguageModelService languageModels, ILogger? logger = null, FrozenModuleRuntime? extensions = null)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _languageModels = languageModels ?? throw new ArgumentNullException(nameof(languageModels));

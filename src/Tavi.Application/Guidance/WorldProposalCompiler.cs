@@ -14,11 +14,11 @@ public sealed record ProposalCompilationResult(WorldChangeSet ChangeSet, IReadOn
 public static class WorldProposalCompiler
 {
     /// <summary>编译指定提案；被接受的断言必须同时接受其引用的临时 Element 和 Scope。</summary>
-    public static ProposalCompilationResult Compile(WorldProposal proposal, IEnumerable<string> acceptedChangeIds, IWorldService worldService)
+    public static ProposalCompilationResult Compile(WorldProposal proposal, IEnumerable<string> acceptedChangeIds, IWorldWorkspace worldWorkspace)
     {
         ArgumentNullException.ThrowIfNull(proposal);
         ArgumentNullException.ThrowIfNull(acceptedChangeIds);
-        ArgumentNullException.ThrowIfNull(worldService);
+        ArgumentNullException.ThrowIfNull(worldWorkspace);
         string[] acceptedIds = acceptedChangeIds.ToArray();
         HashSet<string> accepted = acceptedIds.ToHashSet(StringComparer.Ordinal);
         if (accepted.Count != acceptedIds.Length)
@@ -35,7 +35,7 @@ public static class WorldProposalCompiler
         ProposeAddLocalRelation[] localRelations = proposal.Changes.OfType<ProposeAddLocalRelation>().Where(change => accepted.Contains(change.Id)).ToArray();
         var elementIds = elements.ToDictionary(change => change.ElementId, change => change.ElementId.Value);
         var scopeIds = scopes.ToDictionary(change => change.ScopeId, change => change.ScopeId.Value);
-        WorldSnapshot projectedWorld = worldService.CreateStagingSnapshot().ProjectedWorld;
+        WorldSnapshot projectedWorld = worldWorkspace.CreateStagingSnapshot().ProjectedWorld;
         var compiled = new List<(WorldOperation Operation, string ChangeId)>(elements.Length + scopes.Length + aspects.Length + relations.Length + localAspects.Length + localRelations.Length);
         compiled.AddRange(elements.Select(change => ((WorldOperation)new AddElementOperation(elementIds[change.ElementId], change.Name, change.Description, change.Type), change.Id)));
         compiled.AddRange(scopes.Select(change => ((WorldOperation)new AddScopeOperation(scopeIds[change.ScopeId], change.Quantity, change.Type, ResolveElement(change.Owner, elementIds, projectedWorld)), change.Id)));

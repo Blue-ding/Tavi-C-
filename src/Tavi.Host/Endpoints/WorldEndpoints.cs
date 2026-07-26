@@ -219,23 +219,23 @@ internal static class WorldEndpoints
         }
     }
 
-    private static WorldStagingResultViewModel Stage(IWorldService service, WorldOperation operation, Guid expectedStateId)
+    private static WorldStagingResultViewModel Stage(IWorldWorkspace workspace, WorldOperation operation, Guid expectedStateId)
     {
-        RequireExpectedState(service, expectedStateId);
-        return Stage(service, [operation]);
+        RequireExpectedState(workspace, expectedStateId);
+        return Stage(workspace, [operation]);
     }
 
-    private static WorldStagingResultViewModel Stage(IWorldService service, IReadOnlyCollection<WorldOperation> operations)
+    private static WorldStagingResultViewModel Stage(IWorldWorkspace workspace, IReadOnlyCollection<WorldOperation> operations)
     {
         if (operations.Count == 0)
             throw new ArgumentException("更新请求至少需要包含一个可修改属性。");
-        Guid id = service.Stage(new WorldChangeSet(operations));
-        return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(service));
+        Guid id = workspace.Stage(new WorldChangeSet(operations));
+        return new WorldStagingResultViewModel([id], WorldViewModelMapper.ToGraph(workspace));
     }
 
-    private static void RequireExpectedState(IWorldService service, Guid expectedStateId)
+    private static void RequireExpectedState(IWorldWorkspace workspace, Guid expectedStateId)
     {
-        if (expectedStateId != service.StateId)
-            throw new WorldStateConflictException(expectedStateId, service.StateId);
+        if (expectedStateId != workspace.StateId)
+            throw new WorldStateConflictException(expectedStateId, workspace.StateId);
     }
 }

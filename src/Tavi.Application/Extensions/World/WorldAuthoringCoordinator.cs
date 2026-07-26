@@ -7,11 +7,11 @@ namespace Tavi.Application.Extensions.World;
 /// <summary>协调活动 Module 的 World Authoring 查询、提案验证与原子暂存。</summary>
 public sealed class WorldAuthoringCoordinator
 {
-    private readonly IWorldService _world;
+    private readonly IWorldWorkspace _world;
     private readonly FrozenModuleRuntime _runtime;
 
     /// <summary>创建只通过 World Application 接口工作的协调器。</summary>
-    public WorldAuthoringCoordinator(IWorldService world, FrozenModuleRuntime runtime)
+    public WorldAuthoringCoordinator(IWorldWorkspace world, FrozenModuleRuntime runtime)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));

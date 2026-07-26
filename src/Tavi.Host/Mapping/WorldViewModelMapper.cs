@@ -7,9 +7,9 @@ namespace Tavi.Host.Mapping;
 /// <summary>将 Application World 快照和操作转换为不泄露运行时引用的 Host 契约。</summary>
 internal static class WorldViewModelMapper
 {
-    internal static WorldGraphViewModel ToGraph(IWorldService service)
+    internal static WorldGraphViewModel ToGraph(IWorldWorkspace workspace)
     {
-        WorldStagingSnapshot staging = service.CreateStagingSnapshot();
+        WorldStagingSnapshot staging = workspace.CreateStagingSnapshot();
         WorldSnapshot snapshot = staging.ProjectedWorld;
         ElementViewModel[] elements = snapshot.Elements.Values.OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.Id).Select(value => new ElementViewModel(value.Id, value.Name, value.Description, value.Type.Value)).ToArray();
         AspectViewModel[] aspects = snapshot.Aspects.Values.OrderBy(value => value.Type.Value, StringComparer.Ordinal).ThenBy(value => value.Id).Select(value => new AspectViewModel(value.Id, value.Quantity, value.Type.Value, value.ElementId, value.ScopeId)).ToArray();
@@ -18,7 +18,7 @@ internal static class WorldViewModelMapper
         LocalAspectViewModel[] localAspects = snapshot.LocalAspects.Values.OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.Id).Select(value => new LocalAspectViewModel(value.Id, value.Name, value.Description, value.Quantity, value.ElementId, value.ScopeId)).ToArray();
         LocalRelationViewModel[] localRelations = snapshot.LocalRelations.Values.OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase).ThenBy(value => value.Id).Select(value => new LocalRelationViewModel(value.Id, value.Name, value.Description, value.Quantity, value.SourceElementId, value.TargetElementId, value.ScopeId)).ToArray();
         WorldStagedChangeViewModel[] changes = staging.Changes.Select(change => new WorldStagedChangeViewModel(change.Id, change.Source.ToString(), change.Status.ToString(), string.Join("；", change.ChangeSet.Operations.Select(Describe)), change.Issue, change.ConflictingChangeIds)).ToArray();
-        return new WorldGraphViewModel(staging.WorldStateId, staging.Revision, service.IsDirty, service.CanUndo, service.CanRedo, service.Health.ToString(), elements, aspects, relations, scopes, localAspects, localRelations, changes);
+        return new WorldGraphViewModel(staging.WorldStateId, staging.Revision, workspace.IsDirty, workspace.CanUndo, workspace.CanRedo, workspace.Health.ToString(), elements, aspects, relations, scopes, localAspects, localRelations, changes);
     }
 
     internal static WorldCommitViewModel ToCommit(WorldCommitResult result, Guid? entityId = null) => new(result.CommitId, result.PreviousStateId, result.StateId, result.Changed, entityId);
