@@ -1,5 +1,6 @@
 using Tavi.Application.Extensions;
 using Tavi.Application.Extensions.Performance;
+using Tavi.Application.LanguageModel;
 using Tavi.Application.Performance;
 using Tavi.Application.Writing;
 using Tavi.Domain.Performance;
@@ -67,6 +68,233 @@ public sealed class PerformanceSessionTests
         Assert.Equal(1, plugin.ExpansionCalls);
     }
 
+    [Fact]
+    public async Task SessionRendersDeclarativeParagraphWithModelFill()
+    {
+        var module = new ModuleId("test");
+        var version = new ModuleVersion("1.0.0");
+        var plugin = new TestPerformancePlugin(
+            module,
+            version,
+            includeDirectParagraph: false);
+        ModuleWritingDefinitions writingDefinitions = ModuleWritingProfile.Parse(
+            """
+            {
+              "schemaVersion": 1,
+              "beatNarrations": [
+                {
+                  "beatDefinition": "test:beat",
+                  "paragraphs": [
+                    {
+                      "key": "result",
+                      "template": "{{subject.name}}继续前行，{{detail}}",
+                      "bindings": {
+                        "subject": {
+                          "source": "beatSlot",
+                          "slot": "subject",
+                          "cardinality": "one"
+                        }
+                      },
+                      "fills": {
+                        "detail": {
+                          "kind": "model",
+                          "instruction": "根据上下文描写{{subject.name}}看到的景象。",
+                          "context": ["subject.description"],
+                          "minimumLength": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+            """,
+            module);
+        ModuleCatalog catalog = ModuleCatalog.Create(
+        [
+            new ModulePackageDefinition
+            {
+                Manifest = new ModuleManifest
+                {
+                    Id = module,
+                    Version = version,
+                    SchemaVersion = 1,
+                    Name = "Test"
+                },
+                Semantics = new SemanticModuleDefinition(),
+                Writing = writingDefinitions
+            }
+        ]);
+        var extensions = new FrozenModuleRuntime(
+            catalog,
+            new Dictionary<ModuleId, IReadOnlyDictionary<string, string>>(),
+            [plugin]);
+        Guid scenarioStateId = Guid.NewGuid();
+        Guid elementId = Guid.NewGuid();
+        var scene = new SceneContextView
+        {
+            ScenarioStateId = scenarioStateId,
+            Scene = new ScenarioSceneView(
+                Guid.NewGuid(),
+                new SemanticKey("test:scene"),
+                module,
+                version,
+                scenarioStateId,
+                "Processing",
+                [new SceneSlotBindingView("subject", [elementId])]),
+            Elements =
+            [
+                new ElementView(
+                    elementId,
+                    "旅人",
+                    "刚刚离开故乡。",
+                    new SemanticKey("core:none"))
+            ]
+        };
+        var manuscriptStore =
+            new WritingBeatPublicationTests.MemoryManuscriptStore();
+        await using var manuscript = new WritingSession(manuscriptStore);
+        await manuscript.InitializeAsync();
+        _ = await manuscript.CreateAsync("Story");
+        var languageModels = new LanguageModelRunner(
+            new StubLanguageModelClient(
+                """{"fills":{"result.detail":"看见了远方的灯火。"}}"""),
+            new LanguageModelSettings
+            {
+                ToolCalls = FeaturePolicy.Disabled,
+                NativeJsonOutput = FeaturePolicy.Required,
+                Streaming = FeaturePolicy.Disabled
+            });
+        await using var session = new PerformanceSession(
+            new MemoryPerformanceStore(),
+            scene,
+            1,
+            manuscript,
+            extensions,
+            TimeSpan.FromHours(1),
+            languageModels);
+
+        await session.InitializeAsync();
+        BeatDefinition definition =
+            Assert.Single(await session.Commands.GetBeatDefinitionsAsync(1));
+        session.Commands.CreateBeat(definition, session.StateId);
+        Guid beatId = Assert.Single(session.Queries.CreateSnapshot().Beats.Keys);
+        session.Commands.SetBeatBinding(
+            beatId,
+            "subject",
+            [elementId],
+            session.StateId);
+        session.Commands.BeginBeatProcessing(beatId, session.StateId);
+
+        await session.Commands.ResolveBeatAsync(
+            beatId,
+            "继续向前",
+            1,
+            session.StateId);
+
+        Beat resolved = session.Queries.GetBeat(beatId);
+        Assert.Equal(
+            "旅人继续前行，看见了远方的灯火。",
+            Assert.Single(resolved.Paragraphs).Text);
+    }
+
+    [Fact]
+    public async Task RendererExpandsManyResolutionValuesWithoutNestedArray()
+    {
+        var module = new ModuleId("test");
+        var version = new ModuleVersion("1.0.0");
+        ModuleWritingDefinitions writing = ModuleWritingProfile.Parse(
+            """
+            {
+              "schemaVersion": 1,
+              "beatNarrations": [
+                {
+                  "beatDefinition": "test:beat",
+                  "paragraphs": [
+                    {
+                      "key": "events",
+                      "template": "{{events}}",
+                      "bindings": {
+                        "events": {
+                          "source": "resolution",
+                          "key": "events",
+                          "member": "text",
+                          "cardinality": "many"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+            """,
+            module);
+        ModuleCatalog catalog = ModuleCatalog.Create(
+        [
+            new ModulePackageDefinition
+            {
+                Manifest = new ModuleManifest
+                {
+                    Id = module,
+                    Version = version,
+                    SchemaVersion = 1,
+                    Name = "Test"
+                },
+                Semantics = new SemanticModuleDefinition(),
+                Writing = writing
+            }
+        ]);
+        var extensions = new FrozenModuleRuntime(
+            catalog,
+            new Dictionary<ModuleId, IReadOnlyDictionary<string, string>>(),
+            []);
+        Guid stateId = Guid.NewGuid();
+        var beat = new Beat(
+            Guid.NewGuid(),
+            new BeatDefinitionType("test:beat"),
+            module.Value,
+            version.Value,
+            stateId,
+            "Beat",
+            string.Empty,
+            BeatState.Processing,
+            []);
+        var performance = new PerformanceSnapshot
+        {
+            PerformanceId = Guid.NewGuid(),
+            StateId = stateId,
+            SourceScenarioStateId = Guid.NewGuid(),
+            SourceScene = new PerformanceSourceScene
+            {
+                Id = Guid.NewGuid(),
+                DefinitionId = "test:scene",
+                ModuleId = module.Value,
+                ModuleVersion = version.Value,
+                BasedOnScenarioStateId = Guid.NewGuid(),
+                State = "Processing"
+            }
+        };
+        var proposal = new BeatResolutionProposal
+        {
+            ExpectedPerformanceStateId = stateId,
+            Values = new Dictionary<string, System.Text.Json.JsonElement>
+            {
+                ["events"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                    new[] { new { text = "启程" }, new { text = "抵达" } })
+            }
+        };
+
+        IReadOnlyList<BeatParagraph> paragraphs =
+            await new BeatNarrationRenderer(extensions, null).RenderAsync(
+                performance,
+                beat,
+                proposal,
+                string.Empty,
+                CancellationToken.None);
+
+        Assert.Equal("启程、抵达", Assert.Single(paragraphs).Text);
+    }
+
     private sealed class MemoryPerformanceStore : IPerformanceStore
     {
         private PerformanceSnapshot? _active;
@@ -101,7 +329,10 @@ public sealed class PerformanceSessionTests
             => Tavi.Domain.Performance.Performance.Create(snapshot).CreateSnapshot();
     }
 
-    private sealed class TestPerformancePlugin(ModuleId module, ModuleVersion version) : ITaviPlugin, IPerformanceExtension
+    private sealed class TestPerformancePlugin(
+        ModuleId module,
+        ModuleVersion version,
+        bool includeDirectParagraph = true) : ITaviPlugin, IPerformanceExtension
     {
         public ModuleId Module { get; } = module;
         public ModuleVersion Version { get; } = version;
@@ -131,10 +362,35 @@ public sealed class PerformanceSessionTests
             => ValueTask.FromResult(new BeatResolutionProposal
             {
                 ExpectedPerformanceStateId = context.Performance.StateId,
-                Paragraphs = [new BeatParagraphProposal(Guid.NewGuid(), "A readable beat.")]
+                Paragraphs = includeDirectParagraph
+                    ? [new BeatParagraphProposal(Guid.NewGuid(), "A readable beat.")]
+                    : []
             });
 
         public ValueTask<SceneSettlementProposal> CompleteAsync(PerformanceCompletionContext context, CancellationToken cancellationToken)
             => ValueTask.FromResult(new SceneSettlementProposal { ExpectedScenarioStateId = context.Scene.ScenarioStateId });
+    }
+
+    private sealed class StubLanguageModelClient(string output) : ILanguageModelClient
+    {
+        public LanguageModelCapabilities Capabilities { get; } = new()
+        {
+            Provider = "Stub",
+            SupportsNativeJsonOutput = true,
+            SupportsJsonSchema = true
+        };
+
+        public ILanguageModelSession CreateSession(LanguageModelSessionOptions options) =>
+            new StubLanguageModelSession(output);
+    }
+
+    private sealed class StubLanguageModelSession(string output) : ILanguageModelSession
+    {
+        public Task<ModelTurnResult> CompleteAsync(
+            IReadOnlyList<ModelMessage> messages,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(ModelTurnResult.Completed(output));
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

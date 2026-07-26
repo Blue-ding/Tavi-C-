@@ -207,7 +207,7 @@ public sealed class Performance
         EnsureNewId(operation.BeatId, _data.Beats, nameof(AddBeatOperation), "Beat");
         if (operation.BasedOnPerformanceStateId != StateId)
             throw Invalid(nameof(AddBeatOperation), "BeatDefinition 未基于当前 Performance StateId。");
-        _data.Beats.Add(operation.BeatId, new Beat(operation.BeatId, operation.DefinitionId, operation.ModuleId, operation.ModuleVersion, operation.BasedOnPerformanceStateId, operation.Name, operation.Description, BeatState.Binding, operation.Slots));
+        _data.Beats.Add(operation.BeatId, new Beat(operation.BeatId, operation.DefinitionId, operation.ModuleId, operation.ModuleVersion, operation.BasedOnPerformanceStateId, operation.Name, operation.Description, BeatState.Binding, operation.Slots, writingProfileJson: operation.WritingProfileJson));
         return true;
     }
 
@@ -513,7 +513,7 @@ public sealed class Performance
         Beats = source.Beats.ToDictionary(pair => pair.Key, pair => Clone(pair.Value))
     };
 
-    private static Beat Clone(Beat value) => new(value.Id, value.DefinitionId, value.ModuleId, value.ModuleVersion, value.BasedOnPerformanceStateId, value.Name, value.Description, value.State, value.GetSlotSpecifications(), value.GetBindings(), value.Paragraphs, value.Publication);
+    private static Beat Clone(Beat value) => new(value.Id, value.DefinitionId, value.ModuleId, value.ModuleVersion, value.BasedOnPerformanceStateId, value.Name, value.Description, value.State, value.GetSlotSpecifications(), value.GetBindings(), value.Paragraphs, value.Publication, value.WritingProfileJson);
     private static PerformanceSourceScene Clone(PerformanceSourceScene value) => new()
     {
         Id = value.Id,

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tavi.local/schemas/tavi-writing.schema.json",
+  "title": "Tavi Declarative Writing Definitions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "beatNarrations"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "beatNarrations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/beatNarration"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+    },
+    "reference": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+    },
+    "beatNarration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "beatDefinition",
+        "paragraphs"
+      ],
+      "properties": {
+        "beatDefinition": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*:.+$"
+        },
+        "paragraphs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/paragraph"
+          }
+        }
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "template"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "template": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/binding"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "fills": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/fill"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "beatSlot",
+            "aspect",
+            "parameter",
+            "resolution"
+          ]
+        },
+        "slot": {
+          "$ref": "#/$defs/identifier"
+        },
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*:.+$"
+        },
+        "member": {
+          "$ref": "#/$defs/identifier"
+        },
+        "key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "cardinality": {
+          "enum": [
+            "one",
+            "optional",
+            "many"
+          ]
+        }
+      }
+    },
+    "fill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "instruction"
+      ],
+      "properties": {
+        "kind": {
+          "const": "model"
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "minimumLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maximumLength": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

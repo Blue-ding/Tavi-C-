@@ -34,6 +34,9 @@ public sealed class ExtensionSession
     /// <summary>获取指定 Module 的声明式 Setting Schema；未声明时返回 null。</summary>
     public ModuleSettingsSchema? FindSettingsSchema(ModuleId module) => GetPackage(module).SettingsSchema;
 
+    /// <summary>获取指定 Module 的有效 Setting Schema；旧式参数会被转换为等价 Profile。</summary>
+    public ModuleSettingsSchema GetSettingsSchema(ModuleId module) => GetSettingsSchema(GetPackage(module));
+
     /// <summary>获取设置是否已在冻结后改变，因而需要重建 ScenarioSession。</summary>
     public bool RestartRequired { get; private set; }
 
@@ -92,8 +95,7 @@ public sealed class ExtensionSession
     public JsonElement GetEffectiveSettings(ModuleId module)
     {
         ModulePackageDefinition package = GetPackage(module);
-        ModuleSettingsSchema schema = package.SettingsSchema
-            ?? throw new InvalidOperationException($"Module {module} 未声明 JSON Setting Schema。");
+        ModuleSettingsSchema schema = GetSettingsSchema(package);
         var configured = new JsonObject();
         foreach (ModuleParameterDefinition definition in package.Manifest.Parameters)
         {
@@ -110,8 +112,7 @@ public sealed class ExtensionSession
     public JsonElement SetSettings(ModuleId module, JsonElement settings)
     {
         ModulePackageDefinition package = GetPackage(module);
-        ModuleSettingsSchema schema = package.SettingsSchema
-            ?? throw new InvalidOperationException($"Module {module} 未声明 JSON Setting Schema。");
+        ModuleSettingsSchema schema = GetSettingsSchema(package);
         JsonElement materialized = schema.Materialize(settings);
         Dictionary<string, ModuleParameterDefinition> definitions = package.Manifest.Parameters.ToDictionary(value => value.Key, StringComparer.Ordinal);
         Dictionary<string, string> candidate = materialized.EnumerateObject().ToDictionary(
@@ -124,6 +125,51 @@ public sealed class ExtensionSession
         _parameters[module] = candidate;
         MarkChanged();
         return materialized;
+    }
+
+    /// <summary>
+    /// 从完整候选配置创建独立 Session；当前 Session 在任一步验证失败时保持不变。
+    /// 候选必须精确覆盖全部已安装 Module。
+    /// </summary>
+    public ExtensionSession CreateCandidate(IEnumerable<ExtensionModuleConfiguration> modules)
+    {
+        ArgumentNullException.ThrowIfNull(modules);
+        ExtensionModuleConfiguration[] copied = modules.ToArray();
+        if (copied.Any(configuration => configuration is null))
+            throw new ArgumentException("Extension 候选配置不能包含空 Module。", nameof(modules));
+        if (copied.GroupBy(configuration => configuration.Module).Any(group => group.Count() > 1))
+            throw new ArgumentException("Extension 候选配置不能包含重复 Module。", nameof(modules));
+        ModuleId[] expected = _packages.Keys.OrderBy(module => module.Value, StringComparer.Ordinal).ToArray();
+        ModuleId[] actual = copied.Select(configuration => configuration.Module).OrderBy(module => module.Value, StringComparer.Ordinal).ToArray();
+        if (!expected.SequenceEqual(actual))
+            throw new ArgumentException("Extension 候选配置必须精确覆盖全部已安装 Module。", nameof(modules));
+
+        ExtensionSession candidate;
+        try
+        {
+            candidate = new ExtensionSession(
+                _packages.Values,
+                new ExtensionSettings
+                {
+                    Modules = copied.Select(configuration => new ExtensionModuleSettings
+                    {
+                        Module = configuration.Module,
+                        Enabled = configuration.Enabled
+                    }).ToArray()
+                },
+                _plugins.Values);
+        }
+        catch (InvalidDataException exception)
+        {
+            throw new ModuleConfigurationException(
+                "TAVI.EXTENSIONS.SETTINGS.INVALID_DEPENDENCY",
+                exception.Message,
+                exception);
+        }
+
+        foreach (ExtensionModuleConfiguration configuration in copied)
+            _ = candidate.SetSettings(configuration.Module, configuration.Settings);
+        return candidate;
     }
 
     /// <summary>冻结当前已启用 Module、Plugin 和有效参数；后续设置变化不会修改已返回快照。</summary>
@@ -207,6 +253,8 @@ public sealed class ExtensionSession
     }
 
     private ModulePackageDefinition GetPackage(ModuleId module) => _packages.TryGetValue(module, out ModulePackageDefinition? package) ? package : throw Missing(module);
+    private static ModuleSettingsSchema GetSettingsSchema(ModulePackageDefinition package) =>
+        package.SettingsSchema ?? ModuleSettingsProfile.FromParameters(package.Manifest.Parameters);
     private static KeyNotFoundException Missing(ModuleId module) => new($"未发现 Module {module}。");
 
     private static string Canonicalize(ModuleParameterDefinition definition, string value)

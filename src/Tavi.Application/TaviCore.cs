@@ -84,7 +84,13 @@ public sealed class TaviCore
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(beatPublisher);
         ArgumentNullException.ThrowIfNull(extensions);
-        var session = new PerformanceSession(store, scene, randomSeed, beatPublisher, extensions);
+        var session = new PerformanceSession(
+            store,
+            scene,
+            randomSeed,
+            beatPublisher,
+            extensions,
+            languageModels: LanguageModels);
         await session.InitializeAsync(cancellationToken);
         return session;
     }

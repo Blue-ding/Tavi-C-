@@ -50,6 +50,9 @@ public static class TaviHost
         builder.Services.AddProblemDetails();
         builder.Services.AddExceptionHandler<TaviExceptionHandler>();
         builder.Services.AddSingleton<ApplicationLoggerAdapter>();
+        builder.Services.AddSingleton<LanguageModelRuntime>();
+        builder.Services.AddHostedService(services =>
+            services.GetRequiredService<LanguageModelRuntime>());
         builder.Services.AddSingleton<ITaviPlugin, MagicPlugin>();
         builder.Services.AddSingleton<ExtensionRuntime>();
         builder.Services.AddHostedService(services => services.GetRequiredService<ExtensionRuntime>());
@@ -88,6 +91,7 @@ public static class TaviHost
         app.UseExceptionHandler();
         app.UseDefaultFiles();
         app.UseStaticFiles();
+        app.MapExtensionEndpoints();
         app.MapWorldEndpoints();
         app.MapScenarioEndpoints();
         app.MapGuidanceEndpoints();

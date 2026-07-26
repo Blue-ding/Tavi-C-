@@ -105,6 +105,7 @@ public sealed class ModuleCatalog : IWorldTypePolicy
             EnsureOwned(package.Semantics.RelationTypes.Select(value => value.Key), manifest.Id, "RelationType");
             EnsureOwned(package.Semantics.Constraints.Select(value => value.Key), manifest.Id, "Constraint");
             EnsureOwned(package.Scenes.Select(value => value.Id), manifest.Id, "SceneDefinition");
+            EnsureOwned(package.Writing.Narrations.Select(value => value.BeatDefinition), manifest.Id, "BeatNarration");
             foreach (ModuleDependency dependency in manifest.Dependencies)
             {
                 if (!_modules.TryGetValue(dependency.Id, out ModulePackageDefinition? target))
@@ -162,6 +163,22 @@ public sealed class ModuleCatalog : IWorldTypePolicy
             {
                 if (string.IsNullOrWhiteSpace(slot.Id) || string.IsNullOrWhiteSpace(slot.Name) || slot.Minimum < 0 || slot.Maximum < slot.Minimum)
                     throw Invalid(nameof(Create), $"SceneDefinition {scene.Id} 的槽位 {slot.Id} 无效。");
+            }
+        }
+        foreach (BeatNarrationDefinition narration in package.Writing.Narrations)
+        {
+            foreach (WritingParagraphDefinition paragraph in narration.Paragraphs)
+            {
+                foreach (WritingBindingDefinition binding in paragraph.Bindings.Values)
+                {
+                    if (binding.Source == WritingBindingSource.Parameter &&
+                        package.Manifest.Parameters.All(parameter => parameter.Key != binding.Key))
+                        throw Invalid(nameof(Create), $"BeatNarration {narration.BeatDefinition} 引用了不存在的 Setting {binding.Key}。");
+                    if (binding.Source == WritingBindingSource.Aspect &&
+                        binding.Type is SemanticKey type &&
+                        FindAspectType(type) is null)
+                        throw Invalid(nameof(Create), $"BeatNarration {narration.BeatDefinition} 引用了不存在的 AspectType {type}。");
+                }
             }
         }
     }

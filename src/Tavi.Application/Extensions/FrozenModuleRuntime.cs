@@ -4,6 +4,7 @@ using Tavi.Application.Extensions.Performance;
 using Tavi.Application.Extensions.Scenario;
 using Tavi.Application.Extensions.World;
 using Tavi.Application.Extensions.Writing;
+using Tavi.Domain.Performance;
 using Tavi.Extensibility;
 
 namespace Tavi.Application.Extensions;
@@ -28,6 +29,24 @@ public sealed class FrozenModuleRuntime
     /// <summary>获取指定活动 Module 的声明式 Setting Schema；未声明时返回 null。</summary>
     public ModuleSettingsSchema? FindSettingsSchema(ModuleId module) =>
         Catalog.Packages.SingleOrDefault(package => package.Manifest.Id == module)?.SettingsSchema;
+
+    /// <summary>查找指定活动 Module 为 BeatDefinition 声明的 Writing Narration。</summary>
+    public BeatNarrationDefinition? FindBeatNarration(
+        ModuleId module,
+        BeatDefinitionType beatDefinition)
+    {
+        ModulePackageDefinition? package = Catalog.Packages
+            .SingleOrDefault(value => value.Manifest.Id == module);
+        return package?.Writing.Find(new SemanticKey(beatDefinition.Value));
+    }
+
+    /// <summary>获取指定活动 Module 的完整 Writing Profile 独立副本。</summary>
+    public System.Text.Json.JsonElement? FindWritingProfile(ModuleId module)
+    {
+        ModulePackageDefinition? package = Catalog.Packages
+            .SingleOrDefault(value => value.Manifest.Id == module);
+        return package is null ? null : package.Writing.Document;
+    }
     /// <summary>获取按 Module 标识稳定排序的 World Authoring 能力。</summary>
     public IReadOnlyList<(ModuleId Module, IWorldAuthoringExtension Extension)> WorldAuthoringExtensions => Select<IWorldAuthoringExtension>();
     /// <summary>获取按 Module 标识稳定排序的 Scenario Definition 能力。</summary>

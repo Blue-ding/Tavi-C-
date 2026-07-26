@@ -18,7 +18,8 @@ public sealed record Beat
         IEnumerable<BeatSlotSpecification> slots,
         IEnumerable<BeatSlotBinding>? bindings = null,
         IEnumerable<BeatParagraph>? paragraphs = null,
-        BeatPublicationReceipt? publication = null)
+        BeatPublicationReceipt? publication = null,
+        string? writingProfileJson = null)
     {
         if (id == Guid.Empty || basedOnPerformanceStateId == Guid.Empty)
             throw new ArgumentException("Beat 标识及其依据的 Performance StateId 不能为空。");
@@ -36,6 +37,7 @@ public sealed record Beat
         BasedOnPerformanceStateId = basedOnPerformanceStateId;
         Name = name;
         Description = description;
+        WritingProfileJson = writingProfileJson;
         State = state;
         _slots = slots.ToDictionary(value => value.Id, CopySlot, StringComparer.Ordinal);
         _bindings = (bindings ?? []).ToDictionary(value => value.SlotId, CopyBinding, StringComparer.Ordinal);
@@ -50,6 +52,8 @@ public sealed record Beat
     public Guid BasedOnPerformanceStateId { get; }
     public string Name { get; }
     public string Description { get; }
+    /// <summary>获取 Beat 创建时冻结的 Module Writing Profile；旧存档可能为空。</summary>
+    public string? WritingProfileJson { get; }
     public BeatState State { get; private set; }
     public IReadOnlyList<BeatParagraph> Paragraphs { get; private set; }
     public BeatPublicationReceipt? Publication { get; private set; }

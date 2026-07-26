@@ -25,6 +25,7 @@ Modules/MyModule/
   module.json
   semantics.json
   scenes.json
+  writing.json
   README.md
 ```
 
@@ -98,10 +99,51 @@ Scope、Aspect 与 Relation 实例只携带 Type 和整数 Quantity；它们的�
 
 ## Writing 扩展点
 
-当前只提供基础边界：
+Module 可以用两种方式提供 Beat 正文：
 
-- `BeginSceneProcessing` 冻结 Scene；
-- `GetProcessingContext` 返回局部只读上下文；
-- `SettleScene` 接受局部结构化结果。
+- Plugin 在 `BeatResolutionProposal.Paragraphs` 中直接返回最终文本；
+- `writing.json` 声明 Paragraph 模板、确定性 Binding 和需要语言模型填充的字段。
 
-未来 WritingSession 应使用这些接口，不能获得真实 Scenario 或绕过局部校验。故事生成、互动、取消和异常恢复策略不在当前实现范围内。
+声明式正文使用 `beatNarrations` 将 BeatDefinition 映射到一个或多个 Paragraph。Binding 可以读取 Beat Slot、Aspect、Module Setting 或 `BeatResolutionProposal.Values` 中的结构化结果；`fills` 只描述确实需要模型生成的字段、提示和上下文。没有 `model` Fill 时不会调用语言模型。Schema 见 `docs/schemas/tavi-writing.schema.json`。
+
+```json
+{
+  "schemaVersion": 1,
+  "beatNarrations": [
+    {
+      "beatDefinition": "magic:encounter",
+      "paragraphs": [
+        {
+          "key": "arrival",
+          "template": "{{subject.name}}抵达{{place}}，{{detail}}",
+          "bindings": {
+            "subject": {
+              "source": "beatSlot",
+              "slot": "subject"
+            },
+            "place": {
+              "source": "resolution",
+              "key": "place"
+            }
+          },
+          "fills": {
+            "detail": {
+              "kind": "model",
+              "instruction": "用一句话描写{{subject.name}}眼前的景象。",
+              "context": [
+                "subject.description",
+                "place",
+                "interaction"
+              ],
+              "minimumLength": 1,
+              "maximumLength": 80
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Application 负责解析声明、构造受约束模型请求并生成最终 `BeatParagraph`；Runtime 只持有可热替换的语言模型 Adapter 和 Session 生命周期。Beat 创建时会冻结当时的 Writing Profile 并随存档保存，避免 Module 文件更新改变尚未解决的 Beat。Extension Settings 的 Profile、HTTP Interface 和前端状态模型与 Writing Profile 相互独立。

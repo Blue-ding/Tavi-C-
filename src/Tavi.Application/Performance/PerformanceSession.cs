@@ -1,5 +1,6 @@
 using Tavi.Application.Extensions;
 using Tavi.Application.Extensions.Performance;
+using Tavi.Application.LanguageModel;
 using Tavi.Application.Writing;
 using Tavi.Domain.Performance;
 using Tavi.Extensibility;
@@ -14,6 +15,7 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
     private readonly IPerformanceStore _store;
     private readonly IBeatPublisher _beatPublisher;
     private readonly FrozenModuleRuntime _extensions;
+    private readonly BeatNarrationRenderer _narration;
     private readonly SceneContextView? _initialScene;
     private readonly long _initialRandomSeed;
     private readonly TimeSpan _autoSaveDelay;
@@ -28,11 +30,17 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
     private bool _disposed;
 
     /// <summary>创建用于恢复 Store 中唯一活动 Performance 的 Session。</summary>
-    public PerformanceSession(IPerformanceStore store, IBeatPublisher beatPublisher, FrozenModuleRuntime extensions, TimeSpan? autoSaveDelay = null)
+    public PerformanceSession(
+        IPerformanceStore store,
+        IBeatPublisher beatPublisher,
+        FrozenModuleRuntime extensions,
+        TimeSpan? autoSaveDelay = null,
+        ILanguageModelService? languageModels = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _beatPublisher = beatPublisher ?? throw new ArgumentNullException(nameof(beatPublisher));
         _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
+        _narration = new BeatNarrationRenderer(_extensions, languageModels);
         _autoSaveDelay = autoSaveDelay ?? TimeSpan.FromSeconds(1);
         if (_autoSaveDelay < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(autoSaveDelay));
@@ -41,8 +49,15 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
     }
 
     /// <summary>创建会在 Store 为空时从冻结 Processing Scene 展开新 Performance 的 Session。</summary>
-    public PerformanceSession(IPerformanceStore store, SceneContextView sourceScene, long randomSeed, IBeatPublisher beatPublisher, FrozenModuleRuntime extensions, TimeSpan? autoSaveDelay = null)
-        : this(store, beatPublisher, extensions, autoSaveDelay)
+    public PerformanceSession(
+        IPerformanceStore store,
+        SceneContextView sourceScene,
+        long randomSeed,
+        IBeatPublisher beatPublisher,
+        FrozenModuleRuntime extensions,
+        TimeSpan? autoSaveDelay = null,
+        ILanguageModelService? languageModels = null)
+        : this(store, beatPublisher, extensions, autoSaveDelay, languageModels)
     {
         _initialScene = sourceScene ?? throw new ArgumentNullException(nameof(sourceScene));
         _initialRandomSeed = randomSeed;
@@ -140,7 +155,8 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
                 expectedStateId,
                 definition.Name,
                 definition.Description,
-                definition.Slots.Select(value => new BeatSlotSpecification(value.Id, value.Name, value.Description, value.Minimum, value.Maximum)).ToArray())
+                definition.Slots.Select(value => new BeatSlotSpecification(value.Id, value.Name, value.Description, value.Minimum, value.Maximum)).ToArray(),
+                _extensions.FindWritingProfile(definition.Module)?.GetRawText())
         ]), expectedStateId);
     }
 
@@ -158,7 +174,10 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
         RuntimePerformance performance = RequirePerformance();
         if (performance.StateId != expectedStateId)
             throw new OptimisticConcurrencyConflictException(expectedStateId, performance.StateId);
-        Beat beat = performance.GetBeat(beatId);
+        PerformanceSnapshot captured = performance.CreateSnapshot();
+        Beat beat = captured.Beats.TryGetValue(beatId, out Beat? capturedBeat)
+            ? capturedBeat
+            : throw new KeyNotFoundException($"Performance 中不存在 Beat {beatId}。");
         BeatResolutionProposal proposal = await RequireExtension().ResolveBeatAsync(new BeatResolutionContext
         {
             Performance = PerformanceExtensibilityAdapter.ToView(performance),
@@ -169,12 +188,20 @@ public sealed class PerformanceSession : IPerformanceWorkspace, IPerformanceSess
         }, cancellationToken);
         if (proposal.ExpectedPerformanceStateId != expectedStateId)
             throw new InvalidOperationException("Beat 解决提案未基于请求的 Performance StateId。");
+        IReadOnlyList<BeatParagraph> paragraphs = await _narration.RenderAsync(
+            captured,
+            beat,
+            proposal,
+            interaction,
+            cancellationToken);
+        if (StateId != captured.StateId)
+            throw new OptimisticConcurrencyConflictException(captured.StateId, StateId);
         return Commit(new PerformanceChangeSet(
         [
             new ResolveBeatOperation(
                 beatId,
                 PerformanceExtensibilityAdapter.ToChangeSet(proposal.Operations),
-                proposal.Paragraphs.Select(value => new BeatParagraph(value.Id, value.Text)).ToArray())
+                paragraphs)
         ]), expectedStateId);
     }
 

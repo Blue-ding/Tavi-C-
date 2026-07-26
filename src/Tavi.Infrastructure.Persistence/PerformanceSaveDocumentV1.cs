@@ -92,6 +92,7 @@ internal sealed class BeatDataV1
     public Guid BasedOnPerformanceStateId { get; init; }
     public string Name { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
+    public string? WritingProfileJson { get; init; }
     public string State { get; init; } = string.Empty;
     public BeatSlotDataV1[] Slots { get; init; } = [];
     public BindingDataV1[] Bindings { get; init; } = [];
@@ -163,6 +164,7 @@ internal static class PerformanceSaveMapper
             BasedOnPerformanceStateId = value.BasedOnPerformanceStateId,
             Name = value.Name,
             Description = value.Description,
+            WritingProfileJson = value.WritingProfileJson,
             State = value.State.ToString(),
             Slots = value.GetSlotSpecifications().Select(slot => new BeatSlotDataV1 { Id = slot.Id, Name = slot.Name, Description = slot.Description, Minimum = slot.Minimum, Maximum = slot.Maximum }).ToArray(),
             Bindings = value.GetBindings().Select(ToData).ToArray(),
@@ -211,7 +213,8 @@ internal static class PerformanceSaveMapper
                 value.Slots.Select(slot => new BeatSlotSpecification(slot.Id, slot.Name, slot.Description, slot.Minimum, slot.Maximum)),
                 value.Bindings.Select(binding => new BeatSlotBinding(binding.SlotId, binding.ElementIds)),
                 value.Paragraphs.Select(paragraph => new BeatParagraph(paragraph.Id, paragraph.Text)),
-                value.Publication is null ? null : new BeatPublicationReceipt(value.Publication.ManuscriptId, value.Publication.ManuscriptStateId)))
+                value.Publication is null ? null : new BeatPublicationReceipt(value.Publication.ManuscriptId, value.Publication.ManuscriptStateId),
+                value.WritingProfileJson))
         };
         _ = Tavi.Domain.Performance.Performance.Create(snapshot);
         return snapshot;

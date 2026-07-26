@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Tavi.Extensibility;
 
 /// <summary>提供给 Module 的只读 Beat 槽位绑定。</summary>
@@ -84,6 +86,10 @@ public sealed record BeatResolutionProposal
 {
     public required Guid ExpectedPerformanceStateId { get; init; }
     public IReadOnlyList<PerformanceOperationIntent> Operations { get; init; } = [];
+    /// <summary>获取可由声明式 Writing Binding 引用的 Module 结构化解决值。</summary>
+    public IReadOnlyDictionary<string, JsonElement> Values { get; init; } =
+        new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+    /// <summary>获取 Module 直接提供的最终 Paragraph；声明式 Writing Paragraph 会追加在其后。</summary>
     public IReadOnlyList<BeatParagraphProposal> Paragraphs { get; init; } = [];
     public string Rationale { get; init; } = string.Empty;
 }

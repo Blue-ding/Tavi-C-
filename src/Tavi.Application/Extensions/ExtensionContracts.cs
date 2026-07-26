@@ -1,4 +1,5 @@
 using Tavi.Extensibility;
+using System.Text.Json;
 
 namespace Tavi.Application.Extensions;
 
@@ -20,6 +21,21 @@ public sealed record ExtensionSettings
     public int Version { get; init; } = 1;
     /// <summary>获取各 Module 设置。</summary>
     public IReadOnlyList<ExtensionModuleSettings> Modules { get; init; } = [];
+}
+
+/// <summary>表示前端候选配置中的一个完整 Module 状态。</summary>
+public sealed record ExtensionModuleConfiguration
+{
+    public ExtensionModuleConfiguration(ModuleId module, bool enabled, JsonElement settings)
+    {
+        Module = module;
+        Enabled = enabled;
+        Settings = settings.Clone();
+    }
+
+    public ModuleId Module { get; }
+    public bool Enabled { get; }
+    public JsonElement Settings { get; }
 }
 
 /// <summary>定义 Extension 启用状态和参数的异步持久化边界。</summary>

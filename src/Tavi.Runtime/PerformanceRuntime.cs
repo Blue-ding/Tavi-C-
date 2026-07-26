@@ -11,6 +11,7 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
     private readonly IConfiguration _configuration;
     private readonly ExtensionRuntime _extensions;
     private readonly WritingRuntime _writing;
+    private readonly LanguageModelRuntime _languageModels;
     private readonly SemaphoreSlim _accessGate = new(1, 1);
     private readonly object _disposeSync = new();
     private JsonFilePerformanceStore? _store;
@@ -19,11 +20,16 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
     private Task? _disposeTask;
     private bool _disposed;
 
-    public PerformanceRuntime(IConfiguration configuration, ExtensionRuntime extensions, WritingRuntime writing)
+    public PerformanceRuntime(
+        IConfiguration configuration,
+        ExtensionRuntime extensions,
+        WritingRuntime writing,
+        LanguageModelRuntime languageModels)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
         _writing = writing ?? throw new ArgumentNullException(nameof(writing));
+        _languageModels = languageModels ?? throw new ArgumentNullException(nameof(languageModels));
     }
 
     public bool HasSession => _workspace is not null;
@@ -39,7 +45,12 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
         _store = new JsonFilePerformanceStore(directory);
         if (await _store.LoadActiveAsync(cancellationToken) is null)
             return;
-        var session = new PerformanceSession(_store, _writing.BeatPublisher, _extensions.Frozen, TimeSpan.FromMilliseconds(delayMilliseconds));
+        var session = new PerformanceSession(
+            _store,
+            _writing.BeatPublisher,
+            _extensions.Frozen,
+            TimeSpan.FromMilliseconds(delayMilliseconds),
+            _languageModels.Service);
         await session.InitializeAsync(cancellationToken);
         Attach(session);
     }
@@ -58,7 +69,14 @@ public sealed class PerformanceRuntime : IHostedService, IAsyncDisposable
                 throw new InvalidOperationException($"已有 Performance {_workspace.Id} 占用唯一会话席位。");
             JsonFilePerformanceStore store = RequireStore();
             int delayMilliseconds = int.TryParse(_configuration["Tavi:Performance:AutoSaveDelayMilliseconds"], out int delay) && delay >= 0 ? delay : 1000;
-            var session = new PerformanceSession(store, scene, randomSeed, _writing.BeatPublisher, _extensions.Frozen, TimeSpan.FromMilliseconds(delayMilliseconds));
+            var session = new PerformanceSession(
+                store,
+                scene,
+                randomSeed,
+                _writing.BeatPublisher,
+                _extensions.Frozen,
+                TimeSpan.FromMilliseconds(delayMilliseconds),
+                _languageModels.Service);
             try
             {
                 await session.InitializeAsync(cancellationToken);

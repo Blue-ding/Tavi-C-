@@ -19,6 +19,8 @@ public sealed class PerformancePersistenceTests
             Guid sceneId = Guid.NewGuid();
             Guid elementId = Guid.NewGuid();
             Guid beatId = Guid.NewGuid();
+            const string writingProfileJson =
+                """{"schemaVersion":1,"beatNarrations":[]}""";
             var snapshot = new PerformanceSnapshot
             {
                 PerformanceId = performanceId,
@@ -50,7 +52,8 @@ public sealed class PerformancePersistenceTests
                         string.Empty,
                         BeatState.Binding,
                         [new BeatSlotSpecification("subject", "Subject", string.Empty, 1, 1)],
-                        [new BeatSlotBinding("subject", [elementId])])
+                        [new BeatSlotBinding("subject", [elementId])],
+                        writingProfileJson: writingProfileJson)
                 }
             };
 
@@ -62,6 +65,7 @@ public sealed class PerformancePersistenceTests
             Assert.Equal(stateId, loaded.StateId);
             Assert.Equal(sceneId, loaded.SourceScene.Id);
             Assert.Equal(elementId, Assert.Single(Assert.Single(loaded.Beats.Values).GetBindings()).ElementIds.Single());
+            Assert.Equal(writingProfileJson, Assert.Single(loaded.Beats.Values).WritingProfileJson);
             Assert.Equal("quiet", Assert.Single(loaded.Modules).Parameters["tone"]);
 
             loaded.Status = PerformanceStatus.Abandoned;

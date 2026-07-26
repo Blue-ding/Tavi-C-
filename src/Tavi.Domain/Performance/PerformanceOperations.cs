@@ -24,7 +24,8 @@ public sealed record AddBeatOperation(
     Guid BasedOnPerformanceStateId,
     string Name,
     string Description,
-    IReadOnlyList<BeatSlotSpecification> Slots) : PerformanceOperation;
+    IReadOnlyList<BeatSlotSpecification> Slots,
+    string? WritingProfileJson = null) : PerformanceOperation;
 
 public sealed record SetBeatSlotBindingOperation(Guid BeatId, BeatSlotBinding Binding) : PerformanceOperation;
 public sealed record ClearBeatSlotBindingOperation(Guid BeatId, string SlotId) : PerformanceOperation;

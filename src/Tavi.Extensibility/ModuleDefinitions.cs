@@ -93,4 +93,7 @@ public sealed record ModulePackageDefinition
 
     /// <summary>获取 Module 的声明式 Setting Schema；未声明时为 null。</summary>
     public ModuleSettingsSchema? SettingsSchema { get; init; }
+
+    /// <summary>获取 Module 的声明式 Writing 定义。</summary>
+    public ModuleWritingDefinitions Writing { get; init; } = ModuleWritingProfile.Empty;
 }

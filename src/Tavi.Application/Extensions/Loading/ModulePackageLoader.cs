@@ -17,6 +17,7 @@ public static class ModulePackageLoader
         string manifestPath = Path.Combine(fullDirectory, "module.json");
         string semanticsPath = Path.Combine(fullDirectory, "semantics.json");
         string scenesPath = Path.Combine(fullDirectory, "scenes.json");
+        string writingPath = Path.Combine(fullDirectory, "writing.json");
         try
         {
             RawManifest manifest = ReadRequired<RawManifest>(manifestPath);
@@ -24,6 +25,9 @@ public static class ModulePackageLoader
             RawScenes scenes = File.Exists(scenesPath) ? ReadRequired<RawScenes>(scenesPath) : new RawScenes();
             ModuleManifest convertedManifest = ConvertManifest(manifest);
             ModuleSettingsSchema? settingsSchema = LoadSettingsSchema(fullDirectory, manifest);
+            ModuleWritingDefinitions writing = File.Exists(writingPath)
+                ? ModuleWritingProfile.Parse(File.ReadAllText(writingPath), convertedManifest.Id)
+                : ModuleWritingProfile.Empty;
             if (settingsSchema is not null)
             {
                 if (convertedManifest.Parameters.Count > 0)
@@ -33,12 +37,16 @@ public static class ModulePackageLoader
                     Parameters = settingsSchema.Settings.Select(ToLegacyParameter).ToArray()
                 };
             }
+            settingsSchema ??= convertedManifest.Parameters.Count == 0
+                ? ModuleSettingsProfile.Empty
+                : ModuleSettingsProfile.FromParameters(convertedManifest.Parameters);
             return new ModulePackageDefinition
             {
                 Manifest = convertedManifest,
                 Semantics = ConvertSemantics(semantics),
                 Scenes = scenes.Scenes.Select(scene => ConvertScene(scene, convertedManifest)).ToArray(),
-                SettingsSchema = settingsSchema
+                SettingsSchema = settingsSchema,
+                Writing = writing
             };
         }
         catch (ModuleConfigurationException)

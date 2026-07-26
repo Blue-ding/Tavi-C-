@@ -95,6 +95,10 @@ public static class ModuleSettingsProfile
         "minimum", "maximum", "minLength", "maxLength", ApplyModeKeyword
     ];
 
+    /// <summary>获取不声明任何 Setting 的有效空 Schema。</summary>
+    public static ModuleSettingsSchema Empty { get; } = Parse(
+        "{\"$schema\":\"" + JsonSchemaDialect + "\",\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}");
+
     /// <summary>解析并校验一份 Tavi Module Setting Schema。</summary>
     public static ModuleSettingsSchema Parse(string json)
     {
@@ -138,6 +142,49 @@ public static class ModuleSettingsProfile
 
         ValidateRequired(schema, definitions);
         return new ModuleSettingsSchema(schema, definitions);
+    }
+
+    /// <summary>把旧式标量参数声明转换为等价的 Tavi JSON Setting Schema。</summary>
+    public static ModuleSettingsSchema FromParameters(IEnumerable<ModuleParameterDefinition> parameters)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+        ModuleParameterDefinition[] copied = parameters.ToArray();
+        if (copied.GroupBy(parameter => parameter.Key, StringComparer.Ordinal).Any(group => group.Count() > 1))
+            throw Invalid("$.properties", "旧式参数声明包含重复键。");
+        var properties = new JsonObject();
+        foreach (ModuleParameterDefinition parameter in copied)
+        {
+            ArgumentNullException.ThrowIfNull(parameter);
+            var definition = new JsonObject
+            {
+                ["type"] = ToJsonType(parameter.Type),
+                ["title"] = parameter.Name,
+                ["description"] = parameter.Description,
+                ["default"] = ParseLegacyValue(parameter, parameter.DefaultValue),
+                [ApplyModeKeyword] = parameter.ApplyMode == ModuleSettingApplyMode.TransactionBoundary
+                    ? "transaction-boundary"
+                    : "process-restart"
+            };
+            if (parameter.AllowedValues.Count > 0)
+                definition["enum"] = new JsonArray(parameter.AllowedValues.Select(value => ParseLegacyValue(parameter, value)).ToArray());
+            if (parameter.Minimum.HasValue)
+                definition["minimum"] = parameter.Minimum.Value;
+            if (parameter.Maximum.HasValue)
+                definition["maximum"] = parameter.Maximum.Value;
+            if (parameter.MinimumLength.HasValue)
+                definition["minLength"] = parameter.MinimumLength.Value;
+            if (parameter.MaximumLength.HasValue)
+                definition["maxLength"] = parameter.MaximumLength.Value;
+            properties[parameter.Key] = definition;
+        }
+        var schema = new JsonObject
+        {
+            ["$schema"] = JsonSchemaDialect,
+            ["type"] = "object",
+            ["additionalProperties"] = false,
+            ["properties"] = properties
+        };
+        return Parse(JsonSerializer.SerializeToElement(schema));
     }
 
     internal static ModuleSettingDefinition Copy(ModuleSettingDefinition source) => source with
@@ -401,6 +448,28 @@ public static class ModuleSettingsProfile
         ModuleSettingValueType.String => "string",
         _ => throw new ArgumentOutOfRangeException(nameof(value))
     };
+
+    private static string ToJsonType(ModuleParameterType value) => value switch
+    {
+        ModuleParameterType.Boolean => "boolean",
+        ModuleParameterType.Integer => "integer",
+        ModuleParameterType.Number => "number",
+        ModuleParameterType.String => "string",
+        _ => throw new ArgumentOutOfRangeException(nameof(value))
+    };
+
+    private static JsonNode? ParseLegacyValue(ModuleParameterDefinition definition, string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return definition.Type switch
+        {
+            ModuleParameterType.Boolean when bool.TryParse(value, out bool boolean) => JsonValue.Create(boolean),
+            ModuleParameterType.Integer when long.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long integer) => JsonValue.Create(integer),
+            ModuleParameterType.Number when double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double number) && double.IsFinite(number) => JsonValue.Create(number),
+            ModuleParameterType.String => JsonValue.Create(value),
+            _ => throw Invalid($"$.properties.{definition.Key}", $"旧式参数值“{value}”不符合 {definition.Type} 类型。")
+        };
+    }
 
     private static void ValidateKey(string key, string path)
     {

@@ -10,20 +10,23 @@ namespace Tavi.Runtime;
 internal sealed class ReloadableLanguageModelService : ILanguageModelService
 {
     private readonly ConcurrentDictionary<Guid, ILanguageModelService> _operationOwners = new();
-    private ILanguageModelService _current;
+    private ILanguageModelService? _current;
 
-    internal ReloadableLanguageModelService(ILanguageModelService current)
+    internal ReloadableLanguageModelService(ILanguageModelService? current = null)
     {
-        _current = current ?? throw new ArgumentNullException(nameof(current));
+        _current = current;
     }
 
-    public LanguageModelCapabilities Capabilities => Volatile.Read(ref _current).Capabilities;
+    public LanguageModelCapabilities Capabilities =>
+        Volatile.Read(ref _current)?.Capabilities ??
+        new LanguageModelCapabilities { Provider = "Unavailable" };
 
     public LanguageModelOperation Start(
         LanguageModelRunRequest request,
         CancellationToken cancellationToken = default)
     {
-        ILanguageModelService owner = Volatile.Read(ref _current);
+        ILanguageModelService owner = Volatile.Read(ref _current) ??
+            throw LanguageModelConfigurationException.Invalid("尚未配置语言模型。");
         LanguageModelOperation operation = owner.Start(request, cancellationToken);
         _operationOwners[operation.Id] = owner;
         return operation;
@@ -49,4 +52,6 @@ internal sealed class ReloadableLanguageModelService : ILanguageModelService
         ArgumentNullException.ThrowIfNull(replacement);
         Interlocked.Exchange(ref _current, replacement);
     }
+
+    internal void Clear() => Interlocked.Exchange(ref _current, null);
 }
